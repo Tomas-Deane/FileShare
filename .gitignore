@@ -52,3 +52,29 @@ compile_commands.json
 *creator.user*
 
 *_qmlcache.qrc
+
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+fileshareweb/node_modules
+fileshareweb/.pnp
+fileshareweb/.pnp.js
+
+# testing
+fileshareweb/coverage
+
+# production
+fileshareweb/build
+
+# misc
+fileshareweb/.DS_Store
+fileshareweb/.env.local
+fileshareweb/.env.development.local
+fileshareweb/.env.test.local
+fileshareweb/.env.production.local
+
+fileshareweb/npm-debug.log*
+fileshareweb/yarn-debug.log*
+fileshareweb/yarn-error.log*
+
+fileshareweb/package-lock.json
