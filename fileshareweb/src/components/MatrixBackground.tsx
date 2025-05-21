@@ -23,7 +23,7 @@ const MatrixBackground: React.FC = () => {
     // Store the current character and frame counter for each column
     const currentChars: string[] = Array(columns).fill('');
     const charFrameCounters: number[] = Array(columns).fill(0);
-    const charChangeInterval = 20; // Change character every 5 frames
+    const charChangeInterval = 20; // Change character every 20 frames
 
     let frame = 0;
     const draw = () => {

@@ -4,7 +4,7 @@ export const securityConfig = {
   
   // Security headers configuration
   headers: {
-    'Content-Security-Policy': "default-src 'self'; connect-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';",
+    'Content-Security-Policy': "default-src 'self'; connect-src 'self' https:; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}';",
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'X-XSS-Protection': '1; mode=block',

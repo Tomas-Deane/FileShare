@@ -13,13 +13,14 @@ import {
   Alert,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import { Visibility, VisibilityOff, Login as LoginIcon, Email, Lock } from '@mui/icons-material';
+import { Visibility, VisibilityOff, Login as LoginIcon, Lock, Person } from '@mui/icons-material';
 import MatrixBackground from '../components/MatrixBackground.tsx';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
+    username: '',
     email: '',
     password: '',
   });
@@ -86,7 +87,7 @@ const Login: React.FC = () => {
                   fontFamily: 'monospace',
                 }}
               >
-                Secure your files
+                Secure your  files
               </Typography>
             </Box>
 
@@ -95,21 +96,20 @@ const Login: React.FC = () => {
                 {error}
               </Alert>
             )}
-
             <Box component="form" onSubmit={handleSubmit}>
               <TextField
                 required
                 fullWidth
-                id="email"
-                label="Email Address"
-                name="email"
-                autoComplete="email"
-                value={formData.email}
+                id="username"
+                label="Username"
+                name="username"
+                autoComplete="username"
+                value={formData.username}
                 onChange={handleChange}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
-                      <Email sx={{ color: '#00ff00' }} />
+                      <Person sx={{ color: '#00ff00' }} />
                     </InputAdornment>
                   ),
                 }}
