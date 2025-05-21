@@ -81,9 +81,9 @@ void AuthController::signup(const QString &username, const QString &password)
 
 void AuthController::login(const QString &username, const QString &password)
 {
-    if (username.isEmpty()) {
-        Logger::log("Login aborted: missing username");
-        emit loginResult(false, "Missing username");
+    if (username.isEmpty() || password.isEmpty()) {
+        Logger::log("Login aborted: missing username or password");
+        emit loginResult(false, "Missing username or password");
         return;
     }
 
