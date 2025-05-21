@@ -13,7 +13,7 @@ import {
   Alert,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import { Visibility, VisibilityOff, Security, Email, Person, Lock } from '@mui/icons-material';
+import { Visibility, VisibilityOff, Security, Person, Lock } from '@mui/icons-material';
 import MatrixBackground from '../components/MatrixBackground.tsx';
 
 const Signup: React.FC = () => {
@@ -21,7 +21,6 @@ const Signup: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
-    email: '',
     password: '',
   });
   const [error, setError] = useState('');
