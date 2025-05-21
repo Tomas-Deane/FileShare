@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
 
-  const handleLogout = () => {
+  const handleLogout = (): void => {
     // TODO: Implement logout logic
     navigate('/login');
   };
