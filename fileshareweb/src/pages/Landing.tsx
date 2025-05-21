@@ -242,31 +242,31 @@ const NavButton = styled(Button)(({ theme }) => ({
   },
 }));
 
+const features = [
+  {
+    icon: <SecurityIcon sx={{ fontSize: 40 }} />,
+    title: 'End-to-End Encryption',
+    description: 'Your files are encrypted with military-grade security, ensuring only you and your intended recipients can access them.',
+  },
+  {
+    icon: <SpeedIcon sx={{ fontSize: 40 }} />,
+    title: 'Lightning Fast',
+    description: 'Experience blazing-fast upload and download speeds with our optimized peer-to-peer network.',
+  },
+  {
+    icon: <StorageIcon sx={{ fontSize: 40 }} />,
+    title: 'Decentralized Storage',
+    description: 'Your files are distributed across a secure network, eliminating single points of failure.',
+  },
+  {
+    icon: <CloudUploadIcon sx={{ fontSize: 40 }} />,
+    title: 'Easy Sharing',
+    description: 'Share files instantly with secure, time-limited links and granular access controls.',
+  },
+];
+
 const Landing = () => {
   const navigate = useNavigate();
-
-  const features = [
-    {
-      icon: <SecurityIcon sx={{ fontSize: 40 }} />,
-      title: 'End-to-End Encryption',
-      description: 'Your files are encrypted with military-grade security, ensuring only you and your intended recipients can access them.',
-    },
-    {
-      icon: <SpeedIcon sx={{ fontSize: 40 }} />,
-      title: 'Lightning Fast',
-      description: 'Experience blazing-fast upload and download speeds with our optimized peer-to-peer network.',
-    },
-    {
-      icon: <StorageIcon sx={{ fontSize: 40 }} />,
-      title: 'Decentralized Storage',
-      description: 'Your files are distributed across a secure network, eliminating single points of failure.',
-    },
-    {
-      icon: <CloudUploadIcon sx={{ fontSize: 40 }} />,
-      title: 'Easy Sharing',
-      description: 'Share files instantly with secure, time-limited links and granular access controls.',
-    },
-  ];
 
   return (
     <>
@@ -348,8 +348,8 @@ const Landing = () => {
               width: '100%',
             }
           }}>
-            {features.map((feature, index) => (
-              <FeatureCard key={index}>
+            {features.map((feature) => (
+              <FeatureCard key={feature.title}>
                 <FeatureIcon>
                   {feature.icon}
                 </FeatureIcon>
