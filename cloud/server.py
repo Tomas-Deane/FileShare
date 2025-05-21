@@ -1,31 +1,50 @@
 #!/usr/bin/env python3
-
 import asyncio
+import logging
+import os
+
+from models import init_db, UserDB
+from utils import read_json, send_response
+from handlers import handle_message
+
+LOG_FILE = os.path.join(os.path.dirname(__file__), 'server_debug.log')
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.DEBUG,
+    format='%(asctime)s %(levelname)s: %(message)s'
+)
+
+db = None
 
 async def handle_client(reader, writer):
     peer = writer.get_extra_info('peername')
-    print(f"Connection from {peer}")
+    logging.info(f"Connection from {peer}")
+    session = {'username': None, 'challenge': None}
+
     try:
         while True:
-            data = await reader.readline()
-            if not data:
+            data = await read_json(reader)
+            if data is None:
                 break
-            msg = data.decode().rstrip('\n')
-            print(f"Received: {msg!r} from {peer}")
-            resp = f"Echo: {msg}\n"
-            writer.write(resp.encode())
-            await writer.drain()
+            try:
+                await handle_message(data, session, writer, db)
+            except Exception as e:
+                logging.exception("Exception processing client data")
+                await send_response(writer, {'status':'error', 'error': str(e)})
     except Exception as e:
-        print(f"Error: {e}")
+        logging.exception(f"Error in connection handler for {peer}")
     finally:
         writer.close()
         await writer.wait_closed()
-        print(f"Closed connection {peer}")
+        logging.info(f"Closed connection {peer}")
 
 async def main():
-    server = await asyncio.start_server(handle_client, '0.0.0.0', 12344)
+    global db
+    init_db()
+    db = UserDB()
+    server = await asyncio.start_server(handle_client, '0.0.0.0', 3210)
     addr = server.sockets[0].getsockname()
-    print(f"Serving on {addr}")
+    logging.info(f"Serving on {addr}")
     async with server:
         await server.serve_forever()
 
