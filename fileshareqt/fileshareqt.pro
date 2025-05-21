@@ -4,10 +4,6 @@ greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG += c++17
 
-# You can make your code fail to compile if it uses deprecated APIs.
-# In order to do so, uncomment the following line.
-#DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
-
 # Fallback include/lib paths if pkg-config isn't found:
 macx {
     # Homebrew on Apple Silicon or Intel
@@ -19,8 +15,11 @@ macx {
     LIBS        += -L/usr/local/lib
 }
 
-# Always link libsodium
-LIBS += -lsodium
+win32 {
+    # vcpkg-installed libsodium for MSVC 64-bit
+    INCLUDEPATH += "C:/Users/darah/MyRepos/vcpkg/installed/x64-windows/include"
+    LIBS        += "C:/Users/darah/MyRepos/vcpkg/installed/x64-windows/lib/libsodium.lib"
+}
 
 SOURCES += \
     authcontroller.cpp \
@@ -28,8 +27,7 @@ SOURCES += \
     logger.cpp \
     main.cpp \
     mainwindow.cpp \
-    networkmanager.cpp \
-
+    networkmanager.cpp
 
 HEADERS += \
     authcontroller.h \
