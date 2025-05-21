@@ -20,7 +20,7 @@
       <item>
        <widget class="QTabWidget" name="tabWidget">
         <property name="currentIndex">
-         <number>0</number>
+         <number>3</number>
         </property>
         <widget class="QWidget" name="Home">
          <attribute name="title">
@@ -145,7 +145,7 @@
            </rect>
           </property>
           <property name="text">
-           <string>Select FIle</string>
+           <string>Select File</string>
           </property>
          </widget>
          <widget class="QPushButton" name="pushButton_4">
@@ -185,7 +185,7 @@
      <x>0</x>
      <y>0</y>
      <width>1037</width>
-     <height>38</height>
+     <height>20</height>
     </rect>
    </property>
   </widget>
