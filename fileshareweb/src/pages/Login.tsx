@@ -13,7 +13,7 @@ import {
   Alert,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import { Visibility, VisibilityOff, Login as LoginIcon, Lock, Person } from '@mui/icons-material';
+import { Visibility, VisibilityOff, Login as LoginIcon, Lock, Person, Home } from '@mui/icons-material';
 import MatrixBackground from '../components/MatrixBackground.tsx';
 
 const Login: React.FC = () => {
@@ -63,8 +63,26 @@ const Login: React.FC = () => {
               border: '1px solid rgba(255, 255, 255, 0.1)',
               borderRadius: 2,
               boxShadow: '0 0 20px rgba(0, 255, 255, 0.2)',
+              position: 'relative',
             }}
           >
+            <Box sx={{ position: 'absolute', top: 16, left: 16 }}>
+              <Button
+                variant="outlined"
+                onClick={() => navigate('/')}
+                startIcon={<Home />}
+                sx={{
+                  color: '#00ff00',
+                  borderColor: 'rgba(0, 255, 0, 0.3)',
+                  '&:hover': {
+                    borderColor: '#00ff00',
+                    backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                  },
+                }}
+              >
+                Home
+              </Button>
+            </Box>
             <Box sx={{ textAlign: 'center', mb: 4 }}>
               <Typography
                 component="h1"
@@ -267,4 +285,4 @@ const Login: React.FC = () => {
   );
 };
 
-export default Login; 
+export default Login;

@@ -101,7 +101,7 @@ const GlitchText = styled(Typography)<{ theme?: Theme }>(({ theme }) => ({
   textTransform: 'uppercase',
   letterSpacing: '0.2em',
   position: 'relative',
-  textShadow: '0 0 20px rgba(33, 150, 243, 0.8)',
+  textShadow: '0 0 20px rgba(0, 255, 0, 0.8)',
   '&::before, &::after': {
     content: 'attr(data-text)',
     position: 'absolute',
@@ -126,11 +126,11 @@ const GlitchText = styled(Typography)<{ theme?: Theme }>(({ theme }) => ({
 }));
 
 const CyberButton = styled(Button)<{ theme?: Theme }>(({ theme }) => ({
-  background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
+  background: 'linear-gradient(45deg, #00ff00 30%, #00ffff 90%)',
   border: 0,
   borderRadius: 3,
-  boxShadow: '0 3px 5px 2px rgba(33, 203, 243, .3)',
-  color: 'white',
+  boxShadow: '0 3px 5px 2px rgba(0, 255, 0, .3)',
+  color: '#000',
   height: 56,
   padding: '0 40px',
   fontSize: '1.4rem',
@@ -146,11 +146,11 @@ const CyberButton = styled(Button)<{ theme?: Theme }>(({ theme }) => ({
     left: -100,
     width: '100%',
     height: '100%',
-    background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent)',
+    background: 'linear-gradient(90deg, transparent, rgba(0, 255, 0, 0.2), transparent)',
     transition: '0.5s',
   },
   '&:hover': {
-    background: 'linear-gradient(45deg, #21CBF3 30%, #2196F3 90%)',
+    background: 'linear-gradient(45deg, #00ffff 30%, #00ff00 90%)',
     transform: 'scale(1.05)',
     '&::before': {
       left: 100,
@@ -159,31 +159,31 @@ const CyberButton = styled(Button)<{ theme?: Theme }>(({ theme }) => ({
 }));
 
 const FeatureCard = styled(Box)<{ theme?: Theme }>(({ theme }) => ({
-  background: 'rgba(33, 150, 243, 0.15)',
+  background: 'rgba(0, 255, 0, 0.15)',
   borderRadius: '8px',
   padding: theme?.spacing(6),
   textAlign: 'center',
   backdropFilter: 'blur(10px)',
-  border: '1px solid rgba(33, 150, 243, 0.3)',
+  border: '1px solid rgba(0, 255, 0, 0.3)',
   transition: 'transform 0.3s ease',
   height: '300px',
   display: 'flex',
   flexDirection: 'column',
   justifyContent: 'center',
   alignItems: 'center',
-  boxShadow: '0 0 20px rgba(33, 150, 243, 0.2)',
+  boxShadow: '0 0 20px rgba(0, 255, 0, 0.2)',
   '&:hover': {
     transform: 'translateY(-5px)',
-    border: '1px solid rgba(33, 150, 243, 0.5)',
-    boxShadow: '0 0 30px rgba(33, 150, 243, 0.3)',
+    border: '1px solid rgba(0, 255, 0, 0.5)',
+    boxShadow: '0 0 30px rgba(0, 255, 0, 0.3)',
   },
 }));
 
 const FeatureIcon = styled(Box)<{ theme?: Theme }>(({ theme }) => ({
   fontSize: '4rem',
-  color: '#2196F3',
+  color: '#00ff00',
   marginBottom: theme?.spacing(3),
-  filter: 'drop-shadow(0 0 10px rgba(33, 150, 243, 0.5))',
+  filter: 'drop-shadow(0 0 10px rgba(0, 255, 0, 0.5))',
 }));
 
 const SectionTitle = styled(Typography)<{ theme?: Theme }>(({ theme }) => ({
@@ -195,7 +195,7 @@ const SectionTitle = styled(Typography)<{ theme?: Theme }>(({ theme }) => ({
   textTransform: 'uppercase',
   letterSpacing: '0.1em',
   position: 'relative',
-  textShadow: '0 0 15px rgba(33, 150, 243, 0.5)',
+  textShadow: '0 0 15px rgba(0, 255, 0, 0.5)',
   '&::after': {
     content: '""',
     position: 'absolute',
@@ -204,15 +204,15 @@ const SectionTitle = styled(Typography)<{ theme?: Theme }>(({ theme }) => ({
     transform: 'translateX(-50%)',
     width: '100px',
     height: '3px',
-    background: 'linear-gradient(90deg, #2196F3, #21CBF3)',
-    boxShadow: '0 0 10px rgba(33, 150, 243, 0.5)',
+    background: 'linear-gradient(90deg, #00ff00, #00ffff)',
+    boxShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
   },
 }));
 
 const StyledAppBar = styled(AppBar)<{ theme?: Theme }>(({ theme }) => ({
   background: 'rgba(0, 0, 0, 0.8)',
   backdropFilter: 'blur(10px)',
-  borderBottom: '1px solid rgba(33, 150, 243, 0.2)',
+  borderBottom: '1px solid rgba(0, 255, 0, 0.2)',
   '&::before': {
     content: '""',
     position: 'absolute',
@@ -220,14 +220,14 @@ const StyledAppBar = styled(AppBar)<{ theme?: Theme }>(({ theme }) => ({
     left: 0,
     right: 0,
     bottom: 0,
-    background: 'linear-gradient(90deg, transparent 0%, rgba(33, 150, 243, 0.1) 50%, transparent 100%)',
+    background: 'linear-gradient(90deg, transparent 0%, rgba(0, 255, 0, 0.1) 50%, transparent 100%)',
     animation: 'pulse 2s ease-in-out infinite',
   },
 }));
 
 const NavButton = styled(Button)<{ theme?: Theme }>(({ theme }) => ({
-  color: '#2196F3',
-  borderColor: '#2196F3',
+  color: '#00ff00',
+  borderColor: '#00ff00',
   position: 'relative',
   overflow: 'hidden',
   '&::before': {
@@ -237,13 +237,13 @@ const NavButton = styled(Button)<{ theme?: Theme }>(({ theme }) => ({
     left: -100,
     width: '100%',
     height: '100%',
-    background: 'linear-gradient(90deg, transparent, rgba(33, 150, 243, 0.2), transparent)',
+    background: 'linear-gradient(90deg, transparent, rgba(0, 255, 0, 0.2), transparent)',
     transition: '0.5s',
   },
   '&:hover': {
-    borderColor: '#21CBF3',
-    color: '#21CBF3',
-    background: 'rgba(33, 150, 243, 0.1)',
+    borderColor: '#00ffff',
+    color: '#00ffff',
+    background: 'rgba(0, 255, 0, 0.1)',
     '&::before': {
       left: 100,
     },
@@ -285,10 +285,10 @@ const Landing: React.FC = () => {
             component="div" 
             sx={{ 
               flexGrow: 1,
-              color: '#2196F3',
+              color: '#00ff00',
               fontWeight: 'bold',
               letterSpacing: '0.1em',
-              textShadow: '0 0 10px rgba(33, 150, 243, 0.5)',
+              textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
             }}
           >
             FileShare
@@ -313,9 +313,9 @@ const Landing: React.FC = () => {
             sx={{ 
               mb: 4, 
               textAlign: 'center',
-              color: '#2196F3',
+              color: '#00ff00',
               fontWeight: '800',
-              textShadow: '0 0 15px rgba(33, 150, 243, 0.6)',
+              textShadow: '0 0 15px rgba(0, 255, 0, 0.6)',
               letterSpacing: '0.1em',
             }}
           >
@@ -361,7 +361,16 @@ const Landing: React.FC = () => {
                 <FeatureIcon>
                   {feature.icon}
                 </FeatureIcon>
-                <Typography variant="h5" color="primary" gutterBottom sx={{ fontWeight: 'bold', textShadow: '0 0 10px rgba(33, 150, 243, 0.3)' }}>
+                <Typography 
+                  variant="h5" 
+                  gutterBottom 
+                  sx={{ 
+                    fontWeight: 'bold', 
+                    color: '#00ffff',
+                    textShadow: '0 0 10px rgba(0, 255, 255, 0.3)',
+                    letterSpacing: '0.05em',
+                  }}
+                >
                   {feature.title}
                 </Typography>
                 <Typography variant="body1" sx={{ color: '#ffffff', textShadow: '0 0 5px rgba(255, 255, 255, 0.2)' }}>
