@@ -23,6 +23,7 @@ macx {
 LIBS += -lsodium
 
 SOURCES += \
+    authcontroller.cpp \
     crypto_utils.cpp \
     logger.cpp \
     main.cpp \
@@ -31,6 +32,7 @@ SOURCES += \
 
 
 HEADERS += \
+    authcontroller.h \
     crypto_utils.h \
     logger.h \
     mainwindow.h \
