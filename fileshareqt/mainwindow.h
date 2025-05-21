@@ -2,30 +2,34 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include "networkmanager.h"
+#include <QString>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
+
+class NetworkManager;
+class AuthController;
 
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
 public:
-    MainWindow(QWidget *parent = nullptr);
+    explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
 private slots:
-    void on_connectButton_clicked();
-    void on_sendButton_clicked();
-    void onConnected();
-    void onDisconnected();
-    void onDataReceived(const QString &message);
+    void onServerConnected();
+    void onServerDisconnected();
+    //  slots for button clicks
+    void on_signupButton_clicked();
+    void on_loginButton_clicked();
 
 private:
-    Ui::MainWindow *ui;
-    NetworkManager *networkManager;
+    Ui::MainWindow      *ui;
+    NetworkManager      *networkManager;
+    AuthController      *authController;
 };
 
 #endif // MAINWINDOW_H
