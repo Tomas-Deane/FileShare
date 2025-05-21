@@ -6,7 +6,15 @@ import SecurityIcon from '@mui/icons-material/Security';
 import SpeedIcon from '@mui/icons-material/Speed';
 import StorageIcon from '@mui/icons-material/Storage';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import { SvgIconComponent } from '@mui/icons-material';
+import type { Theme } from '@mui/material/styles';
 import type { GridProps } from '@mui/material/Grid';
+
+interface Feature {
+  icon: React.ReactElement<SvgIconComponent>;
+  title: string;
+  description: string;
+}
 
 // Cyberpunk animations
 const glitch = keyframes`
@@ -49,7 +57,7 @@ const matrixRain = keyframes`
   }
 `;
 
-const StyledContainer = styled(Container)(({ theme }) => ({
+const StyledContainer = styled(Container)<{ theme?: Theme }>(({ theme }) => ({
   minHeight: '100vh',
   display: 'flex',
   flexDirection: 'column',
@@ -83,12 +91,12 @@ const StyledContainer = styled(Container)(({ theme }) => ({
   },
 }));
 
-const GlitchText = styled(Typography)(({ theme }) => ({
+const GlitchText = styled(Typography)<{ theme?: Theme }>(({ theme }) => ({
   color: '#ffffff',
   fontSize: '4rem',
   fontWeight: '900',
   textAlign: 'center',
-  marginBottom: theme.spacing(4),
+  marginBottom: theme?.spacing(4),
   animation: `${glitch} 3s infinite`,
   textTransform: 'uppercase',
   letterSpacing: '0.2em',
@@ -117,7 +125,7 @@ const GlitchText = styled(Typography)(({ theme }) => ({
   },
 }));
 
-const CyberButton = styled(Button)(({ theme }) => ({
+const CyberButton = styled(Button)<{ theme?: Theme }>(({ theme }) => ({
   background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
   border: 0,
   borderRadius: 3,
@@ -150,10 +158,10 @@ const CyberButton = styled(Button)(({ theme }) => ({
   },
 }));
 
-const FeatureCard = styled(Box)(({ theme }) => ({
+const FeatureCard = styled(Box)<{ theme?: Theme }>(({ theme }) => ({
   background: 'rgba(33, 150, 243, 0.15)',
   borderRadius: '8px',
-  padding: theme.spacing(6),
+  padding: theme?.spacing(6),
   textAlign: 'center',
   backdropFilter: 'blur(10px)',
   border: '1px solid rgba(33, 150, 243, 0.3)',
@@ -171,19 +179,19 @@ const FeatureCard = styled(Box)(({ theme }) => ({
   },
 }));
 
-const FeatureIcon = styled(Box)(({ theme }) => ({
+const FeatureIcon = styled(Box)<{ theme?: Theme }>(({ theme }) => ({
   fontSize: '4rem',
   color: '#2196F3',
-  marginBottom: theme.spacing(3),
+  marginBottom: theme?.spacing(3),
   filter: 'drop-shadow(0 0 10px rgba(33, 150, 243, 0.5))',
 }));
 
-const SectionTitle = styled(Typography)(({ theme }) => ({
+const SectionTitle = styled(Typography)<{ theme?: Theme }>(({ theme }) => ({
   color: '#ffffff',
   fontSize: '2.5rem',
   fontWeight: 'bold',
   textAlign: 'center',
-  marginBottom: theme.spacing(6),
+  marginBottom: theme?.spacing(6),
   textTransform: 'uppercase',
   letterSpacing: '0.1em',
   position: 'relative',
@@ -201,7 +209,7 @@ const SectionTitle = styled(Typography)(({ theme }) => ({
   },
 }));
 
-const StyledAppBar = styled(AppBar)(({ theme }) => ({
+const StyledAppBar = styled(AppBar)<{ theme?: Theme }>(({ theme }) => ({
   background: 'rgba(0, 0, 0, 0.8)',
   backdropFilter: 'blur(10px)',
   borderBottom: '1px solid rgba(33, 150, 243, 0.2)',
@@ -217,7 +225,7 @@ const StyledAppBar = styled(AppBar)(({ theme }) => ({
   },
 }));
 
-const NavButton = styled(Button)(({ theme }) => ({
+const NavButton = styled(Button)<{ theme?: Theme }>(({ theme }) => ({
   color: '#2196F3',
   borderColor: '#2196F3',
   position: 'relative',
@@ -242,7 +250,7 @@ const NavButton = styled(Button)(({ theme }) => ({
   },
 }));
 
-const features = [
+const features: Feature[] = [
   {
     icon: <SecurityIcon sx={{ fontSize: 40 }} />,
     title: 'End-to-End Encryption',
@@ -265,7 +273,7 @@ const features = [
   },
 ];
 
-const Landing = () => {
+const Landing: React.FC = () => {
   const navigate = useNavigate();
 
   return (
