@@ -83,6 +83,7 @@ async def _handle_authenticate(msg, writer, db, session): # take signature from 
     try:
         Ed25519PublicKey.from_public_bytes(pubkey).verify(signature, challenge) # this .verify uses complex discrete logarithm math to verify the challenge was signed by the client's private key using only the clients public key
         logging.info(f"Signature valid for '{username}'")
+        session.pop('challenge', None)
         await send_response(writer, {'status':'ok','message':'login successful'})
     except InvalidSignature:
         logging.warning(f"Bad signature for '{username}'")
