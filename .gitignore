@@ -56,25 +56,25 @@ compile_commands.json
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
-/.pnp
-.pnp.js
+fileshareweb/node_modules
+fileshareweb/.pnp
+fileshareweb/.pnp.js
 
 # testing
-/coverage
+fileshareweb/coverage
 
 # production
-/build
+fileshareweb/build
 
 # misc
-.DS_Store
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+fileshareweb/.DS_Store
+fileshareweb/.env.local
+fileshareweb/.env.development.local
+fileshareweb/.env.test.local
+fileshareweb/.env.production.local
 
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+fileshareweb/npm-debug.log*
+fileshareweb/yarn-debug.log*
+fileshareweb/yarn-error.log*
 
 fileshareweb/package-lock.json
