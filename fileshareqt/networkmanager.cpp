@@ -46,7 +46,7 @@ void NetworkManager::onDisconnectedSlot(){ emit disconnected(); }
 
 void NetworkManager::onReadyRead()
 {
-    buffer.append(socket->readAll()); // read all info from socket (TCP is stream, so we might read partial messages, need delimiter (/n)
+    buffer.append(socket->readAll()); // read all info from socket (TCP is stream, so we might read partial messages, need delimiter (\n)
     int i;
     while ((i = buffer.indexOf('\n')) != -1) { // /n indicates end of message, add to persistent buffer until message end, then process message
         QByteArray line = buffer.left(i);
