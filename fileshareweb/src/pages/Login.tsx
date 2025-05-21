@@ -95,7 +95,7 @@ const Login: React.FC = () => {
                   letterSpacing: 2,
                 }}
               >
-                SECURE LOGIN
+                LOGIN
               </Typography>
               <Typography
                 variant="subtitle1"
