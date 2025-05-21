@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QtNetwork/QTcpSocket>
+#include <QJsonObject>
 
 class NetworkManager : public QObject
 {
@@ -10,12 +11,25 @@ class NetworkManager : public QObject
 public:
     explicit NetworkManager(QObject *parent = nullptr);
     void connectToHost(const QString &host, quint16 port);
-    void sendMessage(const QString &message);
+    void signup(const QJsonObject &payload);
+    void login(const QString &username);
+    void authenticate(const QString &username, const QByteArray &signature);
 
 signals:
     void connected();
     void disconnected();
-    void messageReceived(const QString &message);
+    void signupResult(bool success, const QString &error);
+    void loginChallenge(
+        const QByteArray &nonce,
+        const QByteArray &salt,
+        int opslimit,
+        int memlimit,
+        const QByteArray &encryptedPrivKey,
+        const QByteArray &privKeyNonce
+        );
+    void loginResult(bool success, const QString &error);
+
+    void serverMessage(const QString &rawJson); // emit raw json from server (for logging)
 
 private slots:
     void onConnectedSlot();
@@ -23,8 +37,12 @@ private slots:
     void onReadyRead();
 
 private:
+    void sendJson(const QJsonObject &obj);
+    void handleMessage(const QJsonObject &msg);
+
     QTcpSocket *socket;
-    QByteArray buffer;
+    QByteArray   buffer;
+    enum Pending { None, Signup, Login, Authenticate } pending = None;
 };
 
 #endif // NETWORKMANAGER_H
