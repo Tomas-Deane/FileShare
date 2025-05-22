@@ -9,7 +9,15 @@ import {
   Folder as FolderIcon, Person as PersonIcon, Lock as LockIcon, LockOpen as LockOpenIcon,
   Search as SearchIcon, VerifiedUser as VerifiedUserIcon, People as PeopleIcon,
   Home as HomeIcon, Storage as StorageIcon, Security as SecurityIcon, Settings as SettingsIcon,
-  Edit as EditIcon, PhotoCamera as PhotoCameraIcon
+  Edit as EditIcon, PhotoCamera as PhotoCameraIcon,
+  PictureAsPdf as PdfIcon,
+  Image as ImageIcon,
+  Description as TextIcon,
+  Code as CodeIcon,
+  Movie as VideoIcon,
+  Audiotrack as AudioIcon,
+  Archive as ArchiveIcon,
+  InsertDriveFile as DefaultFileIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
@@ -95,12 +103,68 @@ const SearchField = styled(TextField)(({ theme }) => ({
   },
 }));
 
-// Mock data for demonstration
+// Add this after the mock data and before the Dashboard component
+const getFileIcon = (fileName: string) => {
+  const extension = fileName.split('.').pop()?.toLowerCase();
+  
+  const iconMap: { [key: string]: React.ReactElement } = {
+    // Documents
+    'pdf': <PdfIcon sx={{ color: '#ff0000' }} />,
+    'doc': <TextIcon sx={{ color: '#2196f3' }} />,
+    'docx': <TextIcon sx={{ color: '#2196f3' }} />,
+    'txt': <TextIcon sx={{ color: '#757575' }} />,
+    'rtf': <TextIcon sx={{ color: '#757575' }} />,
+    
+    // Images
+    'jpg': <ImageIcon sx={{ color: '#4caf50' }} />,
+    'jpeg': <ImageIcon sx={{ color: '#4caf50' }} />,
+    'png': <ImageIcon sx={{ color: '#4caf50' }} />,
+    'gif': <ImageIcon sx={{ color: '#4caf50' }} />,
+    'bmp': <ImageIcon sx={{ color: '#4caf50' }} />,
+    'svg': <ImageIcon sx={{ color: '#4caf50' }} />,
+    
+    // Code
+    'js': <CodeIcon sx={{ color: '#f7df1e' }} />,
+    'jsx': <CodeIcon sx={{ color: '#61dafb' }} />,
+    'ts': <CodeIcon sx={{ color: '#007acc' }} />,
+    'tsx': <CodeIcon sx={{ color: '#007acc' }} />,
+    'html': <CodeIcon sx={{ color: '#e34c26' }} />,
+    'css': <CodeIcon sx={{ color: '#264de4' }} />,
+    'py': <CodeIcon sx={{ color: '#3776ab' }} />,
+    'java': <CodeIcon sx={{ color: '#007396' }} />,
+    'cpp': <CodeIcon sx={{ color: '#00599c' }} />,
+    'c': <CodeIcon sx={{ color: '#00599c' }} />,
+    
+    // Media
+    'mp4': <VideoIcon sx={{ color: '#ff4081' }} />,
+    'avi': <VideoIcon sx={{ color: '#ff4081' }} />,
+    'mov': <VideoIcon sx={{ color: '#ff4081' }} />,
+    'mp3': <AudioIcon sx={{ color: '#9c27b0' }} />,
+    'wav': <AudioIcon sx={{ color: '#9c27b0' }} />,
+    'ogg': <AudioIcon sx={{ color: '#9c27b0' }} />,
+    
+    // Archives
+    'zip': <ArchiveIcon sx={{ color: '#ff9800' }} />,
+    'rar': <ArchiveIcon sx={{ color: '#ff9800' }} />,
+    '7z': <ArchiveIcon sx={{ color: '#ff9800' }} />,
+    'tar': <ArchiveIcon sx={{ color: '#ff9800' }} />,
+    'gz': <ArchiveIcon sx={{ color: '#ff9800' }} />,
+  };
+
+  return iconMap[extension || ''] || <DefaultFileIcon sx={{ color: '#757575' }} />;
+};
+
+// Update the mock files to include more file types
 const mockFiles = [
   { id: 1, name: 'document.pdf', type: 'pdf', size: '2.5 MB', shared: false },
   { id: 2, name: 'image.jpg', type: 'image', size: '1.8 MB', shared: true },
   { id: 3, name: 'code.zip', type: 'archive', size: '5.2 MB', shared: false },
+  { id: 4, name: 'script.js', type: 'code', size: '0.5 MB', shared: false },
+  { id: 5, name: 'video.mp4', type: 'video', size: '15.7 MB', shared: true },
+  { id: 6, name: 'music.mp3', type: 'audio', size: '3.2 MB', shared: false },
+  { id: 7, name: 'styles.css', type: 'code', size: '0.3 MB', shared: false },
 ];
+
 const mockSharedFiles = [
   { id: 4, name: 'shared_doc.pdf', type: 'pdf', size: '3.1 MB', sharedBy: 'user1' },
   { id: 5, name: 'shared_image.jpg', type: 'image', size: '2.3 MB', sharedBy: 'user2' },
@@ -337,7 +401,7 @@ const Dashboard: React.FC = () => {
                       }}
                     >
                       <ListItemIcon>
-                        <FolderIcon sx={{ color: '#00ff00' }} />
+                        {getFileIcon(file.name)}
                       </ListItemIcon>
                       <ListItemText
                         primary={file.name}
