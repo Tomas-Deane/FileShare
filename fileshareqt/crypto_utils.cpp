@@ -1,5 +1,5 @@
-// File: fileshareqt/crypto_utils.cpp
 #include "crypto_utils.h"
+#include "logger.h"
 #include <sodium.h>
 
 QByteArray CryptoUtils::derivePDK(const QString &password,
@@ -9,16 +9,18 @@ QByteArray CryptoUtils::derivePDK(const QString &password,
 {
     QByteArray pdk(crypto_aead_xchacha20poly1305_ietf_KEYBYTES, 0);
     if (crypto_pwhash_argon2id(
-            reinterpret_cast<unsigned char*>(pdk.data()), pdk.size(), // reinterpret_cast<unsigned char*> means treat these bits as if they were the new type
-            password.toUtf8().constData(), password.size(),            // libsodium expects pointers to unsigned char (byte buffer) but QByteArray gives char*
-            reinterpret_cast<const unsigned char*>(salt.constData()), // pdk.data() returns char*, reinterpret_cast<unsigned char*>(pdk.data()) says it is unsigned char
-            opslimit, memlimit, crypto_pwhash_ALG_ARGON2ID13) != 0) { // static_cast<unsigned char*>(pdk.data()) wont compile (no known conversion)
-        return {};                                                     // C-style cast (unsigned char*)pdk.data() risks conversions, so reinterpret cast is standardly used.
+            reinterpret_cast<unsigned char*>(pdk.data()), pdk.size(),
+            password.toUtf8().constData(), password.size(),
+            reinterpret_cast<const unsigned char*>(salt.constData()),
+            opslimit, memlimit, crypto_pwhash_ALG_ARGON2ID13) != 0) {
+        Logger::log("PDK derivation failed");
+        return {};
     }
+    Logger::log("Derived PDK: " + pdk.toHex());
     return pdk;
 }
 
-void CryptoUtils::generateKeyPair(QByteArray &publicKey, // using OS's CSPRNG
+void CryptoUtils::generateKeyPair(QByteArray &publicKey,
                                   QByteArray &secretKey)
 {
     publicKey.resize(crypto_sign_PUBLICKEYBYTES);
@@ -27,6 +29,8 @@ void CryptoUtils::generateKeyPair(QByteArray &publicKey, // using OS's CSPRNG
         reinterpret_cast<unsigned char*>(publicKey.data()),
         reinterpret_cast<unsigned char*>(secretKey.data())
         );
+    Logger::log("Generated keypair: pub=" + publicKey.toHex() +
+                " sec=" + secretKey.toHex());
 }
 
 QByteArray CryptoUtils::encryptSecretKey(const QByteArray &secretKey,
@@ -35,6 +39,7 @@ QByteArray CryptoUtils::encryptSecretKey(const QByteArray &secretKey,
 {
     nonce.resize(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
     randombytes_buf(reinterpret_cast<unsigned char*>(nonce.data()), nonce.size());
+    Logger::log("Generated secret key nonce: " + nonce.toHex());
 
     QByteArray out(secretKey.size() + crypto_aead_xchacha20poly1305_ietf_ABYTES, 0);
     unsigned long long clen;
@@ -46,6 +51,7 @@ QByteArray CryptoUtils::encryptSecretKey(const QByteArray &secretKey,
         reinterpret_cast<const unsigned char*>(pdk.constData())
         );
     out.resize(clen);
+    Logger::log("Encrypted secret key: " + out.toHex());
     return out;
 }
 
@@ -53,6 +59,8 @@ QByteArray CryptoUtils::decryptSecretKey(const QByteArray &encryptedSK,
                                          const QByteArray &pdk,
                                          const QByteArray &nonce)
 {
+    Logger::log("Decrypting secret key: nonce=" + nonce.toHex() +
+                " encryptedSK=" + encryptedSK.toHex());
     QByteArray out(encryptedSK.size(), 0);
     unsigned long long plen;
     if (crypto_aead_xchacha20poly1305_ietf_decrypt(
@@ -63,9 +71,11 @@ QByteArray CryptoUtils::decryptSecretKey(const QByteArray &encryptedSK,
             reinterpret_cast<const unsigned char*>(nonce.constData()),
             reinterpret_cast<const unsigned char*>(pdk.constData())
             ) != 0) {
+        Logger::log("Secret key decryption failed");
         return {};
     }
     out.resize(plen);
+    Logger::log("Decrypted secret key: " + out.toHex());
     return out;
 }
 
@@ -78,5 +88,6 @@ QByteArray CryptoUtils::signMessage(const QByteArray &message,
         reinterpret_cast<const unsigned char*>(message.constData()), message.size(),
         reinterpret_cast<const unsigned char*>(secretKey.constData())
         );
+    Logger::log("Signature: " + sig.toHex());
     return sig;
 }
