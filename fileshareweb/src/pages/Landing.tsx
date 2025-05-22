@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Button, Container, Typography, AppBar, Toolbar, keyframes } from '@mui/material';
+import { Box, Button, Container, Typography, Toolbar, keyframes } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import SecurityIcon from '@mui/icons-material/Security';
 import SpeedIcon from '@mui/icons-material/Speed';
@@ -8,7 +8,15 @@ import StorageIcon from '@mui/icons-material/Storage';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import { SvgIconComponent } from '@mui/icons-material';
 import type { Theme } from '@mui/material/styles';
-import type { GridProps } from '@mui/material/Grid';
+import { 
+  CyberButton, 
+  CyberAppBar, 
+  NavButton, 
+  SectionTitle, 
+  FeatureCard, 
+  FeatureIcon,
+  MatrixBackground 
+} from '../components';
 
 interface Feature {
   icon: React.ReactElement<SvgIconComponent>;
@@ -93,7 +101,7 @@ const StyledContainer = styled(Container)<{ theme?: Theme }>(({ theme }) => ({
 
 const GlitchText = styled(Typography)<{ theme?: Theme }>(({ theme }) => ({
   color: '#ffffff',
-  fontSize: '4rem',
+  fontSize: '3rem',
   fontWeight: '900',
   textAlign: 'center',
   marginBottom: theme?.spacing(4),
@@ -125,131 +133,6 @@ const GlitchText = styled(Typography)<{ theme?: Theme }>(({ theme }) => ({
   },
 }));
 
-const CyberButton = styled(Button)<{ theme?: Theme }>(({ theme }) => ({
-  background: 'linear-gradient(45deg, #00ff00 30%, #00ffff 90%)',
-  border: 0,
-  borderRadius: 3,
-  boxShadow: '0 3px 5px 2px rgba(0, 255, 0, .3)',
-  color: '#000',
-  height: 56,
-  padding: '0 40px',
-  fontSize: '1.4rem',
-  textTransform: 'uppercase',
-  letterSpacing: '0.1em',
-  transition: 'all 0.3s ease',
-  position: 'relative',
-  overflow: 'hidden',
-  '&::before': {
-    content: '""',
-    position: 'absolute',
-    top: 0,
-    left: -100,
-    width: '100%',
-    height: '100%',
-    background: 'linear-gradient(90deg, transparent, rgba(0, 255, 0, 0.2), transparent)',
-    transition: '0.5s',
-  },
-  '&:hover': {
-    background: 'linear-gradient(45deg, #00ffff 30%, #00ff00 90%)',
-    transform: 'scale(1.05)',
-    '&::before': {
-      left: 100,
-    },
-  },
-}));
-
-const FeatureCard = styled(Box)<{ theme?: Theme }>(({ theme }) => ({
-  background: 'rgba(0, 255, 0, 0.15)',
-  borderRadius: '8px',
-  padding: theme?.spacing(6),
-  textAlign: 'center',
-  backdropFilter: 'blur(10px)',
-  border: '1px solid rgba(0, 255, 0, 0.3)',
-  transition: 'transform 0.3s ease',
-  height: '300px',
-  display: 'flex',
-  flexDirection: 'column',
-  justifyContent: 'center',
-  alignItems: 'center',
-  boxShadow: '0 0 20px rgba(0, 255, 0, 0.2)',
-  '&:hover': {
-    transform: 'translateY(-5px)',
-    border: '1px solid rgba(0, 255, 0, 0.5)',
-    boxShadow: '0 0 30px rgba(0, 255, 0, 0.3)',
-  },
-}));
-
-const FeatureIcon = styled(Box)<{ theme?: Theme }>(({ theme }) => ({
-  fontSize: '4rem',
-  color: '#00ff00',
-  marginBottom: theme?.spacing(3),
-  filter: 'drop-shadow(0 0 10px rgba(0, 255, 0, 0.5))',
-}));
-
-const SectionTitle = styled(Typography)<{ theme?: Theme }>(({ theme }) => ({
-  color: '#ffffff',
-  fontSize: '2.5rem',
-  fontWeight: 'bold',
-  textAlign: 'center',
-  marginBottom: theme?.spacing(6),
-  textTransform: 'uppercase',
-  letterSpacing: '0.1em',
-  position: 'relative',
-  textShadow: '0 0 15px rgba(0, 255, 0, 0.5)',
-  '&::after': {
-    content: '""',
-    position: 'absolute',
-    bottom: '-10px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    width: '100px',
-    height: '3px',
-    background: 'linear-gradient(90deg, #00ff00, #00ffff)',
-    boxShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
-  },
-}));
-
-const StyledAppBar = styled(AppBar)<{ theme?: Theme }>(({ theme }) => ({
-  background: 'rgba(0, 0, 0, 0.8)',
-  backdropFilter: 'blur(10px)',
-  borderBottom: '1px solid rgba(0, 255, 0, 0.2)',
-  '&::before': {
-    content: '""',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'linear-gradient(90deg, transparent 0%, rgba(0, 255, 0, 0.1) 50%, transparent 100%)',
-    animation: 'pulse 2s ease-in-out infinite',
-  },
-}));
-
-const NavButton = styled(Button)<{ theme?: Theme }>(({ theme }) => ({
-  color: '#00ff00',
-  borderColor: '#00ff00',
-  position: 'relative',
-  overflow: 'hidden',
-  '&::before': {
-    content: '""',
-    position: 'absolute',
-    top: 0,
-    left: -100,
-    width: '100%',
-    height: '100%',
-    background: 'linear-gradient(90deg, transparent, rgba(0, 255, 0, 0.2), transparent)',
-    transition: '0.5s',
-  },
-  '&:hover': {
-    borderColor: '#00ffff',
-    color: '#00ffff',
-    background: 'rgba(0, 255, 0, 0.1)',
-    '&::before': {
-      left: 100,
-    },
-  },
-}));
-
 const features: Feature[] = [
   {
     icon: <SecurityIcon sx={{ fontSize: 40 }} />,
@@ -278,7 +161,8 @@ const Landing: React.FC = () => {
 
   return (
     <>
-      <StyledAppBar position="fixed" elevation={0}>
+      <MatrixBackground />
+      <CyberAppBar position="fixed" elevation={0}>
         <Toolbar>
           <Typography 
             variant="h6" 
@@ -300,7 +184,7 @@ const Landing: React.FC = () => {
             Login
           </NavButton>
         </Toolbar>
-      </StyledAppBar>
+      </CyberAppBar>
       <Toolbar /> {/* Spacer for fixed AppBar */}
       <StyledContainer maxWidth={false}>
         {/* Hero Section */}
@@ -317,6 +201,7 @@ const Landing: React.FC = () => {
               fontWeight: '800',
               textShadow: '0 0 15px rgba(0, 255, 0, 0.6)',
               letterSpacing: '0.1em',
+              fontSize: '1.5rem',
             }}
           >
             Secure. Fast. Decentralized.
@@ -331,6 +216,7 @@ const Landing: React.FC = () => {
               fontWeight: '600',
               textShadow: '0 0 10px rgba(255, 255, 255, 0.5)',
               lineHeight: 1.6,
+              fontSize: '1.1rem',
             }}
           >
             Experience the future of file sharing with our cutting-edge decentralized platform.
@@ -369,11 +255,19 @@ const Landing: React.FC = () => {
                     color: '#00ffff',
                     textShadow: '0 0 10px rgba(0, 255, 255, 0.3)',
                     letterSpacing: '0.05em',
+                    fontSize: '1.2rem',
                   }}
                 >
                   {feature.title}
                 </Typography>
-                <Typography variant="body1" sx={{ color: '#ffffff', textShadow: '0 0 5px rgba(255, 255, 255, 0.2)' }}>
+                <Typography 
+                  variant="body1" 
+                  sx={{ 
+                    color: '#ffffff', 
+                    textShadow: '0 0 5px rgba(255, 255, 255, 0.2)',
+                    fontSize: '0.9rem',
+                  }}
+                >
                   {feature.description}
                 </Typography>
               </FeatureCard>
