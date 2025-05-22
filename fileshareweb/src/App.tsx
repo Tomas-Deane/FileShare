@@ -7,6 +7,7 @@ import { createTheme } from '@mui/material/styles';
 import Login from './pages/Login.tsx';
 import Signup from './pages/Signup.tsx';
 import Dashboard from './pages/Dashboard.tsx';
+import Landing from './pages/Landing.tsx';
 
 // Create a secure theme
 const theme = createTheme({
@@ -37,14 +38,12 @@ function App() {
       <Router>
         <Routes>
           {/* Public routes */}
+          <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           
           {/* Protected routes */}
           <Route path="/dashboard" element={<Dashboard />} />
-          
-          {/* Redirect root to login */}
-          <Route path="/" element={<Navigate to="/login" replace />} />
         </Routes>
       </Router>
     </ThemeProvider>
