@@ -186,9 +186,34 @@ const mockFiles: RecentFile[] = [
   { id: 7, name: 'styles.css', type: 'code', size: '0.3 MB', shared: false, date: '2024-03-16T13:45:00', lastModified: '2024-03-22T08:45:00' },
 ];
 
-const mockSharedFiles = [
-  { id: 4, name: 'shared_doc.pdf', type: 'pdf', size: '3.1 MB', sharedBy: 'user1' },
-  { id: 5, name: 'shared_image.jpg', type: 'image', size: '2.3 MB', sharedBy: 'user2' },
+const mockSharedFiles: SharedFile[] = [
+  { 
+    id: 1, 
+    name: 'project_document.pdf', 
+    type: 'pdf', 
+    size: '2.5 MB', 
+    sharedBy: 'John Doe', 
+    sharedAt: '2024-03-20T10:30:00',
+    permissions: 'read'
+  },
+  { 
+    id: 2, 
+    name: 'team_presentation.pptx', 
+    type: 'presentation', 
+    size: '5.8 MB', 
+    sharedBy: 'Jane Smith', 
+    sharedAt: '2024-03-21T15:45:00',
+    permissions: 'write'
+  },
+  { 
+    id: 3, 
+    name: 'design_assets.zip', 
+    type: 'archive', 
+    size: '15.2 MB', 
+    sharedBy: 'Bob Johnson', 
+    sharedAt: '2024-03-22T09:15:00',
+    permissions: 'admin'
+  },
 ];
 
 const mockUsers = [
@@ -230,6 +255,43 @@ const mockShareUsers: ShareUser[] = [
   { id: 2, email: 'user2@example.com', name: 'Jane Smith' },
   { id: 3, email: 'user3@example.com', name: 'Bob Johnson' },
 ];
+
+// Add this after the existing interfaces
+interface SharedFile {
+  id: number;
+  name: string;
+  type: string;
+  size: string;
+  sharedBy: string;
+  sharedAt: string;
+  permissions: 'read' | 'write' | 'admin';
+}
+
+// Add this function to get permission color
+const getPermissionColor = (permission: string) => {
+  switch (permission) {
+    case 'read':
+      return '#00ff00';
+    case 'write':
+      return '#00ffff';
+    case 'admin':
+      return '#ff00ff';
+    default:
+      return '#00ff00';
+  }
+};
+
+// Add this function to format the time difference
+const getTimeAgo = (dateString: string) => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffInSeconds < 60) return 'just now';
+  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+  return `${Math.floor(diffInSeconds / 86400)}d ago`;
+};
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -389,18 +451,6 @@ const Dashboard: React.FC = () => {
       .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime())
       .slice(0, 3); // Get only the 3 most recent files
   }, []);
-
-  // Add this function to format the time difference
-  const getTimeAgo = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-    if (diffInSeconds < 60) return 'just now';
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-    return `${Math.floor(diffInSeconds / 86400)}d ago`;
-  };
 
   // Add these functions for search history
   const handleSearchFocus = (event: React.FocusEvent<HTMLInputElement>) => {
@@ -746,6 +796,115 @@ const Dashboard: React.FC = () => {
                                   </IconButton>
                                 </Tooltip>
                               </Box>
+                            </Box>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                    ))}
+                  </Grid>
+                </Box>
+
+                {/* Shared with Me Section */}
+                <Box sx={{ mb: 4 }}>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      color: '#00ffff',
+                      textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                      mb: 2,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                    }}
+                  >
+                    <PeopleIcon sx={{ color: '#00ff00' }} />
+                    Shared with Me
+                  </Typography>
+                  <Grid container spacing={2}>
+                    {mockSharedFiles.map((file) => (
+                      <Grid item xs={12} md={4} key={file.id}>
+                        <Card
+                          sx={{
+                            background: 'rgba(0, 0, 0, 0.5)',
+                            border: '1px solid rgba(0, 255, 0, 0.2)',
+                            borderRadius: 1,
+                            transition: 'all 0.3s ease',
+                            '&:hover': {
+                              border: '1px solid rgba(0, 255, 0, 0.4)',
+                              transform: 'translateY(-2px)',
+                              boxShadow: '0 0 20px rgba(0, 255, 0, 0.2)',
+                            },
+                          }}
+                        >
+                          <CardContent>
+                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                              <Box sx={{ mr: 2 }}>
+                                {getFileIcon(file.name)}
+                              </Box>
+                              <Box sx={{ flexGrow: 1 }}>
+                                <Typography
+                                  variant="subtitle1"
+                                  sx={{
+                                    color: '#00ffff',
+                                    fontWeight: 'bold',
+                                    mb: 0.5,
+                                  }}
+                                >
+                                  {file.name}
+                                </Typography>
+                                <Typography
+                                  variant="body2"
+                                  sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+                                >
+                                  {file.type.toUpperCase()} • {file.size}
+                                </Typography>
+                              </Box>
+                            </Box>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <Box>
+                                <Typography
+                                  variant="caption"
+                                  sx={{ 
+                                    color: 'rgba(0, 255, 0, 0.5)',
+                                    display: 'block',
+                                  }}
+                                >
+                                  Shared by {file.sharedBy}
+                                </Typography>
+                                <Typography
+                                  variant="caption"
+                                  sx={{ 
+                                    color: 'rgba(0, 255, 0, 0.5)',
+                                    display: 'block',
+                                  }}
+                                >
+                                  {getTimeAgo(file.sharedAt)}
+                                </Typography>
+                              </Box>
+                              <Chip
+                                label={file.permissions.toUpperCase()}
+                                size="small"
+                                sx={{
+                                  background: 'rgba(0, 0, 0, 0.5)',
+                                  border: `1px solid ${getPermissionColor(file.permissions)}`,
+                                  color: getPermissionColor(file.permissions),
+                                  fontWeight: 'bold',
+                                }}
+                              />
+                            </Box>
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
+                              <Tooltip title="Download">
+                                <IconButton size="small" onClick={() => handleDownload(file.id)} sx={{ color: '#00ff00' }}>
+                                  <DownloadIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              {file.permissions !== 'read' && (
+                                <Tooltip title="Edit">
+                                  <IconButton size="small" onClick={() => handleEdit(file.id)} sx={{ color: '#00ff00' }}>
+                                    <EditIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
                             </Box>
                           </CardContent>
                         </Card>
