@@ -3,7 +3,7 @@ import {
   Box, Container, Typography, Button, Paper, Grid, List, ListItem, ListItemText,
   ListItemIcon, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider, Avatar,
-  Select, MenuItem, FormControl, InputLabel
+  Select, MenuItem, FormControl, InputLabel, Card, CardContent
 } from '@mui/material';
 import {
   Upload as UploadIcon, Share as ShareIcon, Delete as DeleteIcon, Download as DownloadIcon,
@@ -19,7 +19,8 @@ import {
   Audiotrack as AudioIcon,
   Archive as ArchiveIcon,
   InsertDriveFile as DefaultFileIcon,
-  Sort as SortIcon
+  Sort as SortIcon,
+  AccessTime as AccessTimeIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
@@ -160,15 +161,26 @@ const getFileIcon = (fileName: string) => {
 type SortOption = 'name' | 'date' | 'size' | 'type';
 type SortDirection = 'asc' | 'desc';
 
-// Update the mock files to include dates
-const mockFiles = [
-  { id: 1, name: 'document.pdf', type: 'pdf', size: '2.5 MB', shared: false, date: '2024-03-20T10:30:00' },
-  { id: 2, name: 'image.jpg', type: 'image', size: '1.8 MB', shared: true, date: '2024-03-19T15:45:00' },
-  { id: 3, name: 'code.zip', type: 'archive', size: '5.2 MB', shared: false, date: '2024-03-21T09:15:00' },
-  { id: 4, name: 'script.js', type: 'code', size: '0.5 MB', shared: false, date: '2024-03-18T14:20:00' },
-  { id: 5, name: 'video.mp4', type: 'video', size: '15.7 MB', shared: true, date: '2024-03-22T11:00:00' },
-  { id: 6, name: 'music.mp3', type: 'audio', size: '3.2 MB', shared: false, date: '2024-03-17T16:30:00' },
-  { id: 7, name: 'styles.css', type: 'code', size: '0.3 MB', shared: false, date: '2024-03-16T13:45:00' },
+// Add this after the existing interfaces
+interface RecentFile {
+  id: number;
+  name: string;
+  type: string;
+  size: string;
+  date: string;
+  lastModified: string;
+  shared: boolean;
+}
+
+// Update mock files to include lastModified
+const mockFiles: RecentFile[] = [
+  { id: 1, name: 'document.pdf', type: 'pdf', size: '2.5 MB', shared: false, date: '2024-03-20T10:30:00', lastModified: '2024-03-20T10:30:00' },
+  { id: 2, name: 'image.jpg', type: 'image', size: '1.8 MB', shared: true, date: '2024-03-19T15:45:00', lastModified: '2024-03-20T09:15:00' },
+  { id: 3, name: 'code.zip', type: 'archive', size: '5.2 MB', shared: false, date: '2024-03-21T09:15:00', lastModified: '2024-03-21T08:30:00' },
+  { id: 4, name: 'script.js', type: 'code', size: '0.5 MB', shared: false, date: '2024-03-18T14:20:00', lastModified: '2024-03-21T11:45:00' },
+  { id: 5, name: 'video.mp4', type: 'video', size: '15.7 MB', shared: true, date: '2024-03-22T11:00:00', lastModified: '2024-03-22T10:30:00' },
+  { id: 6, name: 'music.mp3', type: 'audio', size: '3.2 MB', shared: false, date: '2024-03-17T16:30:00', lastModified: '2024-03-22T09:15:00' },
+  { id: 7, name: 'styles.css', type: 'code', size: '0.3 MB', shared: false, date: '2024-03-16T13:45:00', lastModified: '2024-03-22T08:45:00' },
 ];
 
 const mockSharedFiles = [
@@ -349,6 +361,25 @@ const Dashboard: React.FC = () => {
     return sorted;
   }, [filteredFiles, sortBy, sortDirection]);
 
+  // Add this function to get recent files
+  const getRecentFiles = React.useMemo(() => {
+    return [...mockFiles]
+      .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime())
+      .slice(0, 3); // Get only the 3 most recent files
+  }, []);
+
+  // Add this function to format the time difference
+  const getTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+    if (diffInSeconds < 60) return 'just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    return `${Math.floor(diffInSeconds / 86400)}d ago`;
+  };
+
   return (
     <>
       <MatrixBackground />
@@ -435,6 +466,92 @@ const Dashboard: React.FC = () => {
             {/* Content Area */}
             {activeTab === 'files' ? (
               <DashboardCard>
+                {/* Recent Files Section */}
+                <Box sx={{ mb: 4 }}>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      color: '#00ffff',
+                      textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                      mb: 2,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                    }}
+                  >
+                    <AccessTimeIcon sx={{ color: '#00ff00' }} />
+                    Recent Files
+                  </Typography>
+                  <Grid container spacing={2}>
+                    {getRecentFiles.map((file) => (
+                      <Grid item xs={12} md={4} key={file.id}>
+                        <Card
+                          sx={{
+                            background: 'rgba(0, 0, 0, 0.5)',
+                            border: '1px solid rgba(0, 255, 0, 0.2)',
+                            borderRadius: 1,
+                            transition: 'all 0.3s ease',
+                            '&:hover': {
+                              border: '1px solid rgba(0, 255, 0, 0.4)',
+                              transform: 'translateY(-2px)',
+                              boxShadow: '0 0 20px rgba(0, 255, 0, 0.2)',
+                            },
+                          }}
+                        >
+                          <CardContent>
+                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                              <Box sx={{ mr: 2 }}>
+                                {getFileIcon(file.name)}
+                              </Box>
+                              <Box sx={{ flexGrow: 1 }}>
+                                <Typography
+                                  variant="subtitle1"
+                                  sx={{
+                                    color: '#00ffff',
+                                    fontWeight: 'bold',
+                                    mb: 0.5,
+                                  }}
+                                >
+                                  {file.name}
+                                </Typography>
+                                <Typography
+                                  variant="body2"
+                                  sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+                                >
+                                  {file.type.toUpperCase()} • {file.size}
+                                </Typography>
+                              </Box>
+                            </Box>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <Typography
+                                variant="caption"
+                                sx={{ color: 'rgba(0, 255, 0, 0.5)' }}
+                              >
+                                Modified {getTimeAgo(file.lastModified)}
+                              </Typography>
+                              <Box sx={{ display: 'flex', gap: 1 }}>
+                                <Tooltip title="Download">
+                                  <IconButton size="small" onClick={() => handleDownload(file.id)} sx={{ color: '#00ff00' }}>
+                                    <DownloadIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Share">
+                                  <IconButton size="small" onClick={() => handleShare(file.id)} sx={{ color: '#00ff00' }}>
+                                    <ShareIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              </Box>
+                            </Box>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                    ))}
+                  </Grid>
+                </Box>
+
+                <Divider sx={{ borderColor: 'rgba(0, 255, 0, 0.2)', my: 3 }} />
+
+                {/* Existing Files Section */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
                   <Typography
                     variant="h6"
