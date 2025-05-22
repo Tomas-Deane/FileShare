@@ -6,20 +6,20 @@ CONFIG += c++17
 
 # Fallback include/lib paths if pkg-config isn't found:
 macx {
-    # Homebrew on Apple Silicon or Intel
     INCLUDEPATH += /opt/homebrew/include
-    LIBS        += -L/opt/homebrew/lib
+    LIBS        += -L/opt/homebrew/lib -lsodium
 } else {
-    # Typical for Intel macOS (pre-Homebrew-ARM) or Linux
     INCLUDEPATH += /usr/local/include
-    LIBS        += -L/usr/local/lib
+    LIBS        += -L/usr/local/lib -lsodium
 }
 
 win32 {
-    # vcpkg-installed libsodium for MSVC 64-bit
     INCLUDEPATH += "C:/Users/darah/MyRepos/vcpkg/installed/x64-windows/include"
     LIBS        += "C:/Users/darah/MyRepos/vcpkg/installed/x64-windows/lib/libsodium.lib"
 }
+
+# Link OpenSSL and libsodium
+LIBS += -lssl -lcrypto
 
 SOURCES += \
     authcontroller.cpp \
@@ -39,7 +39,6 @@ HEADERS += \
 FORMS += \
     mainwindow.ui
 
-# Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
