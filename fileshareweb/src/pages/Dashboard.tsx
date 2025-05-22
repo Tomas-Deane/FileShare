@@ -3,7 +3,8 @@ import {
   Box, Container, Typography, Button, Paper, Grid, List, ListItem, ListItemText,
   ListItemIcon, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider, Avatar,
-  Select, MenuItem, FormControl, InputLabel, Card, CardContent
+  Select, MenuItem, FormControl, InputLabel, Card, CardContent, Popper, Fade,
+  ClickAwayListener, MenuList
 } from '@mui/material';
 import {
   Upload as UploadIcon, Share as ShareIcon, Delete as DeleteIcon, Download as DownloadIcon,
@@ -20,7 +21,9 @@ import {
   Archive as ArchiveIcon,
   InsertDriveFile as DefaultFileIcon,
   Sort as SortIcon,
-  AccessTime as AccessTimeIcon
+  AccessTime as AccessTimeIcon,
+  History as HistoryIcon,
+  Clear as ClearIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
@@ -237,6 +240,9 @@ const Dashboard: React.FC = () => {
   const [avatarError, setAvatarError] = useState<string>('');
   const [sortBy, setSortBy] = useState<SortOption>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [searchAnchorEl, setSearchAnchorEl] = useState<null | HTMLElement>(null);
+  const [showSearchHistory, setShowSearchHistory] = useState(false);
 
   // Filter files based on search query
   const filteredFiles = mockFiles.filter(file => 
@@ -380,6 +386,48 @@ const Dashboard: React.FC = () => {
     return `${Math.floor(diffInSeconds / 86400)}d ago`;
   };
 
+  // Add these functions for search history
+  const handleSearchFocus = (event: React.FocusEvent<HTMLInputElement>) => {
+    setSearchAnchorEl(event.currentTarget);
+    setShowSearchHistory(true);
+  };
+
+  const handleSearchHistoryClick = (query: string) => {
+    setSearchQuery(query);
+    setShowSearchHistory(false);
+  };
+
+  const handleClearHistory = () => {
+    setSearchHistory([]);
+    // TODO: Clear history in backend
+  };
+
+  // Modify the handleSearch function to only store completed searches
+  const handleSearch = (query: string) => {
+    if (query.trim()) {
+      // Only store the search when user presses Enter or clicks search
+      return;
+    }
+  };
+
+  // Add new function to handle search submission
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const query = searchQuery.trim();
+    if (query) {
+      setSearchHistory(prev => {
+        const newHistory = [query, ...prev.filter(item => item !== query)].slice(0, 5);
+        // TODO: Save to backend
+        return newHistory;
+      });
+    }
+  };
+
+  // Modify the search query handler to remove automatic history storage
+  const handleSearchQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(e.target.value);
+  };
+
   return (
     <>
       <MatrixBackground />
@@ -447,20 +495,133 @@ const Dashboard: React.FC = () => {
         <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
           <Container maxWidth="xl">
             {/* Header with Search */}
-            <Box sx={{ mb: 4 }}>
-              <SearchField
-                fullWidth
-                placeholder="Search files..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon sx={{ color: '#00ff00' }} />
-                    </InputAdornment>
-                  ),
+            <Box sx={{ mb: 4, position: 'relative' }}>
+              <form onSubmit={handleSearchSubmit}>
+                <SearchField
+                  fullWidth
+                  placeholder="Search files..."
+                  value={searchQuery}
+                  onChange={handleSearchQueryChange}
+                  onFocus={handleSearchFocus}
+                  InputProps={{
+                    startAdornment: (
+                      <>
+                        <InputAdornment position="start">
+                          <SearchIcon sx={{ color: '#00ff00' }} />
+                        </InputAdornment>
+                        {searchHistory.length > 0 && (
+                          <InputAdornment position="start">
+                            <Tooltip title="Search History">
+                              <IconButton
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const searchField = e.currentTarget.closest('form')?.querySelector('input');
+                                  if (searchField) {
+                                    setSearchAnchorEl(searchField);
+                                    setShowSearchHistory(!showSearchHistory);
+                                  }
+                                }}
+                                sx={{ color: '#00ff00', ml: 1 }}
+                              >
+                                <HistoryIcon />
+                              </IconButton>
+                            </Tooltip>
+                          </InputAdornment>
+                        )}
+                      </>
+                    ),
+                  }}
+                />
+              </form>
+              <Popper
+                open={showSearchHistory}
+                anchorEl={searchAnchorEl}
+                placement="bottom-start"
+                transition
+                style={{ 
+                  width: searchAnchorEl?.offsetWidth,
+                  zIndex: 1300,
                 }}
-              />
+              >
+                {({ TransitionProps }) => (
+                  <Fade {...TransitionProps} timeout={350}>
+                    <Paper
+                      elevation={8}
+                      sx={{
+                        mt: 1,
+                        background: 'rgba(0, 0, 0, 0.9)',
+                        border: '1px solid rgba(0, 255, 0, 0.2)',
+                        backdropFilter: 'blur(10px)',
+                        width: searchAnchorEl?.offsetWidth,
+                        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+                      }}
+                    >
+                      <ClickAwayListener onClickAway={() => setShowSearchHistory(false)}>
+                        <MenuList sx={{ width: '100%', p: 0 }}>
+                          {searchHistory.map((query, index) => (
+                            <ListItem
+                              key={index}
+                              onClick={() => handleSearchHistoryClick(query)}
+                              sx={{
+                                cursor: 'pointer',
+                                width: '100%',
+                                py: 1,
+                                '&:hover': {
+                                  background: 'rgba(0, 255, 0, 0.1)',
+                                },
+                              }}
+                            >
+                              <ListItemIcon sx={{ minWidth: '40px' }}>
+                                <HistoryIcon sx={{ color: '#00ff00' }} />
+                              </ListItemIcon>
+                              <ListItemText
+                                primary={query}
+                                sx={{
+                                  '& .MuiListItemText-primary': {
+                                    color: '#00ffff',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    pr: 2,
+                                  },
+                                }}
+                              />
+                            </ListItem>
+                          ))}
+                          {searchHistory.length > 0 && (
+                            <>
+                              <Divider sx={{ borderColor: 'rgba(0, 255, 0, 0.2)' }} />
+                              <ListItem
+                                onClick={handleClearHistory}
+                                sx={{
+                                  cursor: 'pointer',
+                                  width: '100%',
+                                  py: 1,
+                                  '&:hover': {
+                                    background: 'rgba(255, 0, 0, 0.1)',
+                                  },
+                                }}
+                              >
+                                <ListItemIcon sx={{ minWidth: '40px' }}>
+                                  <ClearIcon sx={{ color: '#ff0000' }} />
+                                </ListItemIcon>
+                                <ListItemText
+                                  primary="Clear History"
+                                  sx={{
+                                    '& .MuiListItemText-primary': {
+                                      color: '#ff0000',
+                                    },
+                                  }}
+                                />
+                              </ListItem>
+                            </>
+                          )}
+                        </MenuList>
+                      </ClickAwayListener>
+                    </Paper>
+                  </Fade>
+                )}
+              </Popper>
             </Box>
 
             {/* Content Area */}
