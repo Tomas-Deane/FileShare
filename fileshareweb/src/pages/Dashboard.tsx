@@ -4,7 +4,7 @@ import {
   ListItemIcon, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider, Avatar,
   Select, MenuItem, FormControl, InputLabel, Card, CardContent, Popper, Fade,
-  ClickAwayListener, MenuList
+  ClickAwayListener, MenuList, Chip, Autocomplete
 } from '@mui/material';
 import {
   Upload as UploadIcon, Share as ShareIcon, Delete as DeleteIcon, Download as DownloadIcon,
@@ -217,6 +217,20 @@ const mockUserProfile: ProfileData = {
   lastLogin: '2024-03-20 15:30',
 };
 
+// Add this after the existing interfaces
+interface ShareUser {
+  id: number;
+  email: string;
+  name?: string;
+}
+
+// Add this to the mock data section
+const mockShareUsers: ShareUser[] = [
+  { id: 1, email: 'user1@example.com', name: 'John Doe' },
+  { id: 2, email: 'user2@example.com', name: 'Jane Smith' },
+  { id: 3, email: 'user3@example.com', name: 'Bob Johnson' },
+];
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('files');
@@ -243,6 +257,8 @@ const Dashboard: React.FC = () => {
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [searchAnchorEl, setSearchAnchorEl] = useState<null | HTMLElement>(null);
   const [showSearchHistory, setShowSearchHistory] = useState(false);
+  const [selectedShareUsers, setSelectedShareUsers] = useState<ShareUser[]>([]);
+  const [shareError, setShareError] = useState<string>('');
 
   // Filter files based on search query
   const filteredFiles = mockFiles.filter(file => 
@@ -426,6 +442,34 @@ const Dashboard: React.FC = () => {
   // Modify the search query handler to remove automatic history storage
   const handleSearchQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value);
+  };
+
+  // Add this function to handle share submission
+  const handleShareSubmit = async () => {
+    if (selectedShareUsers.length === 0) {
+      setShareError('Please select at least one user to share with');
+      return;
+    }
+
+    try {
+      // TODO: Implement backend API call
+      // const response = await fetch('/api/share', {
+      //   method: 'POST',
+      //   headers: {
+      //     'Content-Type': 'application/json',
+      //   },
+      //   body: JSON.stringify({
+      //     fileId: selectedFile,
+      //     userIds: selectedShareUsers.map(user => user.id),
+      //   }),
+      // });
+      
+      setOpenShare(false);
+      setSelectedShareUsers([]);
+      setShareError('');
+    } catch (error) {
+      setShareError('Failed to share file. Please try again.');
+    }
   };
 
   return (
@@ -1094,12 +1138,17 @@ const Dashboard: React.FC = () => {
       {/* Share Dialog */}
       <Dialog
         open={openShare}
-        onClose={() => setOpenShare(false)}
+        onClose={() => {
+          setOpenShare(false);
+          setSelectedShareUsers([]);
+          setShareError('');
+        }}
         PaperProps={{
           sx: {
             background: 'rgba(0, 0, 0, 0.9)',
             border: '1px solid rgba(0, 255, 0, 0.2)',
             color: '#00ff00',
+            minWidth: '400px',
           },
         }}
       >
@@ -1107,38 +1156,89 @@ const Dashboard: React.FC = () => {
           Share File
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
-          <TextField
-            fullWidth
-            label="User Email"
-            variant="outlined"
-            value={shareEmail}
-            onChange={(e) => setShareEmail(e.target.value)}
+          {shareError && (
+            <Alert severity="error" sx={{ mb: 2, bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
+              {shareError}
+            </Alert>
+          )}
+          <Autocomplete
+            multiple
+            id="share-users"
+            options={mockShareUsers}
+            getOptionLabel={(option) => `${option.name} (${option.email})`}
+            value={selectedShareUsers}
+            onChange={(event, newValue) => {
+              setSelectedShareUsers(newValue);
+              setShareError('');
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                variant="outlined"
+                label="Select Users"
+                placeholder="Search users..."
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    '& fieldset': {
+                      borderColor: 'rgba(0, 255, 0, 0.3)',
+                    },
+                    '&:hover fieldset': {
+                      borderColor: 'rgba(0, 255, 0, 0.5)',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: '#00ff00',
+                    },
+                  },
+                  '& .MuiInputLabel-root': {
+                    color: 'rgba(0, 255, 0, 0.7)',
+                  },
+                  '& .MuiInputBase-input': {
+                    color: '#fff',
+                  },
+                }}
+              />
+            )}
+            renderTags={(value, getTagProps) =>
+              value.map((option, index) => (
+                <Chip
+                  label={`${option.name} (${option.email})`}
+                  {...getTagProps({ index })}
+                  sx={{
+                    background: 'rgba(0, 255, 0, 0.1)',
+                    border: '1px solid rgba(0, 255, 0, 0.3)',
+                    color: '#00ff00',
+                    '& .MuiChip-deleteIcon': {
+                      color: '#00ff00',
+                      '&:hover': {
+                        color: '#00ffff',
+                      },
+                    },
+                  }}
+                />
+              ))
+            }
             sx={{
-              '& .MuiOutlinedInput-root': {
-                '& fieldset': {
-                  borderColor: 'rgba(0, 255, 0, 0.3)',
-                },
-                '&:hover fieldset': {
-                  borderColor: 'rgba(0, 255, 0, 0.5)',
-                },
-                '&.Mui-focused fieldset': {
-                  borderColor: '#00ff00',
-                },
+              '& .MuiAutocomplete-popupIndicator': {
+                color: '#00ff00',
               },
-              '& .MuiInputLabel-root': {
-                color: 'rgba(0, 255, 0, 0.7)',
-              },
-              '& .MuiInputBase-input': {
-                color: '#fff',
+              '& .MuiAutocomplete-clearIndicator': {
+                color: '#00ff00',
               },
             }}
           />
         </DialogContent>
         <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
-          <Button onClick={() => setOpenShare(false)} sx={{ color: 'rgba(0, 255, 0, 0.7)' }}>
+          <Button 
+            onClick={() => {
+              setOpenShare(false);
+              setSelectedShareUsers([]);
+              setShareError('');
+            }} 
+            sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+          >
             Cancel
           </Button>
-          <CyberButton onClick={() => setOpenShare(false)}>
+          <CyberButton onClick={handleShareSubmit}>
             Share
           </CyberButton>
         </DialogActions>
