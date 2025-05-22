@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import {
   Box, Container, Typography, Button, Paper, Grid, List, ListItem, ListItemText,
   ListItemIcon, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider, Avatar
+  TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider, Avatar,
+  Select, MenuItem, FormControl, InputLabel
 } from '@mui/material';
 import {
   Upload as UploadIcon, Share as ShareIcon, Delete as DeleteIcon, Download as DownloadIcon,
@@ -17,7 +18,8 @@ import {
   Movie as VideoIcon,
   Audiotrack as AudioIcon,
   Archive as ArchiveIcon,
-  InsertDriveFile as DefaultFileIcon
+  InsertDriveFile as DefaultFileIcon,
+  Sort as SortIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
@@ -154,15 +156,19 @@ const getFileIcon = (fileName: string) => {
   return iconMap[extension || ''] || <DefaultFileIcon sx={{ color: '#757575' }} />;
 };
 
-// Update the mock files to include more file types
+// Add these types after the existing interfaces
+type SortOption = 'name' | 'date' | 'size' | 'type';
+type SortDirection = 'asc' | 'desc';
+
+// Update the mock files to include dates
 const mockFiles = [
-  { id: 1, name: 'document.pdf', type: 'pdf', size: '2.5 MB', shared: false },
-  { id: 2, name: 'image.jpg', type: 'image', size: '1.8 MB', shared: true },
-  { id: 3, name: 'code.zip', type: 'archive', size: '5.2 MB', shared: false },
-  { id: 4, name: 'script.js', type: 'code', size: '0.5 MB', shared: false },
-  { id: 5, name: 'video.mp4', type: 'video', size: '15.7 MB', shared: true },
-  { id: 6, name: 'music.mp3', type: 'audio', size: '3.2 MB', shared: false },
-  { id: 7, name: 'styles.css', type: 'code', size: '0.3 MB', shared: false },
+  { id: 1, name: 'document.pdf', type: 'pdf', size: '2.5 MB', shared: false, date: '2024-03-20T10:30:00' },
+  { id: 2, name: 'image.jpg', type: 'image', size: '1.8 MB', shared: true, date: '2024-03-19T15:45:00' },
+  { id: 3, name: 'code.zip', type: 'archive', size: '5.2 MB', shared: false, date: '2024-03-21T09:15:00' },
+  { id: 4, name: 'script.js', type: 'code', size: '0.5 MB', shared: false, date: '2024-03-18T14:20:00' },
+  { id: 5, name: 'video.mp4', type: 'video', size: '15.7 MB', shared: true, date: '2024-03-22T11:00:00' },
+  { id: 6, name: 'music.mp3', type: 'audio', size: '3.2 MB', shared: false, date: '2024-03-17T16:30:00' },
+  { id: 7, name: 'styles.css', type: 'code', size: '0.3 MB', shared: false, date: '2024-03-16T13:45:00' },
 ];
 
 const mockSharedFiles = [
@@ -217,6 +223,8 @@ const Dashboard: React.FC = () => {
   });
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState<string>('');
+  const [sortBy, setSortBy] = useState<SortOption>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   // Filter files based on search query
   const filteredFiles = mockFiles.filter(file => 
@@ -285,6 +293,61 @@ const Dashboard: React.FC = () => {
     setAvatarPreview(null);
     setAvatarError('');
   };
+
+  const handleSortChange = (event: React.ChangeEvent<{ value: unknown }>) => {
+    const newSortBy = event.target.value as SortOption;
+    if (newSortBy === sortBy) {
+      // Toggle direction if clicking the same sort option
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(newSortBy);
+      setSortDirection('asc');
+    }
+  };
+
+  const getSizeInBytes = (sizeStr: string): number => {
+    const [size, unit] = sizeStr.split(' ');
+    const numSize = parseFloat(size);
+    switch (unit) {
+      case 'KB': return numSize * 1024;
+      case 'MB': return numSize * 1024 * 1024;
+      case 'GB': return numSize * 1024 * 1024 * 1024;
+      default: return numSize;
+    }
+  };
+
+  const sortedAndFilteredFiles = React.useMemo(() => {
+    let sorted = [...filteredFiles];
+    
+    switch (sortBy) {
+      case 'name':
+        sorted.sort((a, b) => {
+          const comparison = a.name.localeCompare(b.name);
+          return sortDirection === 'asc' ? comparison : -comparison;
+        });
+        break;
+      case 'date':
+        sorted.sort((a, b) => {
+          const comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+          return sortDirection === 'asc' ? comparison : -comparison;
+        });
+        break;
+      case 'size':
+        sorted.sort((a, b) => {
+          const comparison = getSizeInBytes(a.size) - getSizeInBytes(b.size);
+          return sortDirection === 'asc' ? comparison : -comparison;
+        });
+        break;
+      case 'type':
+        sorted.sort((a, b) => {
+          const comparison = a.type.localeCompare(b.type);
+          return sortDirection === 'asc' ? comparison : -comparison;
+        });
+        break;
+    }
+    
+    return sorted;
+  }, [filteredFiles, sortBy, sortDirection]);
 
   return (
     <>
@@ -382,12 +445,57 @@ const Dashboard: React.FC = () => {
                   >
                     Your Files
                   </Typography>
-                  <CyberButton startIcon={<UploadIcon />} onClick={() => setOpenUpload(true)}>
-                    Upload File
-                  </CyberButton>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <FormControl 
+                      size="small" 
+                      sx={{ 
+                        minWidth: 120,
+                        '& .MuiOutlinedInput-root': {
+                          '& fieldset': {
+                            borderColor: 'rgba(0, 255, 0, 0.3)',
+                          },
+                          '&:hover fieldset': {
+                            borderColor: 'rgba(0, 255, 0, 0.5)',
+                          },
+                          '&.Mui-focused fieldset': {
+                            borderColor: '#00ff00',
+                          },
+                        },
+                        '& .MuiInputLabel-root': {
+                          color: 'rgba(0, 255, 0, 0.7)',
+                        },
+                        '& .MuiSelect-select': {
+                          color: '#00ff00',
+                        },
+                        '& .MuiSvgIcon-root': {
+                          color: '#00ff00',
+                        },
+                      }}
+                    >
+                      <InputLabel>Sort By</InputLabel>
+                      <Select
+                        value={sortBy}
+                        label="Sort By"
+                        onChange={handleSortChange}
+                        startAdornment={
+                          <InputAdornment position="start">
+                            <SortIcon sx={{ color: '#00ff00' }} />
+                          </InputAdornment>
+                        }
+                      >
+                        <MenuItem value="name">Name</MenuItem>
+                        <MenuItem value="date">Date</MenuItem>
+                        <MenuItem value="size">Size</MenuItem>
+                        <MenuItem value="type">Type</MenuItem>
+                      </Select>
+                    </FormControl>
+                    <CyberButton startIcon={<UploadIcon />} onClick={() => setOpenUpload(true)}>
+                      Upload File
+                    </CyberButton>
+                  </Box>
                 </Box>
                 <List>
-                  {filteredFiles.map((file) => (
+                  {sortedAndFilteredFiles.map((file) => (
                     <ListItem
                       key={file.id}
                       sx={{
@@ -405,7 +513,7 @@ const Dashboard: React.FC = () => {
                       </ListItemIcon>
                       <ListItemText
                         primary={file.name}
-                        secondary={`${file.type.toUpperCase()} • ${file.size}`}
+                        secondary={`${file.type.toUpperCase()} • ${file.size} • ${new Date(file.date).toLocaleString()}`}
                         primaryTypographyProps={{
                           sx: { color: '#00ffff', fontWeight: 'bold' },
                         }}
