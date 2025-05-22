@@ -8,7 +8,6 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
-class NetworkManager;
 class AuthController;
 
 class MainWindow : public QMainWindow
@@ -20,16 +19,12 @@ public:
     ~MainWindow();
 
 private slots:
-    void onServerConnected();
-    void onServerDisconnected();
-    //  slots for button clicks
     void on_signupButton_clicked();
     void on_loginButton_clicked();
 
 private:
-    Ui::MainWindow      *ui;
-    NetworkManager      *networkManager;
-    AuthController      *authController;
+    Ui::MainWindow *ui;
+    AuthController *authController;
 };
 
 #endif // MAINWINDOW_H
