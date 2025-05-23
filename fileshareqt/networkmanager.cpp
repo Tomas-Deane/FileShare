@@ -149,7 +149,7 @@ QByteArray NetworkManager::postJson(const QString &host,
     for (struct addrinfo *rp = res; rp; rp = rp->ai_next) {
         sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (sock < 0) continue;
-        if (connect(sock, rp->ai_addr, rp->ai_addrlen) == 0) {
+        if (::connect(sock, rp->ai_addr, rp->ai_addrlen) == 0) {
             break;
         }
         close(sock);
