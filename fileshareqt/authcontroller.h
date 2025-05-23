@@ -16,10 +16,15 @@ public:
 
     Q_INVOKABLE void signup(const QString &username, const QString &password);
     Q_INVOKABLE void login(const QString &username, const QString &password);
+    Q_INVOKABLE void logout();
 
 signals:
     void signupResult(bool success, const QString &message);
     void loginResult(bool success, const QString &message);
+
+    // New signals for UI state updates
+    void loggedIn(const QString &username);
+    void loggedOut();
 
 private slots:
     void onSignupResult(bool success, const QString &message);
@@ -35,8 +40,15 @@ private slots:
 
 private:
     NetworkManager *networkManager;
+
+    // Credentials during the handshake
     QString pendingUsername;
     QString pendingPassword;
+
+    // Session state (cleared on logout)
+    QString sessionUsername;
+    QByteArray sessionSecretKey;
+    QByteArray sessionPdk;
 };
 
 #endif // AUTHCONTROLLER_H
