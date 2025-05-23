@@ -1,41 +1,17 @@
-
 #include "networkmanager.h"
 #include "logger.h"
 #include <QJsonDocument>
-#include <openssl/ssl.h>
-#include <openssl/err.h>
-#include <cstring>
-
-#ifdef _WIN32
-#define _WINSOCK_DEPRECATED_NO_WARNINGS
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#include <netdb.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#endif
 
 NetworkManager::NetworkManager(QObject *parent)
-    : QObject(parent), ssl_ctx(nullptr)
+    : QObject(parent)
+    , ssl_ctx(nullptr)
 {
-#ifdef _WIN32
-    WSADATA wsaData;
-    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (result != 0) {
-        Logger::log(QString("WSAStartup failed: %1").arg(result));
-    }
-#endif
-    initOpenSSL();  // set up OpenSSL
+    initOpenSSL();
 }
 
 NetworkManager::~NetworkManager()
 {
     cleanupOpenSSL();
-#ifdef _WIN32
-    WSACleanup();
-#endif
 }
 
 void NetworkManager::initOpenSSL()
@@ -108,7 +84,7 @@ void NetworkManager::login(const QString &username)
             obj["argon2_memlimit"].toInt(),
             QByteArray::fromBase64(obj["encrypted_privkey"].toString().toUtf8()),
             QByteArray::fromBase64(obj["privkey_nonce"].toString().toUtf8())
-            );
+        );
     } else {
         emit loginResult(false, obj["detail"].toString());
     }
@@ -150,16 +126,19 @@ QByteArray NetworkManager::postJson(const QString &host,
                                     QString &message)
 {
     ok = false;
-    Logger::log(QString("postJson to https://%1:%2%3").arg(host).arg(port).arg(path));
 
-    struct addrinfo hints{};
-    struct addrinfo *res = nullptr;
+    Logger::log(QString("postJson to https://%1:%2%3")
+                .arg(host).arg(port).arg(path));
+
+    struct addrinfo hints = {};
     hints.ai_family   = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
 
-    QByteArray portStr = QByteArray::number(port);
-    int gai_err = getaddrinfo(host.toUtf8().constData(), portStr.constData(), &hints, &res);
+    struct addrinfo *res = nullptr;
+    int gai_err = getaddrinfo(host.toUtf8().constData(),
+                              QByteArray::number(port).constData(),
+                              &hints, &res);
     if (gai_err != 0) {
         message = QString("DNS lookup failed: %1").arg(gai_strerror(gai_err));
         emit networkError(message);
@@ -167,24 +146,13 @@ QByteArray NetworkManager::postJson(const QString &host,
     }
 
     int sock = -1;
-    for (struct addrinfo *rp = res; rp != nullptr; rp = rp->ai_next) {
-#ifdef _WIN32
-        sock = ::socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-        if (sock == INVALID_SOCKET) continue;
-#else
-        sock = ::socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+    for (struct addrinfo *rp = res; rp; rp = rp->ai_next) {
+        sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (sock < 0) continue;
-#endif
-
-        if (::connect(sock, rp->ai_addr, static_cast<int>(rp->ai_addrlen)) == 0) {
-            break;  // success
+        if (connect(sock, rp->ai_addr, rp->ai_addrlen) == 0) {
+            break;
         }
-
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        ::close(sock);
-#endif
+        close(sock);
         sock = -1;
     }
     freeaddrinfo(res);
@@ -195,39 +163,29 @@ QByteArray NetworkManager::postJson(const QString &host,
         return {};
     }
 
-    // ssl handshake
     SSL *ssl = SSL_new(ssl_ctx);
     SSL_set_fd(ssl, sock);
     if (SSL_connect(ssl) <= 0) {
         SSL_free(ssl);
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        ::close(sock);
-#endif
+        close(sock);
         message = "SSL handshake failed";
         emit networkError(message);
         return {};
     }
 
-    // build and send http request
     QByteArray body = QJsonDocument(obj).toJson(QJsonDocument::Compact);
     QByteArray req =
-        "POST " + path.toUtf8() + " HTTP/1.1\r\n"
-                                  "Host: " + host.toUtf8() + "\r\n"
-                          "Content-Type: application/json\r\n"
-                          "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
-                                            "Connection: close\r\n\r\n" +
-        body;
+          "POST " + path.toUtf8() + " HTTP/1.1\r\n"
+          "Host: " + host.toUtf8() + "\r\n"
+          "Content-Type: application/json\r\n"
+          "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
+          "Connection: close\r\n\r\n" +
+          body;
 
-    if (SSL_write(ssl, req.constData(), static_cast<int>(req.size())) <= 0) {
+    if (SSL_write(ssl, req.constData(), req.size()) <= 0) {
         SSL_shutdown(ssl);
         SSL_free(ssl);
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        ::close(sock);
-#endif
+        close(sock);
         message = "Failed to send HTTP request";
         emit networkError(message);
         return {};
@@ -242,13 +200,8 @@ QByteArray NetworkManager::postJson(const QString &host,
 
     SSL_shutdown(ssl);
     SSL_free(ssl);
-#ifdef _WIN32
-    closesocket(sock);
-#else
-    ::close(sock);
-#endif
+    close(sock);
 
-    // parse http status
     int header_end = resp.indexOf("\r\n\r\n");
     if (header_end < 0) {
         message = "Invalid HTTP response";
@@ -257,27 +210,24 @@ QByteArray NetworkManager::postJson(const QString &host,
     }
 
     QByteArray header = resp.left(header_end);
-    // extract first line
-    QList<QByteArray> headerLines = header.split('\n');
-    QString statusLine = QString::fromUtf8(headerLines.value(0).trimmed());
-    QStringList statusParts = statusLine.split(' ');
-    int statusCode = statusParts.size() > 1 ? statusParts.at(1).toInt() : -1;
+    QList<QByteArray> lines = header.split('\n');
+    QString statusLine = QString::fromUtf8(lines[0].trimmed());
+    QStringList parts = statusLine.split(' ');
+    int statusCode = (parts.size() > 1 ? parts[1].toInt() : -1);
 
     QByteArray bodyResp = resp.mid(header_end + 4);
     if (statusCode < 200 || statusCode >= 300) {
-        // try to extract JSON "detail" field, otherwise fallback to code
-        QJsonDocument json = QJsonDocument::fromJson(bodyResp);
+        QJsonDocument j = QJsonDocument::fromJson(bodyResp);
         QString detail;
-        if (json.isObject() && json.object().contains("detail")) {
-            detail = json.object().value("detail").toString();
+        if (j.isObject() && j.object().contains("detail")) {
+            detail = j.object().value("detail").toString();
         }
         message = detail.isEmpty()
-                      ? QString("HTTP error %1").arg(statusCode)
-                      : detail;
+                  ? QString("HTTP error %1").arg(statusCode)
+                  : detail;
         return {};
     }
 
-    // success
     ok = true;
     message = QString::fromUtf8(bodyResp);
     return bodyResp;
