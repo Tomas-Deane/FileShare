@@ -3,6 +3,8 @@
 #include "authcontroller.h"
 #include "logger.h"
 #include <sodium.h>
+#include <QPixmap>
+#include <QSizePolicy>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -11,18 +13,18 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
-    // Enable buttons immediately
+    // Enable buttons
     ui->signupButton->setEnabled(true);
     ui->loginButton->setEnabled(true);
 
-    // Logo
+    // Logo setup
     ui->label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
     ui->label->setMinimumSize(0, 0);
     ui->label->setScaledContents(true);
     QPixmap pix(":/nrmc_image.png");
     ui->label->setPixmap(pix);
 
-    // Logger
+    // Console logger
     Logger::initialize(ui->consoleTextEdit);
 
     if (sodium_init() < 0) {
@@ -30,6 +32,12 @@ MainWindow::MainWindow(QWidget *parent)
     } else {
         Logger::log("sodium initialized");
     }
+
+    // Connect UI to AuthController state signals
+    connect(authController, &AuthController::loggedIn,
+            this, &MainWindow::handleLoggedIn);
+    connect(authController, &AuthController::loggedOut,
+            this, &MainWindow::handleLoggedOut);
 
     Logger::log("UI setup complete");
 }
@@ -56,19 +64,25 @@ void MainWindow::on_loginButton_clicked()
 
 void MainWindow::on_logOutButton_clicked()
 {
-
+    authController->logout();
 }
 
-
-
-void MainWindow::on_changeUsernameButton_clicked()
+void MainWindow::handleLoggedIn(const QString &username)
 {
-
+    ui->loggedInLabel->setText("Logged in as " + username);
+    ui->usernameLabel->setText("Username: " + username);
 }
 
-
-void MainWindow::on_changePasswordButton_clicked()
+void MainWindow::handleLoggedOut()
 {
+    ui->loggedInLabel->setText("Not logged in");
+    ui->usernameLabel->setText("Username: ");
+}
+
+void MainWindow::on_changeUsernameButton_clicked() {
 
 }
 
+void MainWindow::on_changePasswordButton_clicked() {
+
+}

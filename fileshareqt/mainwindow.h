@@ -21,9 +21,14 @@ public:
 private slots:
     void on_signupButton_clicked();
     void on_loginButton_clicked();
+
     void on_logOutButton_clicked();
     void on_changeUsernameButton_clicked();
     void on_changePasswordButton_clicked();
+
+    // Update UI when AuthController tells us user has logged in/out
+    void handleLoggedIn(const QString &username);
+    void handleLoggedOut();
 
 private:
     Ui::MainWindow *ui;
