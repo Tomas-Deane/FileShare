@@ -78,21 +78,21 @@ const SearchField = styled(TextField)(({ theme }) => ({
 
 // Mock data for demonstration
 const mockFiles = [
-  { id: 1, name: 'document.pdf', type: 'pdf', size: '2.5 MB', shared: false },
-  { id: 2, name: 'image.jpg', type: 'image', size: '1.8 MB', shared: true },
-  { id: 3, name: 'code.zip', type: 'archive', size: '5.2 MB', shared: false },
-  { id: 4, name: 'presentation.pptx', type: 'ppt', size: '4.1 MB', shared: false },
-  { id: 5, name: 'notes.txt', type: 'text', size: '0.8 MB', shared: false },
-  { id: 6, name: 'spreadsheet.xlsx', type: 'excel', size: '3.7 MB', shared: false },
-];
+  { id: 1, name: 'document.pdf', type: 'pdf', size: '2.5 MB', shared: false, date: new Date('2024-03-15T10:30:00') },
+  { id: 2, name: 'image.jpg', type: 'image', size: '1.8 MB', shared: true, date: new Date('2024-03-14T15:45:00') },
+  { id: 3, name: 'code.zip', type: 'archive', size: '5.2 MB', shared: false, date: new Date('2024-03-13T09:20:00') },
+  { id: 4, name: 'presentation.pptx', type: 'ppt', size: '4.1 MB', shared: false, date: new Date('2024-03-12T14:15:00') },
+  { id: 5, name: 'notes.txt', type: 'text', size: '0.8 MB', shared: false, date: new Date('2024-03-11T11:00:00') },
+  { id: 6, name: 'spreadsheet.xlsx', type: 'excel', size: '3.7 MB', shared: false, date: new Date('2024-03-10T16:30:00') },
+].sort((a, b) => b.date.getTime() - a.date.getTime());
 
 const mockSharedFiles = [
-  { id: 4, name: 'shared_doc.pdf', type: 'pdf', size: '3.1 MB', sharedBy: 'user1' },
-  { id: 5, name: 'shared_image.jpg', type: 'image', size: '2.3 MB', sharedBy: 'user2' },
-  { id: 6, name: 'project_plan.docx', type: 'doc', size: '1.9 MB', sharedBy: 'user3' },
-  { id: 7, name: 'budget.xlsx', type: 'excel', size: '2.8 MB', sharedBy: 'user4' },
-  { id: 8, name: 'meeting_minutes.txt', type: 'text', size: '0.6 MB', sharedBy: 'user5' },
-];
+  { id: 4, name: 'shared_doc.pdf', type: 'pdf', size: '3.1 MB', sharedBy: 'user1', date: new Date('2024-03-15T13:20:00') },
+  { id: 5, name: 'shared_image.jpg', type: 'image', size: '2.3 MB', sharedBy: 'user2', date: new Date('2024-03-14T17:45:00') },
+  { id: 6, name: 'project_plan.docx', type: 'doc', size: '1.9 MB', sharedBy: 'user3', date: new Date('2024-03-13T08:30:00') },
+  { id: 7, name: 'budget.xlsx', type: 'excel', size: '2.8 MB', sharedBy: 'user4', date: new Date('2024-03-12T10:15:00') },
+  { id: 8, name: 'meeting_minutes.txt', type: 'text', size: '0.6 MB', sharedBy: 'user5', date: new Date('2024-03-11T14:00:00') },
+].sort((a, b) => b.date.getTime() - a.date.getTime());
 
 const mockUsers = [
   { id: 1, email: 'user1@example.com', verified: true },
@@ -276,7 +276,7 @@ const Dashboard: React.FC = () => {
                         </ListItemIcon>
                         <ListItemText
                           primary={f.name}
-                          secondary={`${f.type.toUpperCase()} • ${f.size} • from ${f.sharedBy}`}
+                          secondary={`${f.type.toUpperCase()} • ${f.size} • from ${f.sharedBy} • ${f.date.toLocaleDateString('en-GB')} ${f.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
                           primaryTypographyProps={{
                             sx: { color: '#00ffff', fontWeight: 'bold' },
                           }}
@@ -328,7 +328,7 @@ const Dashboard: React.FC = () => {
                       </ListItemIcon>
                       <ListItemText
                         primary={file.name}
-                        secondary={`${file.type.toUpperCase()} • ${file.size}`}
+                        secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
                         primaryTypographyProps={{
                           sx: { color: '#00ffff', fontWeight: 'bold' },
                         }}
