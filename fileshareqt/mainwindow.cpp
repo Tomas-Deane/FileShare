@@ -53,3 +53,22 @@ void MainWindow::on_loginButton_clicked()
     const QString password = ui->passwordLineEdit->text();
     authController->login(username, password);
 }
+
+void MainWindow::on_logOutButton_clicked()
+{
+
+}
+
+
+
+void MainWindow::on_changeUsernameButton_clicked()
+{
+
+}
+
+
+void MainWindow::on_changePasswordButton_clicked()
+{
+
+}
+
