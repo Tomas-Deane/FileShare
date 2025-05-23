@@ -1,60 +1,55 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "authcontroller.h"
+#include "logger.h"
+#include <sodium.h>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
-    , networkManager(new NetworkManager(this))
+    , authController(new AuthController(this))
 {
     ui->setupUi(this);
 
-    // Wire up network signals to our slots
-    connect(networkManager, &NetworkManager::connected,    this, &MainWindow::onConnected);
-    connect(networkManager, &NetworkManager::disconnected, this, &MainWindow::onDisconnected);
-    connect(networkManager, &NetworkManager::messageReceived,
-            this, &MainWindow::onDataReceived);
+    // Enable buttons immediately
+    ui->signupButton->setEnabled(true);
+    ui->loginButton->setEnabled(true);
 
-    ui->sendButton->setEnabled(false);
+    // Logo
+    ui->label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    ui->label->setMinimumSize(0, 0);
+    ui->label->setScaledContents(true);
+    QPixmap pix(":/nrmc_image.png");
+    ui->label->setPixmap(pix);
+
+    // Logger
+    Logger::initialize(ui->consoleTextEdit);
+
+    if (sodium_init() < 0) {
+        Logger::log("sodium_init() failed");
+    } else {
+        Logger::log("sodium initialized");
+    }
+
+    Logger::log("UI setup complete");
 }
 
 MainWindow::~MainWindow()
 {
+    Logger::log("Application exiting");
     delete ui;
 }
 
-void MainWindow::on_connectButton_clicked()
+void MainWindow::on_signupButton_clicked()
 {
-    const QString host = ui->hostLineEdit->text();
-    const quint16 port = static_cast<quint16>(ui->portLineEdit->text().toUInt());
-    ui->logTextEdit->append(QString("Connecting to %1:%2…").arg(host).arg(port));
-    networkManager->connectToHost(host, port);
+    const QString username = ui->usernameLineEdit->text();
+    const QString password = ui->passwordLineEdit->text();
+    authController->signup(username, password);
 }
 
-void MainWindow::on_sendButton_clicked()
+void MainWindow::on_loginButton_clicked()
 {
-    const QString msg = ui->inputLineEdit->text();
-    if (msg.isEmpty())
-        return;
-    networkManager->sendMessage(msg);
-    ui->logTextEdit->append("Me: " + msg);
-    ui->inputLineEdit->clear();
-}
-
-void MainWindow::onConnected()
-{
-    ui->logTextEdit->append("Connected!");
-    ui->sendButton->setEnabled(true);
-    ui->connectButton->setEnabled(false);
-}
-
-void MainWindow::onDisconnected()
-{
-    ui->logTextEdit->append("Disconnected.");
-    ui->sendButton->setEnabled(false);
-    ui->connectButton->setEnabled(true);
-}
-
-void MainWindow::onDataReceived(const QString &message)
-{
-    ui->logTextEdit->append("Server: " + message);
+    const QString username = ui->usernameLineEdit->text();
+    const QString password = ui->passwordLineEdit->text();
+    authController->login(username, password);
 }
