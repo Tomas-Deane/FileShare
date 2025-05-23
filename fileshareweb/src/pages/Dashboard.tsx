@@ -4,7 +4,7 @@ import {
   ListItemIcon, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider, Avatar,
   Select, MenuItem, FormControl, InputLabel, Card, CardContent, Popper, Fade,
-  ClickAwayListener, MenuList
+  ClickAwayListener, MenuList, SelectChangeEvent
 } from '@mui/material';
 import {
   Upload as UploadIcon, Share as ShareIcon, Delete as DeleteIcon, Download as DownloadIcon,
@@ -23,7 +23,9 @@ import {
   Sort as SortIcon,
   AccessTime as AccessTimeIcon,
   History as HistoryIcon,
-  Clear as ClearIcon
+  Clear as ClearIcon,
+  ArrowUpward as ArrowUpwardIcon,
+  ArrowDownward as ArrowDownwardIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
@@ -312,7 +314,7 @@ const Dashboard: React.FC = () => {
     setAvatarError('');
   };
 
-  const handleSortChange = (event: React.ChangeEvent<{ value: unknown }>) => {
+  const handleSortChange = (event: SelectChangeEvent<SortOption>) => {
     const newSortBy = event.target.value as SortOption;
     if (newSortBy === sortBy) {
       // Toggle direction if clicking the same sort option
@@ -321,6 +323,17 @@ const Dashboard: React.FC = () => {
       setSortBy(newSortBy);
       setSortDirection('asc');
     }
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).replace(/\//g, '-');
   };
 
   const getSizeInBytes = (sizeStr: string): number => {
@@ -373,18 +386,6 @@ const Dashboard: React.FC = () => {
       .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime())
       .slice(0, 3); // Get only the 3 most recent files
   }, []);
-
-  // Add this function to format the time difference
-  const getTimeAgo = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-    if (diffInSeconds < 60) return 'just now';
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-    return `${Math.floor(diffInSeconds / 86400)}d ago`;
-  };
 
   // Add these functions for search history
   const handleSearchFocus = (event: React.FocusEvent<HTMLInputElement>) => {
@@ -688,7 +689,7 @@ const Dashboard: React.FC = () => {
                                 variant="caption"
                                 sx={{ color: 'rgba(0, 255, 0, 0.5)' }}
                               >
-                                Modified {getTimeAgo(file.lastModified)}
+                                Modified {formatDate(file.lastModified)}
                               </Typography>
                               <Box sx={{ display: 'flex', gap: 1 }}>
                                 <Tooltip title="Download">
@@ -767,6 +768,19 @@ const Dashboard: React.FC = () => {
                         <MenuItem value="type">Type</MenuItem>
                       </Select>
                     </FormControl>
+                    <IconButton 
+                      onClick={() => setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')}
+                      sx={{ 
+                        color: '#00ff00',
+                        border: '1px solid rgba(0, 255, 0, 0.3)',
+                        '&:hover': {
+                          borderColor: 'rgba(0, 255, 0, 0.5)',
+                          backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                        },
+                      }}
+                    >
+                      {sortDirection === 'asc' ? <ArrowUpwardIcon /> : <ArrowDownwardIcon />}
+                    </IconButton>
                     <CyberButton startIcon={<UploadIcon />} onClick={() => setOpenUpload(true)}>
                       Upload File
                     </CyberButton>
@@ -791,7 +805,7 @@ const Dashboard: React.FC = () => {
                       </ListItemIcon>
                       <ListItemText
                         primary={file.name}
-                        secondary={`${file.type.toUpperCase()} • ${file.size} • ${new Date(file.date).toLocaleString()}`}
+                        secondary={`${file.type.toUpperCase()} • ${file.size} • ${formatDate(file.date)}`}
                         primaryTypographyProps={{
                           sx: { color: '#00ffff', fontWeight: 'bold' },
                         }}
@@ -1032,7 +1046,7 @@ const Dashboard: React.FC = () => {
                           fontFamily: 'monospace',
                         }}
                       >
-                        {profileData.lastLogin}
+                        {formatDate(profileData.lastLogin)}
                       </Typography>
                     </Paper>
                   </Grid>
