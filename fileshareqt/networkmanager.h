@@ -1,33 +1,24 @@
-
 #ifndef NETWORKMANAGER_H
 #define NETWORKMANAGER_H
 
 #include <QObject>
 #include <QString>
 #include <QJsonObject>
-
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#pragma comment(lib, "Ws2_32.lib")
-#else
 #include <netdb.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#endif
 
 class NetworkManager : public QObject
 {
     Q_OBJECT
+
 public:
     explicit NetworkManager(QObject *parent = nullptr);
     ~NetworkManager();
 
-    // API calls
     Q_INVOKABLE void signup(const QJsonObject &payload);
     Q_INVOKABLE void login(const QString &username);
     Q_INVOKABLE void authenticate(const QString &username, const QByteArray &signature);
@@ -41,7 +32,7 @@ signals:
         int memlimit,
         const QByteArray &encryptedPrivKey,
         const QByteArray &privKeyNonce
-        );
+    );
     void loginResult(bool success, const QString &message);
     void networkError(const QString &msg);
 
