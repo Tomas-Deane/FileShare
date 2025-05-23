@@ -14,7 +14,7 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { Visibility, VisibilityOff, Login as LoginIcon, Lock, Person, Home } from '@mui/icons-material';
-import MatrixBackground from '../components/MatrixBackground.tsx';
+import { MatrixBackground } from '../components';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -60,9 +60,9 @@ const Login: React.FC = () => {
               p: 4,
               background: 'rgba(0, 0, 0, 0.8)',
               backdropFilter: 'blur(10px)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
+              border: '1px solid rgba(0, 255, 0, 0.2)',
               borderRadius: 2,
-              boxShadow: '0 0 20px rgba(0, 255, 255, 0.2)',
+              boxShadow: '0 0 20px rgba(0, 255, 0, 0.2)',
               position: 'relative',
             }}
           >
@@ -105,7 +105,7 @@ const Login: React.FC = () => {
                   fontFamily: 'monospace',
                 }}
               >
-                Secure your  files
+                Secure your files
               </Typography>
             </Box>
 
