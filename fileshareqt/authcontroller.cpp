@@ -74,6 +74,28 @@ void AuthController::login(const QString &username, const QString &password)
     networkManager->login(username);
 }
 
+void AuthController::logout()
+{
+    // Securely wipe all in‐memory secrets
+    if (!sessionSecretKey.isEmpty()) {
+        sodium_memzero(
+            reinterpret_cast<unsigned char*>(sessionSecretKey.data()),
+            sessionSecretKey.size()
+            );
+        sessionSecretKey.clear();
+    }
+    if (!sessionPdk.isEmpty()) {
+        sodium_memzero(
+            reinterpret_cast<unsigned char*>(sessionPdk.data()),
+            sessionPdk.size()
+            );
+        sessionPdk.clear();
+    }
+    sessionUsername.clear();
+
+    emit loggedOut();
+}
+
 void AuthController::onSignupResult(bool success, const QString &message)
 {
     Logger::log(QString("SignupResult: success=%1, message='%2'")
@@ -90,14 +112,16 @@ void AuthController::onLoginChallenge(
     const QByteArray &skNonce
     )
 {
-    // 1) Derive PDK from stored password
+    // 1) Derive the PDK
     auto pdk = CryptoUtils::derivePDK(pendingPassword, salt, opslimit, memlimit);
+    sessionPdk = pdk;
 
-    // 2) Decrypt secret key
+    // 2) Decrypt the user’s signing key
     auto secKey = CryptoUtils::decryptSecretKey(encryptedSK, pdk, skNonce);
+    sessionSecretKey = secKey;
 
     // 3) Sign the challenge
-    auto signature = CryptoUtils::signMessage(nonce, secKey);
+    auto signature = CryptoUtils::signMessage(nonce, sessionSecretKey);
 
     // 4) Send authenticate request
     networkManager->authenticate(pendingUsername, signature);
@@ -107,5 +131,16 @@ void AuthController::onLoginResult(bool success, const QString &message)
 {
     Logger::log(QString("LoginResult: success=%1, message='%2'")
                     .arg(success).arg(message));
+
+    if (success) {
+        // Establish session
+        sessionUsername = pendingUsername;
+        pendingPassword.clear();
+        pendingUsername.clear();
+
+        // Notify UI
+        emit loggedIn(sessionUsername);
+    }
+
     emit loginResult(success, message);
 }
