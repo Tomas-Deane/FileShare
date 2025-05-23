@@ -2,14 +2,14 @@ import React, { useState } from 'react';
 import {
   Box, Container, Typography, Button, Paper, Grid, List, ListItem, ListItemText,
   ListItemIcon, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider, Avatar
+  TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider
 } from '@mui/material';
 import {
   Upload as UploadIcon, Share as ShareIcon, Delete as DeleteIcon, Download as DownloadIcon,
   Folder as FolderIcon, Person as PersonIcon, Lock as LockIcon, LockOpen as LockOpenIcon,
   Search as SearchIcon, VerifiedUser as VerifiedUserIcon, People as PeopleIcon,
   Home as HomeIcon, Storage as StorageIcon, Security as SecurityIcon, Settings as SettingsIcon,
-  Edit as EditIcon, PhotoCamera as PhotoCameraIcon
+  Edit as EditIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
@@ -112,21 +112,19 @@ const mockUsers = [
   { id: 3, email: 'user3@example.com', verified: true },
 ];
 
-// Add these interfaces after the existing interfaces
+// Update the ProfileData interface
 interface ProfileData {
   username: string;
   email: string;
-  avatar: string | null;
   storageUsed: string;
   storageLimit: string;
   lastLogin: string;
 }
 
-// Update the mockUserProfile to use the interface
+// Update the mockUserProfile
 const mockUserProfile: ProfileData = {
   username: 'cyberpunk_user',
   email: 'user@example.com',
-  avatar: null,
   storageUsed: '2.5 GB',
   storageLimit: '10 GB',
   lastLogin: '2024-03-20 15:30',
@@ -151,8 +149,6 @@ const Dashboard: React.FC = () => {
     // Generate a random 60-digit integer
     return Array.from({ length: 60 }, () => Math.floor(Math.random() * 10)).join('');
   });
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [avatarError, setAvatarError] = useState<string>('');
 
   // Filter files based on search query
   const filteredFiles = mockFiles.filter(file => 
@@ -180,46 +176,15 @@ const Dashboard: React.FC = () => {
     setEditedProfile(profileData);
   };
 
-  const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      setAvatarError('Please select an image file');
-      return;
-    }
-
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      setAvatarError('Image size should be less than 5MB');
-      return;
-    }
-
-    setAvatarError('');
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setAvatarPreview(reader.result as string);
-      setEditedProfile(prev => ({
-        ...prev,
-        avatar: reader.result as string
-      }));
-    };
-    reader.readAsDataURL(file);
-  };
-
   const handleProfileSave = () => {
     setProfileData(editedProfile);
     setEditMode(false);
-    setAvatarPreview(null);
     // TODO: Implement profile update logic
   };
 
   const handleProfileCancel = () => {
     setEditMode(false);
     setEditedProfile(profileData);
-    setAvatarPreview(null);
-    setAvatarError('');
   };
 
   return (
@@ -459,55 +424,6 @@ const Dashboard: React.FC = () => {
                   >
                     Settings
                   </CyberButton>
-                </Box>
-
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 4 }}>
-                  <Box sx={{ position: 'relative' }}>
-                    <Avatar
-                      src={avatarPreview || profileData.avatar || undefined}
-                      sx={{
-                        width: 100,
-                        height: 100,
-                        bgcolor: '#00ff00',
-                        fontSize: '2rem',
-                        mr: 3,
-                        border: '2px solid rgba(0, 255, 0, 0.3)',
-                      }}
-                    >
-                      {!avatarPreview && !profileData.avatar && profileData.username.charAt(0).toUpperCase()}
-                    </Avatar>
-                    <input
-                      accept="image/*"
-                      style={{ display: 'none' }}
-                      id="avatar-upload"
-                      type="file"
-                      onChange={handleAvatarChange}
-                      disabled={!editMode}
-                    />
-                    <label htmlFor="avatar-upload">
-                      <IconButton
-                        component="span"
-                        disabled={!editMode}
-                        sx={{
-                          position: 'absolute',
-                          bottom: 0,
-                          right: 0,
-                          bgcolor: 'rgba(0, 0, 0, 0.8)',
-                          border: '1px solid rgba(0, 255, 0, 0.3)',
-                          '&:hover': {
-                            bgcolor: 'rgba(0, 255, 0, 0.2)',
-                          },
-                        }}
-                      >
-                        <PhotoCameraIcon sx={{ color: '#00ff00' }} />
-                      </IconButton>
-                    </label>
-                  </Box>
-                  {avatarError && (
-                    <Typography sx={{ color: '#ff0000', fontSize: '0.875rem', mt: 1 }}>
-                      {avatarError}
-                    </Typography>
-                  )}
                 </Box>
 
                 <Grid container spacing={3}>
@@ -801,55 +717,6 @@ const Dashboard: React.FC = () => {
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
           <Box sx={{ mb: 3 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <Box sx={{ position: 'relative' }}>
-                <Avatar
-                  src={avatarPreview || profileData.avatar || undefined}
-                  sx={{
-                    width: 80,
-                    height: 80,
-                    bgcolor: '#00ff00',
-                    fontSize: '1.5rem',
-                    mr: 2,
-                    border: '2px solid rgba(0, 255, 0, 0.3)',
-                  }}
-                >
-                  {!avatarPreview && !profileData.avatar && profileData.username.charAt(0).toUpperCase()}
-                </Avatar>
-                <input
-                  accept="image/*"
-                  style={{ display: 'none' }}
-                  id="avatar-upload"
-                  type="file"
-                  onChange={handleAvatarChange}
-                  disabled={!editMode}
-                />
-                <label htmlFor="avatar-upload">
-                  <IconButton
-                    component="span"
-                    disabled={!editMode}
-                    sx={{
-                      position: 'absolute',
-                      bottom: 0,
-                      right: 0,
-                      bgcolor: 'rgba(0, 0, 0, 0.8)',
-                      border: '1px solid rgba(0, 255, 0, 0.3)',
-                      '&:hover': {
-                        bgcolor: 'rgba(0, 255, 0, 0.2)',
-                      },
-                    }}
-                  >
-                    <PhotoCameraIcon sx={{ color: '#00ff00' }} />
-                  </IconButton>
-                </label>
-              </Box>
-              {avatarError && (
-                <Typography sx={{ color: '#ff0000', fontSize: '0.875rem', mt: 1 }}>
-                  {avatarError}
-                </Typography>
-              )}
-            </Box>
-
             <TextField
               fullWidth
               label="Username"
