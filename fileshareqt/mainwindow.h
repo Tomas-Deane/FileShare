@@ -21,6 +21,9 @@ public:
 private slots:
     void on_signupButton_clicked();
     void on_loginButton_clicked();
+    void on_logOutButton_clicked();
+    void on_changeUsernameButton_clicked();
+    void on_changePasswordButton_clicked();
 
 private:
     Ui::MainWindow *ui;
