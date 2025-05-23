@@ -27,7 +27,7 @@ NetworkManager::NetworkManager(QObject *parent)
         Logger::log(QString("WSAStartup failed: %1").arg(result));
     }
 #endif
-    initOpenSSL();  // Set up OpenSSL
+    initOpenSSL();  // set up OpenSSL
 }
 
 NetworkManager::~NetworkManager()
@@ -152,47 +152,50 @@ QByteArray NetworkManager::postJson(const QString &host,
     ok = false;
     Logger::log(QString("postJson to https://%1:%2%3").arg(host).arg(port).arg(path));
 
-    // DNS lookup
-    struct hostent *he = gethostbyname(host.toUtf8().constData());
-    if (!he) {
-        message = "DNS lookup failed";
+    struct addrinfo hints{};
+    struct addrinfo *res = nullptr;
+    hints.ai_family   = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    QByteArray portStr = QByteArray::number(port);
+    int gai_err = getaddrinfo(host.toUtf8().constData(), portStr.constData(), &hints, &res);
+    if (gai_err != 0) {
+        message = QString("DNS lookup failed: %1").arg(gai_strerror(gai_err));
         emit networkError(message);
         return {};
     }
 
+    int sock = -1;
+    for (struct addrinfo *rp = res; rp != nullptr; rp = rp->ai_next) {
 #ifdef _WIN32
-    SOCKET sock = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sock == INVALID_SOCKET) {
-        message = "Socket creation failed";
-        emit networkError(message);
-        return {};
-    }
+        sock = ::socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (sock == INVALID_SOCKET) continue;
 #else
-    int sock = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) {
-        message = "Socket creation failed";
-        emit networkError(message);
-        return {};
-    }
+        sock = ::socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (sock < 0) continue;
 #endif
 
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port   = htons(port);
-    addr.sin_addr   = *(struct in_addr*)he->h_addr;
+        if (::connect(sock, rp->ai_addr, static_cast<int>(rp->ai_addrlen)) == 0) {
+            break;  // success
+        }
 
-    if (::connect(sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
 #ifdef _WIN32
         closesocket(sock);
 #else
         ::close(sock);
 #endif
-        message = QString("TCP connect failed to %1:%2").arg(host).arg(port);
+        sock = -1;
+    }
+    freeaddrinfo(res);
+
+    if (sock < 0) {
+        message = QString("Could not connect to %1:%2").arg(host).arg(port);
         emit networkError(message);
         return {};
     }
 
+    // ssl handshake
     SSL *ssl = SSL_new(ssl_ctx);
     SSL_set_fd(ssl, sock);
     if (SSL_connect(ssl) <= 0) {
@@ -207,16 +210,28 @@ QByteArray NetworkManager::postJson(const QString &host,
         return {};
     }
 
+    // build and send http request
     QByteArray body = QJsonDocument(obj).toJson(QJsonDocument::Compact);
     QByteArray req =
-        "POST " + path.toUtf8() + " HTTP/1.1\r\n" +
-        "Host: " + host.toUtf8() + "\r\n" +
-        "Content-Type: application/json\r\n" +
-        "Content-Length: " + QByteArray::number(body.size()) + "\r\n" +
-        "Connection: close\r\n\r\n" +
+        "POST " + path.toUtf8() + " HTTP/1.1\r\n"
+                                  "Host: " + host.toUtf8() + "\r\n"
+                          "Content-Type: application/json\r\n"
+                          "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
+                                            "Connection: close\r\n\r\n" +
         body;
 
-    SSL_write(ssl, req.constData(), req.size());
+    if (SSL_write(ssl, req.constData(), static_cast<int>(req.size())) <= 0) {
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+#ifdef _WIN32
+        closesocket(sock);
+#else
+        ::close(sock);
+#endif
+        message = "Failed to send HTTP request";
+        emit networkError(message);
+        return {};
+    }
 
     QByteArray resp;
     char buf[4096];
@@ -233,15 +248,37 @@ QByteArray NetworkManager::postJson(const QString &host,
     ::close(sock);
 #endif
 
-    int sep = resp.indexOf("\r\n\r\n");
-    if (sep < 0) {
+    // parse http status
+    int header_end = resp.indexOf("\r\n\r\n");
+    if (header_end < 0) {
         message = "Invalid HTTP response";
         emit networkError(message);
         return {};
     }
 
-    QByteArray bodyResp = resp.mid(sep + 4);
-    message = QString::fromUtf8(bodyResp);
+    QByteArray header = resp.left(header_end);
+    // extract first line
+    QList<QByteArray> headerLines = header.split('\n');
+    QString statusLine = QString::fromUtf8(headerLines.value(0).trimmed());
+    QStringList statusParts = statusLine.split(' ');
+    int statusCode = statusParts.size() > 1 ? statusParts.at(1).toInt() : -1;
+
+    QByteArray bodyResp = resp.mid(header_end + 4);
+    if (statusCode < 200 || statusCode >= 300) {
+        // try to extract JSON "detail" field, otherwise fallback to code
+        QJsonDocument json = QJsonDocument::fromJson(bodyResp);
+        QString detail;
+        if (json.isObject() && json.object().contains("detail")) {
+            detail = json.object().value("detail").toString();
+        }
+        message = detail.isEmpty()
+                      ? QString("HTTP error %1").arg(statusCode)
+                      : detail;
+        return {};
+    }
+
+    // success
     ok = true;
+    message = QString::fromUtf8(bodyResp);
     return bodyResp;
 }
