@@ -1,80 +1,87 @@
+
 #include "networkmanager.h"
 #include "logger.h"
 #include <QJsonDocument>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <cstring>
+
+#ifdef _WIN32
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <netdb.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#endif
 
 NetworkManager::NetworkManager(QObject *parent)
     : QObject(parent), ssl_ctx(nullptr)
 {
-    initOpenSSL();  // Set up OpenSSL (load algorithms, create context)
+#ifdef _WIN32
+    WSADATA wsaData;
+    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (result != 0) {
+        Logger::log(QString("WSAStartup failed: %1").arg(result));
+    }
+#endif
+    initOpenSSL();  // Set up OpenSSL
 }
 
 NetworkManager::~NetworkManager()
 {
-    cleanupOpenSSL();  // Tear down OpenSSL (free context, cleanup)
+    cleanupOpenSSL();
+#ifdef _WIN32
+    WSACleanup();
+#endif
 }
 
 void NetworkManager::initOpenSSL()
 {
-    // Load human-readable error strings for libssl & libcrypto
     SSL_load_error_strings();
-    // Register available encryption algorithms (both libssl and libcrypto)
     OpenSSL_add_ssl_algorithms();
-    // Create a new SSL_CTX object as framework for TLS/SSL
     ssl_ctx = SSL_CTX_new(TLS_client_method());
-    // TLS_client_method selects the highest version of TLS (Transport Layer Security)
     if (!ssl_ctx) {
-        Logger::log("Failed to create SSL_CTX");  // No SSL context = cannot do TLS
+        Logger::log("Failed to create SSL_CTX");
     }
 }
 
 void NetworkManager::cleanupOpenSSL()
 {
     if (ssl_ctx) {
-        SSL_CTX_free(ssl_ctx);  // Release SSL context
+        SSL_CTX_free(ssl_ctx);
         ssl_ctx = nullptr;
     }
-    // Remove all algorithms from libcrypto (cleanup)
     EVP_cleanup();
 }
 
 void NetworkManager::signup(const QJsonObject &payload)
 {
-    // Log the outgoing signup JSON payload
     Logger::log("Sending signup request: " +
                 QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
 
-    bool ok = false;           // Will be set true if HTTP+TLS exchange succeeds
-    QString message;           // Will hold error or raw response body
-
-    // Send HTTPS POST to host "gobbler.info" on TCP port 3210, path "/signup"
+    bool ok = false;
+    QString message;
     QByteArray resp = postJson("gobbler.info", 3210, "/signup", payload, ok, message);
 
     Logger::log("Received signup response: " + QString::fromUtf8(resp));
     if (!ok) {
-        // Network or protocol error
         emit signupResult(false, message);
         return;
     }
 
-    // Parse the JSON response body
     auto obj = QJsonDocument::fromJson(resp).object();
     if (obj["status"].toString() == "ok") {
         emit signupResult(true, obj["status"].toString());
     } else {
-        // On error, server sends {"detail": "..."}
         emit signupResult(false, obj["detail"].toString());
     }
 }
 
 void NetworkManager::login(const QString &username)
 {
-    // Build simple JSON: { "username": "<username>" }
     QJsonObject req;
     req["username"] = username;
 
@@ -92,10 +99,8 @@ void NetworkManager::login(const QString &username)
         return;
     }
 
-    // Expecting { "status": "challenge", "nonce": "...", ... }
     auto obj = QJsonDocument::fromJson(resp).object();
     if (obj["status"].toString() == "challenge") {
-        // Decode Base64‐encoded fields into raw bytes
         emit loginChallenge(
             QByteArray::fromBase64(obj["nonce"].toString().toUtf8()),
             QByteArray::fromBase64(obj["salt"].toString().toUtf8()),
@@ -105,14 +110,12 @@ void NetworkManager::login(const QString &username)
             QByteArray::fromBase64(obj["privkey_nonce"].toString().toUtf8())
             );
     } else {
-        // On error, server sends {"detail": "..."}
         emit loginResult(false, obj["detail"].toString());
     }
 }
 
 void NetworkManager::authenticate(const QString &username, const QByteArray &signature)
 {
-    // Build JSON with Base64 signature
     QJsonObject req;
     req["username"]  = username;
     req["signature"] = QString::fromUtf8(signature.toBase64());
@@ -147,44 +150,58 @@ QByteArray NetworkManager::postJson(const QString &host,
                                     QString &message)
 {
     ok = false;
+    Logger::log(QString("postJson to https://%1:%2%3").arg(host).arg(port).arg(path));
 
-    Logger::log(QString("postJson to https://%1:%2%3")
-                    .arg(host).arg(port).arg(path));
-
-    struct hostent *he = gethostbyname(host.toUtf8().constData()); // DNS lookup to resolve hostname → IP address
+    // DNS lookup
+    struct hostent *he = gethostbyname(host.toUtf8().constData());
     if (!he) {
         message = "DNS lookup failed";
         emit networkError(message);
         return {};
     }
 
+#ifdef _WIN32
+    SOCKET sock = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sock == INVALID_SOCKET) {
+        message = "Socket creation failed";
+        emit networkError(message);
+        return {};
+    }
+#else
     int sock = ::socket(AF_INET, SOCK_STREAM, 0);
-    // AF_INET = IPv4 address family
-    // 0 = use default protocol (IPPROTO_TCP for SOCK_STREAM)
     if (sock < 0) {
         message = "Socket creation failed";
         emit networkError(message);
         return {};
     }
+#endif
 
-    struct sockaddr_in addr{};
-    addr.sin_family = AF_INET;                         // IPv4
-    addr.sin_port   = htons(port);                     // Convert port to network byte order
-    addr.sin_addr   = *(struct in_addr*)he->h_addr;    // Copy resolved IP
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port   = htons(port);
+    addr.sin_addr   = *(struct in_addr*)he->h_addr;
 
     if (::connect(sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+#ifdef _WIN32
+        closesocket(sock);
+#else
         ::close(sock);
+#endif
         message = QString("TCP connect failed to %1:%2").arg(host).arg(port);
         emit networkError(message);
         return {};
     }
 
-    SSL *ssl = SSL_new(ssl_ctx);            // Create SSL object
-    SSL_set_fd(ssl, sock);                  // Attach TCP socket FD to SSL
-
-    if (SSL_connect(ssl) <= 0) {            // Perform TLS handshake as client
+    SSL *ssl = SSL_new(ssl_ctx);
+    SSL_set_fd(ssl, sock);
+    if (SSL_connect(ssl) <= 0) {
         SSL_free(ssl);
+#ifdef _WIN32
+        closesocket(sock);
+#else
         ::close(sock);
+#endif
         message = "SSL handshake failed";
         emit networkError(message);
         return {};
@@ -203,15 +220,18 @@ QByteArray NetworkManager::postJson(const QString &host,
 
     QByteArray resp;
     char buf[4096];
-    while (true) {
-        int len = SSL_read(ssl, buf, sizeof(buf));
-        if (len <= 0) break;
+    int len;
+    while ((len = SSL_read(ssl, buf, sizeof(buf))) > 0) {
         resp.append(buf, len);
     }
 
-    SSL_shutdown(ssl);  // Send "close notify" alert
-    SSL_free(ssl);      // Free SSL object
-    ::close(sock);      // Close underlying TCP socket
+    SSL_shutdown(ssl);
+    SSL_free(ssl);
+#ifdef _WIN32
+    closesocket(sock);
+#else
+    ::close(sock);
+#endif
 
     int sep = resp.indexOf("\r\n\r\n");
     if (sep < 0) {

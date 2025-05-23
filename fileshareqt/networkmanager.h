@@ -1,3 +1,4 @@
+
 #ifndef NETWORKMANAGER_H
 #define NETWORKMANAGER_H
 
@@ -7,10 +8,17 @@
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "Ws2_32.lib")
+#else
 #include <netdb.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#endif
 
 class NetworkManager : public QObject
 {
