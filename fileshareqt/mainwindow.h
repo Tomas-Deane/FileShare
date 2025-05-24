@@ -33,6 +33,9 @@ private slots:
     void onChangeUsernameResult(bool success, const QString &message);
     void onChangePasswordResult(bool success, const QString &message);
 
+    void updateConnectionStatus(bool online);
+
+
 private:
     Ui::MainWindow *ui;
     AuthController *authController;

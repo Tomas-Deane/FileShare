@@ -45,6 +45,9 @@ MainWindow::MainWindow(QWidget *parent)
     connect(authController, &AuthController::changePasswordResult,
             this, &MainWindow::onChangePasswordResult);
 
+    connect(authController, &AuthController::connectionStatusChanged,
+            this, &MainWindow::updateConnectionStatus);
+
     Logger::log("UI setup complete");
 }
 
@@ -113,5 +116,14 @@ void MainWindow::onChangePasswordResult(bool success, const QString &message)
         Logger::log("Password changed successfully");
     } else {
         Logger::log("Failed to change password: " + message);
+    }
+}
+
+void MainWindow::updateConnectionStatus(bool online)
+{
+    if (online) {
+        ui->serverConnectionLabel->setText("Server Connection: Online");
+    } else {
+        ui->serverConnectionLabel->setText("Server Connection: Offline");
     }
 }

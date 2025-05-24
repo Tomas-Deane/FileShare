@@ -55,6 +55,8 @@ signals:
     void changeUsernameResult(bool success, const QString &message);
     void changePasswordResult(bool success, const QString &message);
 
+    void connectionStatusChanged(bool online);
+
 private:
     QByteArray postJson(const QString &host,
                         quint16 port,

@@ -32,6 +32,9 @@ signals:
     void changeUsernameResult(bool success, const QString &message);
     void changePasswordResult(bool success, const QString &message);
 
+    // Forwarded connection status
+    void connectionStatusChanged(bool online);
+
 private slots:
     // Login flow
     void onSignupResult(bool success, const QString &message);
@@ -48,6 +51,8 @@ private slots:
     // Handle server‐side generic challenge
     void onChallengeReceived(const QByteArray &nonce,
                              const QString &operation);
+
+    void onConnectionStatusChanged(bool online);
 
     // After sending change requests
     void onChangeUsernameNetwork(bool success, const QString &message);

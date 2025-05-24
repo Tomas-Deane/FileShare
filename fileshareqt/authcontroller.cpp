@@ -31,6 +31,10 @@ AuthController::AuthController(QObject *parent)
 
     connect(networkManager, &NetworkManager::networkError,
             this, [=](const QString &e){ Logger::log("Network error: " + e); });
+
+    // Forward connection status
+    connect(networkManager, &NetworkManager::connectionStatusChanged,
+            this,           &AuthController::onConnectionStatusChanged);
 }
 
 void AuthController::signup(const QString &username, const QString &password)
@@ -268,4 +272,11 @@ void AuthController::onChangePasswordNetwork(bool success, const QString &messag
         // nothing else to update client‐side
     }
     emit changePasswordResult(success, message);
+}
+
+void AuthController::onConnectionStatusChanged(bool online) {
+    // optional: log it so you know it fired
+    Logger::log(QString("AuthController: connection is now %1")
+                    .arg(online ? "ONLINE" : "OFFLINE"));
+    emit connectionStatusChanged(online);
 }
