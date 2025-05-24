@@ -222,6 +222,7 @@ QByteArray NetworkManager::postJson(const QString &host,
                               &hints, &res);
     if (gai_err != 0) {
         message = QString("DNS lookup failed: %1").arg(gai_strerror(gai_err));
+        emit connectionStatusChanged(false);
         emit networkError(message);
         return {};
     }
@@ -240,6 +241,7 @@ QByteArray NetworkManager::postJson(const QString &host,
 
     if (sock < 0) {
         message = QString("Could not connect to %1:%2").arg(host).arg(port);
+        emit connectionStatusChanged(false);
         emit networkError(message);
         return {};
     }
@@ -250,9 +252,13 @@ QByteArray NetworkManager::postJson(const QString &host,
         SSL_free(ssl);
         close(sock);
         message = "SSL handshake failed";
+        emit connectionStatusChanged(false);
         emit networkError(message);
         return {};
     }
+
+    // Connected successfully
+    emit connectionStatusChanged(true);
 
     QByteArray body = QJsonDocument(obj).toJson(QJsonDocument::Compact);
     QByteArray req =
@@ -268,6 +274,7 @@ QByteArray NetworkManager::postJson(const QString &host,
         SSL_free(ssl);
         close(sock);
         message = "Failed to send HTTP request";
+        emit connectionStatusChanged(false);
         emit networkError(message);
         return {};
     }
@@ -286,6 +293,7 @@ QByteArray NetworkManager::postJson(const QString &host,
     int header_end = resp.indexOf("\r\n\r\n");
     if (header_end < 0) {
         message = "Invalid HTTP response";
+        emit connectionStatusChanged(false);
         emit networkError(message);
         return {};
     }
@@ -310,6 +318,7 @@ QByteArray NetworkManager::postJson(const QString &host,
     }
 
     ok = true;
+    emit connectionStatusChanged(true);
     message = QString::fromUtf8(bodyResp);
     return bodyResp;
 }
