@@ -2,18 +2,33 @@
 #include "networkmanager.h"
 #include "crypto_utils.h"
 #include "logger.h"
+
 #include <sodium.h>
+#include <QJsonObject>
+#include <QJsonDocument>
 
 AuthController::AuthController(QObject *parent)
     : QObject(parent)
     , networkManager(new NetworkManager(this))
 {
+    // Signup / login
     connect(networkManager, &NetworkManager::signupResult,
             this, &AuthController::onSignupResult);
     connect(networkManager, &NetworkManager::loginChallenge,
             this, &AuthController::onLoginChallenge);
     connect(networkManager, &NetworkManager::loginResult,
             this, &AuthController::onLoginResult);
+
+    // Generic challenge for change ops
+    connect(networkManager, &NetworkManager::challengeResult,
+            this, &AuthController::onChallengeReceived);
+
+    // Change operations result
+    connect(networkManager, &NetworkManager::changeUsernameResult,
+            this, &AuthController::onChangeUsernameNetwork);
+    connect(networkManager, &NetworkManager::changePasswordResult,
+            this, &AuthController::onChangePasswordNetwork);
+
     connect(networkManager, &NetworkManager::networkError,
             this, [=](const QString &e){ Logger::log("Network error: " + e); });
 }
@@ -38,6 +53,7 @@ void AuthController::signup(const QString &username, const QString &password)
         crypto_pwhash_OPSLIMIT_MODERATE,
         crypto_pwhash_MEMLIMIT_MODERATE
         );
+    sessionPdk = pdk;
 
     // 3) Generate keypair
     QByteArray pubKey, secKey;
@@ -49,7 +65,6 @@ void AuthController::signup(const QString &username, const QString &password)
 
     // 5) Build and send signup request
     QJsonObject req{
-        { "action", "signup" },
         { "username", username },
         { "salt", QString::fromUtf8(salt.toBase64()) },
         { "argon2_opslimit", int(crypto_pwhash_OPSLIMIT_MODERATE) },
@@ -76,7 +91,6 @@ void AuthController::login(const QString &username, const QString &password)
 
 void AuthController::logout()
 {
-    // Securely wipe all in‐memory secrets
     if (!sessionSecretKey.isEmpty()) {
         sodium_memzero(
             reinterpret_cast<unsigned char*>(sessionSecretKey.data()),
@@ -92,7 +106,6 @@ void AuthController::logout()
         sessionPdk.clear();
     }
     sessionUsername.clear();
-
     emit loggedOut();
 }
 
@@ -123,8 +136,12 @@ void AuthController::onLoginChallenge(
     // 3) Sign the challenge
     auto signature = CryptoUtils::signMessage(nonce, sessionSecretKey);
 
-    // 4) Send authenticate request
-    networkManager->authenticate(pendingUsername, signature);
+    // 4) Send authenticate request (now including the original nonce)
+    networkManager->authenticate(
+        pendingUsername,
+        nonce,
+        signature
+        );
 }
 
 void AuthController::onLoginResult(bool success, const QString &message)
@@ -133,14 +150,122 @@ void AuthController::onLoginResult(bool success, const QString &message)
                     .arg(success).arg(message));
 
     if (success) {
-        // Establish session
         sessionUsername = pendingUsername;
         pendingPassword.clear();
         pendingUsername.clear();
-
-        // Notify UI
         emit loggedIn(sessionUsername);
     }
 
     emit loginResult(success, message);
+}
+
+void AuthController::changeUsername(const QString &newUsername)
+{
+    if (sessionUsername.isEmpty()) {
+        emit changeUsernameResult(false, "Not logged in");
+        return;
+    }
+    pendingNewUsername = newUsername;
+    // Ask the server for a challenge
+    networkManager->requestChallenge(sessionUsername, "change_username");
+}
+
+void AuthController::changePassword(const QString &newPassword)
+{
+    if (sessionUsername.isEmpty()) {
+        emit changePasswordResult(false, "Not logged in");
+        return;
+    }
+
+    // 1) Generate a new salt
+    pendingSalt.fill(char(0), 16);
+    pendingSalt.resize(16);
+    randombytes_buf(reinterpret_cast<unsigned char*>(pendingSalt.data()), 16);
+
+    // 2) Argon2 parameters
+    pendingOpsLimit = crypto_pwhash_OPSLIMIT_MODERATE;
+    pendingMemLimit = crypto_pwhash_MEMLIMIT_MODERATE;
+
+    // 3) Derive the new PDK and encrypt the secret key
+    auto newPdk = CryptoUtils::derivePDK(
+        newPassword,
+        pendingSalt,
+        pendingOpsLimit,
+        pendingMemLimit
+        );
+
+    pendingEncryptedSK = CryptoUtils::encryptSecretKey(
+        sessionSecretKey,
+        newPdk,
+        pendingPrivKeyNonce
+        );
+
+    // 4) Ask the server for a challenge
+    networkManager->requestChallenge(sessionUsername, "change_password");
+}
+
+void AuthController::onChallengeReceived(const QByteArray &nonce,
+                                         const QString &operation)
+{
+    if (operation == "change_username") {
+        processChangeUsername(nonce);
+    } else if (operation == "change_password") {
+        processChangePassword(nonce);
+    } else {
+        Logger::log("Unsupported operation received: " + operation);
+    }
+}
+
+void AuthController::processChangeUsername(const QByteArray &nonce)
+{
+    auto sig = CryptoUtils::signMessage(
+        pendingNewUsername.toUtf8(),
+        sessionSecretKey
+        );
+
+    QJsonObject req{
+        { "username", sessionUsername },
+        { "new_username", pendingNewUsername },
+        { "nonce", QString::fromUtf8(nonce.toBase64()) },
+        { "signature", QString::fromUtf8(sig.toBase64()) }
+    };
+    networkManager->changeUsername(req);
+}
+
+void AuthController::processChangePassword(const QByteArray &nonce)
+{
+    auto sig = CryptoUtils::signMessage(
+        pendingEncryptedSK,
+        sessionSecretKey
+        );
+
+    QJsonObject req{
+        { "username", sessionUsername },
+        { "salt", QString::fromUtf8(pendingSalt.toBase64()) },
+        { "argon2_opslimit", int(pendingOpsLimit) },
+        { "argon2_memlimit", int(pendingMemLimit) },
+        { "encrypted_privkey", QString::fromUtf8(pendingEncryptedSK.toBase64()) },
+        { "privkey_nonce", QString::fromUtf8(pendingPrivKeyNonce.toBase64()) },
+        { "nonce", QString::fromUtf8(nonce.toBase64()) },
+        { "signature", QString::fromUtf8(sig.toBase64()) }
+    };
+    networkManager->changePassword(req);
+}
+
+void AuthController::onChangeUsernameNetwork(bool success, const QString &message)
+{
+    if (success) {
+        sessionUsername = pendingNewUsername;
+        emit loggedIn(sessionUsername);
+    }
+    pendingNewUsername.clear();
+    emit changeUsernameResult(success, message);
+}
+
+void AuthController::onChangePasswordNetwork(bool success, const QString &message)
+{
+    if (success) {
+        // nothing else to update client‐side
+    }
+    emit changePasswordResult(success, message);
 }
