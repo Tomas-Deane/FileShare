@@ -21,10 +21,20 @@ public:
 
     Q_INVOKABLE void signup(const QJsonObject &payload);
     Q_INVOKABLE void login(const QString &username);
-    Q_INVOKABLE void authenticate(const QString &username, const QByteArray &signature);
+    Q_INVOKABLE void authenticate(const QString &username,
+                                  const QByteArray &nonce,
+                                  const QByteArray &signature);
+
+    // New operations
+    Q_INVOKABLE void requestChallenge(const QString &username,
+                                      const QString &operation);
+    Q_INVOKABLE void changeUsername(const QJsonObject &payload);
+    Q_INVOKABLE void changePassword(const QJsonObject &payload);
 
 signals:
     void signupResult(bool success, const QString &message);
+
+    // Emitted when login() returns a challenge + full login info
     void loginChallenge(
         const QByteArray &nonce,
         const QByteArray &salt,
@@ -32,9 +42,18 @@ signals:
         int memlimit,
         const QByteArray &encryptedPrivKey,
         const QByteArray &privKeyNonce
-    );
+        );
     void loginResult(bool success, const QString &message);
+
+    // Generic challenge for change-ops
+    void challengeResult(const QByteArray &nonce,
+                         const QString &operation);
+
     void networkError(const QString &msg);
+
+    // New signals
+    void changeUsernameResult(bool success, const QString &message);
+    void changePasswordResult(bool success, const QString &message);
 
 private:
     QByteArray postJson(const QString &host,
