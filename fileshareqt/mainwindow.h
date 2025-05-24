@@ -21,6 +21,20 @@ public:
 private slots:
     void on_signupButton_clicked();
     void on_loginButton_clicked();
+    void on_logOutButton_clicked();
+    void on_changeUsernameButton_clicked();
+    void on_changePasswordButton_clicked();
+
+    // Update UI when AuthController tells us user has logged in/out
+    void handleLoggedIn(const QString &username);
+    void handleLoggedOut();
+
+    // New slots for change username/password results
+    void onChangeUsernameResult(bool success, const QString &message);
+    void onChangePasswordResult(bool success, const QString &message);
+
+    void updateConnectionStatus(bool online);
+
 
 private:
     Ui::MainWindow *ui;
