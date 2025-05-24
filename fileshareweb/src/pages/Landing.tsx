@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Button, Container, Typography, AppBar, Toolbar, keyframes } from '@mui/material';
 import Grid from '@mui/material/Grid';
+
 import { styled } from '@mui/material/styles';
 import SecurityIcon from '@mui/icons-material/Security';
 import SpeedIcon from '@mui/icons-material/Speed';
@@ -12,7 +13,15 @@ import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
 import StarIcon from '@mui/icons-material/Star';
 import { SvgIconComponent } from '@mui/icons-material';
 import type { Theme } from '@mui/material/styles';
-import type { GridProps } from '@mui/material/Grid';
+import { 
+  CyberButton, 
+  CyberAppBar, 
+  NavButton, 
+  SectionTitle, 
+  FeatureCard, 
+  FeatureIcon,
+  MatrixBackground 
+} from '../components';
 
 interface Feature {
   icon: React.ReactElement<SvgIconComponent>;
@@ -97,7 +106,7 @@ const StyledContainer = styled(Container)<{ theme?: Theme }>(({ theme }) => ({
 
 const GlitchText = styled(Typography)<{ theme?: Theme }>(({ theme }) => ({
   color: '#ffffff',
-  fontSize: '4rem',
+  fontSize: '3rem',
   fontWeight: '900',
   textAlign: 'center',
   marginBottom: theme?.spacing(4),
@@ -126,40 +135,6 @@ const GlitchText = styled(Typography)<{ theme?: Theme }>(({ theme }) => ({
     textShadow: '-2px 0 #00fff9',
     clip: 'rect(44px, 450px, 56px, 0)',
     animation: 'glitch-anim2 5s infinite linear alternate-reverse',
-  },
-}));
-
-const CyberButton = styled(Button)<{ theme?: Theme }>(({ theme }) => ({
-  background: 'linear-gradient(45deg, rgba(0, 255, 0, 0.8) 30%, rgba(0, 255, 255, 0.8) 90%)',
-  border: 0,
-  borderRadius: 3,
-  boxShadow: '0 3px 5px 2px rgba(0, 255, 0, .2)',
-  color: '#000',
-  height: 56,
-  padding: '0 40px',
-  fontSize: '1.4rem',
-  textTransform: 'uppercase',
-  letterSpacing: '0.1em',
-  transition: 'all 0.3s ease',
-  position: 'relative',
-  overflow: 'hidden',
-  '&::before': {
-    content: '""',
-    position: 'absolute',
-    top: 0,
-    left: -100,
-    width: '100%',
-    height: '100%',
-    background: 'linear-gradient(90deg, transparent, rgba(0, 255, 0, 0.15), transparent)',
-    transition: '0.5s',
-  },
-  '&:hover': {
-    background: 'linear-gradient(45deg, rgba(0, 255, 255, 0.8) 30%, rgba(0, 255, 0, 0.8) 90%)',
-    transform: 'scale(1.05)',
-    boxShadow: '0 3px 8px 2px rgba(0, 255, 0, .25)',
-    '&::before': {
-      left: 100,
-    },
   },
 }));
 
@@ -411,7 +386,8 @@ const Landing: React.FC = () => {
 
   return (
     <>
-      <StyledAppBar position="fixed" elevation={0}>
+      <MatrixBackground />
+      <CyberAppBar position="fixed" elevation={0}>
         <Toolbar>
           <Typography 
             variant="h6" 
@@ -433,7 +409,7 @@ const Landing: React.FC = () => {
             Login
           </NavButton>
         </Toolbar>
-      </StyledAppBar>
+      </CyberAppBar>
       <Toolbar /> {/* Spacer for fixed AppBar */}
       <StyledContainer maxWidth={false}>
         {/* Hero Section */}
@@ -450,6 +426,7 @@ const Landing: React.FC = () => {
               fontWeight: '800',
               textShadow: '0 0 15px rgba(0, 255, 0, 0.6)',
               letterSpacing: '0.1em',
+              fontSize: '1.5rem',
             }}
           >
             Secure. Fast. Decentralized.
@@ -464,6 +441,7 @@ const Landing: React.FC = () => {
               fontWeight: '600',
               textShadow: '0 0 10px rgba(255, 255, 255, 0.5)',
               lineHeight: 1.6,
+              fontSize: '1.1rem',
             }}
           >
             Experience the future of secure file sharing with our zero-trust platform.
@@ -502,11 +480,19 @@ const Landing: React.FC = () => {
                     color: '#00ffff',
                     textShadow: '0 0 10px rgba(0, 255, 255, 0.3)',
                     letterSpacing: '0.05em',
+                    fontSize: '1.2rem',
                   }}
                 >
                   {feature.title}
                 </Typography>
-                <Typography variant="body1" sx={{ color: '#ffffff', textShadow: '0 0 5px rgba(255, 255, 255, 0.2)' }}>
+                <Typography 
+                  variant="body1" 
+                  sx={{ 
+                    color: '#ffffff', 
+                    textShadow: '0 0 5px rgba(255, 255, 255, 0.2)',
+                    fontSize: '0.9rem',
+                  }}
+                >
                   {feature.description}
                 </Typography>
               </FeatureCard>
