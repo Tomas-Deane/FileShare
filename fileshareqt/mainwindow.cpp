@@ -39,6 +39,12 @@ MainWindow::MainWindow(QWidget *parent)
     connect(authController, &AuthController::loggedOut,
             this, &MainWindow::handleLoggedOut);
 
+    // Connect change‐username/password result signals
+    connect(authController, &AuthController::changeUsernameResult,
+            this, &MainWindow::onChangeUsernameResult);
+    connect(authController, &AuthController::changePasswordResult,
+            this, &MainWindow::onChangePasswordResult);
+
     Logger::log("UI setup complete");
 }
 
@@ -79,10 +85,33 @@ void MainWindow::handleLoggedOut()
     ui->usernameLabel->setText("Username: ");
 }
 
-void MainWindow::on_changeUsernameButton_clicked() {
-
+void MainWindow::on_changeUsernameButton_clicked()
+{
+    const QString newUsername = ui->changeUsernameLineEdit->text();
+    authController->changeUsername(newUsername);
 }
 
-void MainWindow::on_changePasswordButton_clicked() {
+void MainWindow::on_changePasswordButton_clicked()
+{
+    const QString newPassword = ui->changePasswordLineEdit->text();
+    authController->changePassword(newPassword);
+}
 
+void MainWindow::onChangeUsernameResult(bool success, const QString &message)
+{
+    if (success) {
+        Logger::log("Username changed successfully");
+        // UI already updated via handleLoggedIn when AuthController emits it
+    } else {
+        Logger::log("Failed to change username: " + message);
+    }
+}
+
+void MainWindow::onChangePasswordResult(bool success, const QString &message)
+{
+    if (success) {
+        Logger::log("Password changed successfully");
+    } else {
+        Logger::log("Failed to change password: " + message);
+    }
 }
