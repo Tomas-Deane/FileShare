@@ -12,7 +12,9 @@ DB_NAME     = os.environ.get('DB_NAME',     'nrmc')
 def init_db():
     """
     Initialize the users table and pending_challenges table in the MySQL database
-    if they don't already exist.
+    if they don't already exist. We DROP any old pending_challenges to
+    ensure our new schema (no id, operation column, username PK, and ON UPDATE CASCADE)
+    is used.
     """
     conn = connector.connect(
         user     = DB_USER,
@@ -22,6 +24,7 @@ def init_db():
         database = DB_NAME
     )
     cursor = conn.cursor()
+
     # Users table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
@@ -35,16 +38,20 @@ def init_db():
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
-    # Pending challenges for stateless login
-    # Use VARBINARY(32) so we can index the exact-length challenge
+    # Drop and re-create pending_challenges with new schema
+    cursor.execute("DROP TABLE IF EXISTS pending_challenges;")
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS pending_challenges (
-        id          INT              AUTO_INCREMENT PRIMARY KEY,
+    CREATE TABLE pending_challenges (
         username    VARCHAR(255)     NOT NULL,
+        operation   VARCHAR(64)      NOT NULL,
         challenge   VARBINARY(32)    NOT NULL,
         created_at  DATETIME         NOT NULL,
-        FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE,
-        UNIQUE KEY uq_user_challenge (username, challenge)
+        PRIMARY KEY (username),
+        CONSTRAINT fk_pc_user
+          FOREIGN KEY (username)
+          REFERENCES users(username)
+          ON DELETE CASCADE
+          ON UPDATE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
@@ -110,37 +117,73 @@ class UserDB:
         columns = [col[0] for col in self.cursor.description]
         return dict(zip(columns, row))
 
-    def add_challenge(self, username, challenge: bytes):
-        # Remove any existing challenges for this user
+    def add_challenge(self, username, operation, challenge: bytes):
+        # We only ever keep one pending challenge per user at a time
         self.cursor.execute(
             "DELETE FROM pending_challenges WHERE username = %s",
             (username,)
         )
         sql = """
-            INSERT INTO pending_challenges (username, challenge, created_at)
-            VALUES (%s, %s, UTC_TIMESTAMP())
+            INSERT INTO pending_challenges
+                (username, operation, challenge, created_at)
+            VALUES (%s, %s, %s, UTC_TIMESTAMP())
         """
-        self.cursor.execute(sql, (username, challenge))
+        self.cursor.execute(sql, (username, operation, challenge))
         self.conn.commit()
 
-    def get_pending_challenge(self, username, expiry_seconds=300):
+    def get_pending_challenge(self, username, operation, expiry_seconds=300):
         sql = """
             SELECT challenge
             FROM pending_challenges
             WHERE username = %s
+              AND operation = %s
               AND created_at >= UTC_TIMESTAMP() - INTERVAL %s SECOND
             LIMIT 1
         """
-        self.cursor.execute(sql, (username, expiry_seconds))
+        self.cursor.execute(sql, (username, operation, expiry_seconds))
         row = self.cursor.fetchone()
         if not row:
             return None
-        return row['challenge'] if isinstance(row, dict) else row[0]
+        return (row['challenge'] if isinstance(row, dict) else row[0])
 
     def delete_challenge(self, username):
+        # Wipe any pending challenge for this user
         self.cursor.execute(
             "DELETE FROM pending_challenges WHERE username = %s",
             (username,)
         )
         self.conn.commit()
 
+    def update_username(self, old_username, new_username):
+        """
+        Atomically rename a user.  Because we've declared ON UPDATE CASCADE
+        on the pending_challenges FK, MySQL will automatically update
+        the child record's username to the new value.
+        """
+        sql = "UPDATE users SET username = %s WHERE username = %s"
+        self.cursor.execute(sql, (new_username, old_username))
+        self.conn.commit()
+
+    def update_password(self, username, salt, opslimit, memlimit,
+                        encrypted_privkey, privkey_nonce):
+        """
+        Overwrite the stored salt/limits and re‐encrypted private key.
+        """
+        sql = """
+            UPDATE users
+            SET salt = %s,
+                argon2_opslimit = %s,
+                argon2_memlimit = %s,
+                encrypted_privkey = %s,
+                privkey_nonce = %s
+            WHERE username = %s
+        """
+        self.cursor.execute(sql, (
+            salt,
+            opslimit,
+            memlimit,
+            encrypted_privkey,
+            privkey_nonce,
+            username
+        ))
+        self.conn.commit()
