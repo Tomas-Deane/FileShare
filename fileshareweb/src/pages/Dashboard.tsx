@@ -29,8 +29,9 @@ import {
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
-import MatrixBackground from '../components/MatrixBackground.tsx';
+import { CyberButton, MatrixBackground } from '../components';
 import { QRCodeSVG } from 'qrcode.react';
+
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
   background: 'rgba(0, 0, 0, 0.8)',
@@ -46,32 +47,13 @@ const DashboardCard = styled(Paper)(({ theme }) => ({
   },
 }));
 
-const CyberButton = styled(Button)(({ theme }) => ({
-  background: 'linear-gradient(45deg, #00ff00 30%, #00ffff 90%)',
-  border: 0,
-  borderRadius: 3,
-  boxShadow: '0 3px 5px 2px rgba(0, 255, 0, .3)',
-  color: '#000',
-  height: 48,
-  padding: '0 24px',
-  fontSize: '1rem',
-  textTransform: 'uppercase',
-  letterSpacing: '0.1em',
-  transition: 'all 0.3s ease',
-  position: 'relative',
-  overflow: 'hidden',
-  '&:hover': {
-    background: 'linear-gradient(45deg, #00ffff 30%, #00ff00 90%)',
-    transform: 'scale(1.05)',
-  },
-}));
-
 const StyledTabs = styled(Tabs)({
   borderBottom: '1px solid rgba(0, 255, 0, 0.2)',
   '& .MuiTabs-indicator': {
     backgroundColor: '#00ff00',
   },
 });
+
 const StyledTab = styled(Tab)({
   color: '#00ff00',
   '&.Mui-selected': {
@@ -257,6 +239,7 @@ const Dashboard: React.FC = () => {
   );
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: string) => setActiveTab(newValue);
+
   const handleUpload = () => setOpenUpload(true);
   const handleShare = (fileId: number) => { setSelectedFile(fileId); setOpenShare(true); };
   const handleDelete = (fileId: number) => { /* TODO: Implement delete */ };
@@ -897,6 +880,7 @@ const Dashboard: React.FC = () => {
                           size="small"
                           startIcon={<VerifiedUserIcon />}
                           onClick={() => handleVerifyClick(user)}
+                          sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
                         >
                           Verify
                         </CyberButton>
@@ -1099,7 +1083,11 @@ const Dashboard: React.FC = () => {
           <Button onClick={() => setOpenUpload(false)} sx={{ color: 'rgba(0, 255, 0, 0.7)' }}>
             Cancel
           </Button>
-          <CyberButton onClick={() => setOpenUpload(false)}>
+          <CyberButton
+            onClick={() => setOpenUpload(false)}
+            size="small"
+            sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+          >
             Upload
           </CyberButton>
         </DialogActions>
@@ -1152,7 +1140,11 @@ const Dashboard: React.FC = () => {
           <Button onClick={() => setOpenShare(false)} sx={{ color: 'rgba(0, 255, 0, 0.7)' }}>
             Cancel
           </Button>
-          <CyberButton onClick={() => setOpenShare(false)}>
+          <CyberButton
+            onClick={() => setOpenShare(false)}
+            size="small"
+            sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+          >
             Share
           </CyberButton>
         </DialogActions>
@@ -1241,6 +1233,8 @@ const Dashboard: React.FC = () => {
               // TODO: Implement verification logic
               setOpenVerify(false);
             }}
+            size="small"
+            sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
           >
             Verify
           </CyberButton>

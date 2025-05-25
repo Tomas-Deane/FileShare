@@ -4,10 +4,10 @@ import { ThemeProvider, CssBaseline } from '@mui/material';
 import { createTheme } from '@mui/material/styles';
 
 // Pages
-import Login from './pages/Login.tsx';
-import Signup from './pages/Signup.tsx';
-import Dashboard from './pages/Dashboard.tsx';
-import Landing from './pages/Landing.tsx';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
+import Dashboard from './pages/Dashboard';
+import Landing from './pages/Landing';
 
 // Create a secure theme
 const theme = createTheme({
