@@ -215,14 +215,13 @@ void MainWindow::onListFilesResult(bool success,
 
 void MainWindow::on_downloadFileList_itemSelectionChanged()
 {
-    // Figure out if there's a current selection
     auto item = ui->downloadFileList->currentItem();
     bool hasOne = (item != nullptr);
 
-    // Enable Delete only if a file is selected
+    // ← Enable/disable the Delete button
     ui->deleteButton->setEnabled(hasOne);
 
-    // If nothing’s selected, clear all the labels/previews and bail
+    // ← If nothing’s selected, *clear* everything and bail
     if (!item) {
         ui->downloadFileNameLabel->setText("No file selected");
         ui->downloadFileTypeLabel->setText("-");
@@ -233,12 +232,11 @@ void MainWindow::on_downloadFileList_itemSelectionChanged()
         return;
     }
 
-    // There is a selection — update filename/type immediately
+    // ← Otherwise update labels *before* fetching
     const QString name = item->text();
     ui->downloadFileNameLabel->setText(name);
     ui->downloadFileTypeLabel->setText(QFileInfo(name).suffix());
 
-    // See if we've already cached the data
     const QByteArray data = downloadCache.value(name);
     if (data.isEmpty()) {
         authController->downloadFile(name);
@@ -327,6 +325,7 @@ void MainWindow::on_deleteButton_clicked()
 
 void MainWindow::onDeleteFileResult(bool success, const QString &message)
 {
+    // ← bail out *immediately* on failure
     if (!success) {
         Logger::log("Failed to delete file: " + message);
         return;
@@ -335,6 +334,7 @@ void MainWindow::onDeleteFileResult(bool success, const QString &message)
     if (pendingDeleteItem) {
         int row = ui->downloadFileList->row(pendingDeleteItem);
 
+        // ← block signals so we don’t re-enter selectionChanged
         ui->downloadFileList->blockSignals(true);
         delete ui->downloadFileList->takeItem(row);
         ui->downloadFileList->blockSignals(false);
@@ -342,9 +342,11 @@ void MainWindow::onDeleteFileResult(bool success, const QString &message)
         pendingDeleteItem = nullptr;
     }
 
+    // ← clear the selection and disable the Delete button
     ui->downloadFileList->setCurrentItem(nullptr);
     ui->deleteButton->setEnabled(false);
 
+    // ← reset labels/previews
     ui->downloadFileNameLabel->setText("No file selected");
     ui->downloadFileTypeLabel->setText("-");
     ui->downloadPreviewStack->setCurrentIndex(0);

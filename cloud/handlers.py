@@ -372,4 +372,3 @@ def delete_file_handler(req: DeleteFileRequest, db: models.UserDB):
         logging.warning(f"Bad signature for delete_file of user_id={user_id}")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
-
