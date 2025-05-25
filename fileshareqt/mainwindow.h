@@ -2,30 +2,43 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include "networkmanager.h"
+#include <QString>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
+
+class AuthController;
 
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
 public:
-    MainWindow(QWidget *parent = nullptr);
+    explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
 private slots:
-    void on_connectButton_clicked();
-    void on_sendButton_clicked();
-    void onConnected();
-    void onDisconnected();
-    void onDataReceived(const QString &message);
+    void on_signupButton_clicked();
+    void on_loginButton_clicked();
+    void on_logOutButton_clicked();
+    void on_changeUsernameButton_clicked();
+    void on_changePasswordButton_clicked();
+
+    // Update UI when AuthController tells us user has logged in/out
+    void handleLoggedIn(const QString &username);
+    void handleLoggedOut();
+
+    // New slots for change username/password results
+    void onChangeUsernameResult(bool success, const QString &message);
+    void onChangePasswordResult(bool success, const QString &message);
+
+    void updateConnectionStatus(bool online);
+
 
 private:
     Ui::MainWindow *ui;
-    NetworkManager *networkManager;
+    AuthController *authController;
 };
 
 #endif // MAINWINDOW_H
