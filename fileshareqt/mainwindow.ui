@@ -51,7 +51,7 @@
       <item>
        <widget class="QTabWidget" name="tabWidget">
         <property name="currentIndex">
-         <number>2</number>
+         <number>3</number>
         </property>
         <widget class="QWidget" name="Home">
          <attribute name="title">
@@ -255,8 +255,8 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>426</width>
-                   <height>249</height>
+                   <width>464</width>
+                   <height>298</height>
                   </rect>
                  </property>
                  <layout class="QVBoxLayout" name="verticalLayout_10">
@@ -333,8 +333,8 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>426</width>
-                   <height>81</height>
+                   <width>171</width>
+                   <height>36</height>
                   </rect>
                  </property>
                  <layout class="QVBoxLayout" name="verticalLayout_12">
@@ -357,11 +357,22 @@
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="downloadFileButton">
-            <property name="text">
-             <string>Save As...</string>
-            </property>
-           </widget>
+           <layout class="QHBoxLayout" name="horizontalLayout_14">
+            <item>
+             <widget class="QPushButton" name="downloadFileButton">
+              <property name="text">
+               <string>Save As...</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="deleteButton">
+              <property name="text">
+               <string>Delete</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
           </item>
          </layout>
         </widget>
@@ -669,7 +680,7 @@
      <x>0</x>
      <y>0</y>
      <width>1037</width>
-     <height>38</height>
+     <height>23</height>
     </rect>
    </property>
   </widget>
