@@ -79,20 +79,29 @@ const SearchField = styled(TextField)(({ theme }) => ({
 
 // Mock data for demonstration
 const mockFiles = [
-  { id: 1, name: 'document.pdf', type: 'pdf', size: '2.5 MB', shared: false },
-  { id: 2, name: 'image.jpg', type: 'image', size: '1.8 MB', shared: true },
-  { id: 3, name: 'code.zip', type: 'archive', size: '5.2 MB', shared: false },
-];
+  { id: 1, name: 'document.pdf', type: 'pdf', size: '2.5 MB', shared: false, date: new Date('2024-03-15T10:30:00') },
+  { id: 2, name: 'image.jpg', type: 'image', size: '1.8 MB', shared: true, date: new Date('2024-03-14T15:45:00') },
+  { id: 3, name: 'code.zip', type: 'archive', size: '5.2 MB', shared: false, date: new Date('2024-03-13T09:20:00') },
+  { id: 4, name: 'presentation.pptx', type: 'ppt', size: '4.1 MB', shared: false, date: new Date('2024-03-12T14:15:00') },
+  { id: 5, name: 'notes.txt', type: 'text', size: '0.8 MB', shared: false, date: new Date('2024-03-11T11:00:00') },
+  { id: 6, name: 'spreadsheet.xlsx', type: 'excel', size: '3.7 MB', shared: false, date: new Date('2024-03-10T16:30:00') },
+].sort((a, b) => b.date.getTime() - a.date.getTime());
 
 const mockSharedFiles = [
-  { id: 4, name: 'shared_doc.pdf', type: 'pdf', size: '3.1 MB', sharedBy: 'user1' },
-  { id: 5, name: 'shared_image.jpg', type: 'image', size: '2.3 MB', sharedBy: 'user2' },
-];
+  { id: 4, name: 'shared_doc.pdf', type: 'pdf', size: '3.1 MB', sharedBy: 'user1', date: new Date('2024-03-15T13:20:00') },
+  { id: 5, name: 'shared_image.jpg', type: 'image', size: '2.3 MB', sharedBy: 'user2', date: new Date('2024-03-14T17:45:00') },
+  { id: 6, name: 'project_plan.docx', type: 'doc', size: '1.9 MB', sharedBy: 'user3', date: new Date('2024-03-13T08:30:00') },
+  { id: 7, name: 'budget.xlsx', type: 'excel', size: '2.8 MB', sharedBy: 'user4', date: new Date('2024-03-12T10:15:00') },
+  { id: 8, name: 'meeting_minutes.txt', type: 'text', size: '0.6 MB', sharedBy: 'user5', date: new Date('2024-03-11T14:00:00') },
+].sort((a, b) => b.date.getTime() - a.date.getTime());
 
 const mockUsers = [
   { id: 1, email: 'user1@example.com', verified: true },
-  { id: 2, email: 'user2@example.com', verified: false },
+  { id: 2, email: 'user2@example.com', verified: true },
   { id: 3, email: 'user3@example.com', verified: true },
+  { id: 4, email: 'user4@example.com', verified: true },
+  { id: 5, email: 'user5@example.com', verified: true },
+  { id: 6, email: 'user6@example.com', verified: true },
 ];
 
 // Update the ProfileData interface
@@ -115,7 +124,7 @@ const mockUserProfile: ProfileData = {
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('files');
+  const [activeTab, setActiveTab] = useState<'home'|'files'|'users'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [openUpload, setOpenUpload] = useState(false);
@@ -189,33 +198,44 @@ const Dashboard: React.FC = () => {
             >
               FileShare
             </Typography>
-            <List sx={{ flexGrow: 1 }}>
-              <ListItem component="div" onClick={() => setActiveTab('files')}>
+            <List>
+              <ListItem
+                button
+                selected={activeTab === 'home'}
+                onClick={() => setActiveTab('home')}
+              >
+                <ListItemIcon>
+                  <HomeIcon sx={{ color: '#00ff00' }} />
+                </ListItemIcon>
+                <ListItemText primary="Home" sx={{ color: '#00ff00' }} />
+              </ListItem>
+              <Divider sx={{ borderColor: 'rgba(0,255,0,0.2)', my: 1 }} />
+
+              <ListItem
+                button
+                selected={activeTab === 'files'}
+                onClick={() => setActiveTab('files')}
+              >
                 <ListItemIcon>
                   <StorageIcon sx={{ color: '#00ff00' }} />
                 </ListItemIcon>
-                <ListItemText 
-                  primary="Files" 
-                  sx={{ color: '#00ff00' }}
-                />
+                <ListItemText primary="Files" sx={{ color: '#00ff00' }} />
               </ListItem>
-              <ListItem component="div" onClick={() => setActiveTab('users')}>
+              <ListItem
+                button
+                selected={activeTab === 'users'}
+                onClick={() => setActiveTab('users')}
+              >
                 <ListItemIcon>
                   <PeopleIcon sx={{ color: '#00ff00' }} />
                 </ListItemIcon>
-                <ListItemText 
-                  primary="Users" 
-                  sx={{ color: '#00ff00' }}
-                />
+                <ListItemText primary="Users" sx={{ color: '#00ff00' }} />
               </ListItem>
-              <ListItem component="div" onClick={() => navigate('/login')}>
+              <ListItem button onClick={() => navigate('/login')}>
                 <ListItemIcon>
                   <LockIcon sx={{ color: '#00ff00' }} />
                 </ListItemIcon>
-                <ListItemText 
-                  primary="Logout" 
-                  sx={{ color: '#00ff00' }}
-                />
+                <ListItemText primary="Logout" sx={{ color: '#00ff00' }} />
               </ListItem>
             </List>
             <Divider sx={{ borderColor: 'rgba(0, 255, 0, 0.2)' }} />
@@ -254,7 +274,72 @@ const Dashboard: React.FC = () => {
             </Box>
 
             {/* Content Area */}
-            {activeTab === 'files' ? (
+            {activeTab === 'home' ? (
+              <>
+                {/* Verified Users Section */}
+                <DashboardCard sx={{ mb: 3 }}>
+                  <Typography variant="h6" sx={{ color: '#00ffff', mb: 2 }}>
+                    Verified Users
+                  </Typography>
+                  <Grid container spacing={2}>
+                    {mockUsers
+                      .filter((u) => u.verified)
+                      .slice(0, 6)
+                      .map((u) => (
+                        <Grid item xs={4} sm={2} key={u.id}>
+                          <Paper
+                            sx={{
+                              p: 2,
+                              textAlign: 'center',
+                              background: 'rgba(0,0,0,0.6)',
+                            }}
+                          >
+                            <VerifiedUserIcon sx={{ fontSize: 32, color: '#00ff00' }} />
+                            <Typography
+                              sx={{ mt: 1, color: '#00ffff', fontSize: '0.875rem' }}
+                            >
+                              {u.email}
+                            </Typography>
+                          </Paper>
+                        </Grid>
+                      ))}
+                  </Grid>
+                </DashboardCard>
+
+                {/* Recent Files Section */}
+                <DashboardCard>
+                  <Typography variant="h6" sx={{ color: '#00ffff', mb: 2 }}>
+                    Recent Files
+                  </Typography>
+                  <List sx={{ maxHeight: 400, overflowY: 'auto' }}>
+                    {mockSharedFiles.slice(0, 10).map((f) => (
+                      <ListItem
+                        key={f.id}
+                        sx={{
+                          mb: 1,
+                          border: '1px solid rgba(0,255,0,0.2)',
+                          borderRadius: 1,
+                        }}
+                      >
+                        <ListItemIcon>
+                          <FolderIcon sx={{ color: '#00ff00' }} />
+                        </ListItemIcon>
+                        <ListItemText
+                          primary={f.name}
+                          secondary={`${f.type.toUpperCase()} • ${f.size} • from ${f.sharedBy} • ${f.date.toLocaleDateString('en-GB')} ${f.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                          primaryTypographyProps={{
+                            sx: { color: '#00ffff', fontWeight: 'bold' },
+                          }}
+                          secondaryTypographyProps={{
+                            sx: { color: 'rgba(0,255,0,0.7)' },
+                          }}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                </DashboardCard>
+              </>
+            ) : activeTab === 'files' ? (
               <DashboardCard>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
                   <Typography
@@ -293,7 +378,7 @@ const Dashboard: React.FC = () => {
                       </ListItemIcon>
                       <ListItemText
                         primary={file.name}
-                        secondary={`${file.type.toUpperCase()} • ${file.size}`}
+                        secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
                         primaryTypographyProps={{
                           sx: { color: '#00ffff', fontWeight: 'bold' },
                         }}
