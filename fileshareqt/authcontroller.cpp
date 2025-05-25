@@ -268,15 +268,17 @@ void AuthController::onChangeUsernameNetwork(bool success, const QString &messag
 
 void AuthController::onChangePasswordNetwork(bool success, const QString &message)
 {
-    if (success) {
-        // nothing else to update client‐side
-    }
     emit changePasswordResult(success, message);
 }
 
-void AuthController::onConnectionStatusChanged(bool online) {
-    // optional: log it so you know it fired
+void AuthController::onConnectionStatusChanged(bool online)
+{
     Logger::log(QString("AuthController: connection is now %1")
                     .arg(online ? "ONLINE" : "OFFLINE"));
     emit connectionStatusChanged(online);
+}
+
+void AuthController::checkConnection()
+{
+    networkManager->checkConnection();
 }
