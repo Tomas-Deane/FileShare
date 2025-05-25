@@ -9,12 +9,11 @@ DB_HOST     = os.environ.get('DB_HOST',     '127.0.0.1')
 DB_PORT     = int(os.environ.get('DB_PORT', '3306'))
 DB_NAME     = os.environ.get('DB_NAME',     'nrmc')
 
+
 def init_db():
     """
-    Initialize the users table and pending_challenges table in the MySQL database
-    if they don't already exist. We DROP any old pending_challenges to
-    ensure our new schema (no id, operation column, username PK, and ON UPDATE CASCADE)
-    is used.
+    Initialize the users, username_map, and pending_challenges tables.
+    Drops existing tables to apply fresh schema.
     """
     conn = connector.connect(
         user     = DB_USER,
@@ -25,31 +24,48 @@ def init_db():
     )
     cursor = conn.cursor()
 
-    # Users table
+    # Drop old tables if present
+    cursor.execute("DROP TABLE IF EXISTS pending_challenges;")
+    cursor.execute("DROP TABLE IF EXISTS username_map;")
+    cursor.execute("DROP TABLE IF EXISTS users;")
+
+    # 1) users: crypto data, PK = auto-inc id
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        username           VARCHAR(255)        PRIMARY KEY,
-        salt               BLOB                NOT NULL,
-        argon2_opslimit    INT                 NOT NULL,
-        argon2_memlimit    INT                 NOT NULL,
-        public_key         BLOB                NOT NULL,
-        encrypted_privkey  BLOB                NOT NULL,
-        privkey_nonce      BLOB                NOT NULL
+    CREATE TABLE users (
+        id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+        salt                BLOB                NOT NULL,
+        argon2_opslimit     INT                 NOT NULL,
+        argon2_memlimit     INT                 NOT NULL,
+        public_key          BLOB                NOT NULL,
+        encrypted_privkey   BLOB                NOT NULL,
+        privkey_nonce       BLOB                NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
-    # Drop and re-create pending_challenges with new schema
-    cursor.execute("DROP TABLE IF EXISTS pending_challenges;")
+    # 2) username_map: maps username → users.id
+    cursor.execute("""
+    CREATE TABLE username_map (
+        username            VARCHAR(255)        PRIMARY KEY,
+        user_id             BIGINT              NOT NULL,
+        CONSTRAINT fk_um_user
+          FOREIGN KEY (user_id)
+          REFERENCES users(id)
+          ON DELETE CASCADE
+          ON UPDATE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """)
+
+    # 3) pending_challenges: by user_id + operation
     cursor.execute("""
     CREATE TABLE pending_challenges (
-        username    VARCHAR(255)     NOT NULL,
-        operation   VARCHAR(64)      NOT NULL,
-        challenge   VARBINARY(32)    NOT NULL,
-        created_at  DATETIME         NOT NULL,
-        PRIMARY KEY (username),
+        user_id             BIGINT              NOT NULL,
+        operation           VARCHAR(64)         NOT NULL,
+        challenge           VARBINARY(32)       NOT NULL,
+        created_at          DATETIME            NOT NULL,
+        PRIMARY KEY (user_id, operation),
         CONSTRAINT fk_pc_user
-          FOREIGN KEY (username)
-          REFERENCES users(username)
+          FOREIGN KEY (user_id)
+          REFERENCES users(id)
           ON DELETE CASCADE
           ON UPDATE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -59,9 +75,11 @@ def init_db():
     cursor.close()
     conn.close()
 
+
 class UserDB:
     """
-    Simple wrapper around the MySQL users and pending_challenges tables.
+    Wrapper around users, username_map, and pending_challenges tables.
+    Lookup always by numeric user_id under the hood.
     """
     def __init__(self):
         self.conn = connector.connect(
@@ -76,16 +94,30 @@ class UserDB:
         except TypeError:
             self.cursor = self.conn.cursor()
 
+    def _get_user_id(self, username):
+        """
+        Return integer user_id for a username, or None if absent.
+        """
+        sql = "SELECT user_id FROM username_map WHERE username = %s"
+        self.cursor.execute(sql, (username,))
+        row = self.cursor.fetchone()
+        if not row:
+            return None
+        # row may be dict or tuple
+        return row['user_id'] if isinstance(row, dict) else row[0]
+
     def add_user(self, username, salt, opslimit, memlimit,
                  public_key, encrypted_privkey, privkey_nonce):
-        sql = """
-            INSERT INTO users
-                (username, salt, argon2_opslimit, argon2_memlimit,
-                 public_key, encrypted_privkey, privkey_nonce)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
-        self.cursor.execute(sql, (
-            username,
+        Insert crypto data, get new id, then map username→id.
+        """
+        sql_user = """
+            INSERT INTO users
+                (salt, argon2_opslimit, argon2_memlimit,
+                 public_key, encrypted_privkey, privkey_nonce)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        self.cursor.execute(sql_user, (
             salt,
             opslimit,
             memlimit,
@@ -93,82 +125,109 @@ class UserDB:
             encrypted_privkey,
             privkey_nonce
         ))
+        user_id = self.cursor.lastrowid
+
+        sql_map = "INSERT INTO username_map (username, user_id) VALUES (%s, %s)"
+        self.cursor.execute(sql_map, (username, user_id))
+
         self.conn.commit()
 
     def get_user(self, username):
+        """
+        JOIN username_map→users. Always returns a dict with:
+        user_id, salt, argon2_opslimit, argon2_memlimit,
+        public_key, encrypted_privkey, privkey_nonce
+        or None if not found.
+        """
         sql = """
             SELECT
-              username,
-              salt,
-              argon2_opslimit    AS argon2_opslimit,
-              argon2_memlimit    AS argon2_memlimit,
-              public_key,
-              encrypted_privkey,
-              privkey_nonce
-            FROM users
-            WHERE username = %s
+              u.id                   AS user_id,
+              u.salt                 AS salt,
+              u.argon2_opslimit      AS argon2_opslimit,
+              u.argon2_memlimit      AS argon2_memlimit,
+              u.public_key           AS public_key,
+              u.encrypted_privkey    AS encrypted_privkey,
+              u.privkey_nonce        AS privkey_nonce
+            FROM users u
+            JOIN username_map m
+              ON u.id = m.user_id
+            WHERE m.username = %s
+            LIMIT 1
         """
         self.cursor.execute(sql, (username,))
         row = self.cursor.fetchone()
         if not row:
             return None
+        # Guarantee dict:
         if isinstance(row, dict):
             return row
+        # else tuple: map via cursor.description
         columns = [col[0] for col in self.cursor.description]
         return dict(zip(columns, row))
 
-    def add_challenge(self, username, operation, challenge: bytes):
-        # We only ever keep one pending challenge per user at a time
+    def add_challenge(self, user_id, operation, challenge: bytes):
+        """
+        Store one pending challenge per (user_id, operation).
+        """
         self.cursor.execute(
-            "DELETE FROM pending_challenges WHERE username = %s",
-            (username,)
+            "DELETE FROM pending_challenges WHERE user_id = %s AND operation = %s",
+            (user_id, operation)
         )
         sql = """
             INSERT INTO pending_challenges
-                (username, operation, challenge, created_at)
+                (user_id, operation, challenge, created_at)
             VALUES (%s, %s, %s, UTC_TIMESTAMP())
         """
-        self.cursor.execute(sql, (username, operation, challenge))
+        self.cursor.execute(sql, (user_id, operation, challenge))
         self.conn.commit()
 
-    def get_pending_challenge(self, username, operation, expiry_seconds=300):
+    def get_pending_challenge(self, user_id, operation, expiry_seconds=300):
+        """
+        Fetch challenge bytes if created within expiry_seconds.
+        """
         sql = """
             SELECT challenge
             FROM pending_challenges
-            WHERE username = %s
+            WHERE user_id = %s
               AND operation = %s
               AND created_at >= UTC_TIMESTAMP() - INTERVAL %s SECOND
             LIMIT 1
         """
-        self.cursor.execute(sql, (username, operation, expiry_seconds))
+        self.cursor.execute(sql, (user_id, operation, expiry_seconds))
         row = self.cursor.fetchone()
         if not row:
             return None
-        return (row['challenge'] if isinstance(row, dict) else row[0])
+        return row['challenge'] if isinstance(row, dict) else row[0]
 
-    def delete_challenge(self, username):
-        # Wipe any pending challenge for this user
+    def delete_challenge(self, user_id):
+        """Remove all pending challenges for this user_id."""
         self.cursor.execute(
-            "DELETE FROM pending_challenges WHERE username = %s",
-            (username,)
+            "DELETE FROM pending_challenges WHERE user_id = %s",
+            (user_id,)
         )
         self.conn.commit()
 
     def update_username(self, old_username, new_username):
         """
-        Atomically rename a user.  Because we've declared ON UPDATE CASCADE
-        on the pending_challenges FK, MySQL will automatically update
-        the child record's username to the new value.
+        Atomically rename in username_map.
         """
-        sql = "UPDATE users SET username = %s WHERE username = %s"
+        sql = """
+            UPDATE username_map
+            SET username = %s
+            WHERE username = %s
+        """
         self.cursor.execute(sql, (new_username, old_username))
         self.conn.commit()
 
     def update_password(self, username, salt, opslimit, memlimit,
                         encrypted_privkey, privkey_nonce):
         """
-        Overwrite the stored salt/limits and re‐encrypted private key.
+        Overwrite crypto fields for user_id(%s).
         """
+        user_id = self._get_user_id(username)
+        if user_id is None:
+            raise ValueError(f"Unknown user '{username}'")
+
         sql = """
             UPDATE users
             SET salt = %s,
@@ -176,7 +235,7 @@ class UserDB:
                 argon2_memlimit = %s,
                 encrypted_privkey = %s,
                 privkey_nonce = %s
-            WHERE username = %s
+            WHERE id = %s
         """
         self.cursor.execute(sql, (
             salt,
@@ -184,6 +243,7 @@ class UserDB:
             memlimit,
             encrypted_privkey,
             privkey_nonce,
-            username
+            user_id
         ))
         self.conn.commit()
+

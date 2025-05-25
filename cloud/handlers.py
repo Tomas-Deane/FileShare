@@ -1,3 +1,4 @@
+# File: ./cloud/handlers.py
 #!/usr/bin/env python3
 import base64
 import secrets
@@ -10,15 +11,17 @@ import models
 
 # --- CHALLENGE HANDLER --------------------------------------------
 def challenge_handler(req, db: models.UserDB):
-    # verify user exists (for all ops)
-    if not db.get_user(req.username):
+    # verify user exists
+    user = db.get_user(req.username)
+    if not user:
         logging.warning(f"Unknown user '{req.username}' at challenge")
         raise HTTPException(status_code=404, detail="Unknown user")
 
+    user_id = user["user_id"]
     # generate and store a fresh 32-byte nonce
     challenge = secrets.token_bytes(32)
-    db.add_challenge(req.username, req.operation, challenge)
-    logging.debug(f"Stored challenge for '{req.username}' op={req.operation}: {challenge.hex()}")
+    db.add_challenge(user_id, req.operation, challenge)
+    logging.debug(f"Stored challenge for user_id={user_id} op={req.operation}: {challenge.hex()}")
 
     return {
         "status": "challenge",
@@ -29,7 +32,7 @@ def challenge_handler(req, db: models.UserDB):
 # --- LOGIN CONTINUATION ------------------------------------------------
 def login_handler_continue(req, db: models.UserDB, b64_nonce: str):
     """
-    After challenge, return the full login payload (salt / argon2 params / encrypted_privkey / privkey_nonce)
+    After challenge, return full login payload.
     """
     user = db.get_user(req.username)
     if not user:
@@ -76,26 +79,23 @@ def authenticate_handler(req, db: models.UserDB):
         logging.warning(f"Unknown user '{req.username}' at authenticate")
         raise HTTPException(status_code=404, detail="Unknown user")
 
+    user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(req.username, "login")
-    if stored is None:
-        logging.warning(f"No valid pending challenge for '{req.username}' (login)")
+    stored = db.get_pending_challenge(user_id, "login")
+    if stored is None or provided != stored:
+        logging.warning(f"No valid pending challenge for user_id={user_id} (login)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
-
-    if provided != stored:
-        logging.warning(f"Nonce mismatch for '{req.username}' (login)")
-        raise HTTPException(status_code=400, detail="Invalid challenge nonce")
 
     signature = base64.b64decode(req.signature)
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, provided)
-        logging.info(f"Signature valid for '{req.username}' (login)")
-        db.delete_challenge(req.username)
+        logging.info(f"Signature valid for user_id={user_id} (login)")
+        db.delete_challenge(user_id)
         return {"status": "ok", "message": "login successful"}
     except InvalidSignature:
-        logging.warning(f"Bad signature for '{req.username}' (login)")
-        db.delete_challenge(req.username)
+        logging.warning(f"Bad signature for user_id={user_id} (login)")
+        db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
 
@@ -107,25 +107,24 @@ def change_username_handler(req, db: models.UserDB):
         logging.warning(f"Unknown user '{req.username}' at change_username")
         raise HTTPException(status_code=404, detail="Unknown user")
 
-    # first verify the nonce
+    user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(req.username, "change_username")
+    stored = db.get_pending_challenge(user_id, "change_username")
     if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for '{req.username}' (change_username)")
+        logging.warning(f"No valid pending challenge for user_id={user_id} (change_username)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
 
-    # then verify the signature over the new username
     signature = base64.b64decode(req.signature)
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, req.new_username.encode())
         db.update_username(req.username, req.new_username)
         logging.info(f"Username changed from '{req.username}' to '{req.new_username}'")
-        db.delete_challenge(req.username)
+        db.delete_challenge(user_id)
         return {"status": "ok", "message": "username changed"}
     except InvalidSignature:
-        logging.warning(f"Bad signature for change_username of '{req.username}'")
-        db.delete_challenge(req.username)
+        logging.warning(f"Bad signature for change_username of user_id={user_id}")
+        db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
 
@@ -137,14 +136,13 @@ def change_password_handler(req, db: models.UserDB):
         logging.warning(f"Unknown user '{req.username}' at change_password")
         raise HTTPException(status_code=404, detail="Unknown user")
 
-    # first verify the nonce
+    user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(req.username, "change_password")
+    stored = db.get_pending_challenge(user_id, "change_password")
     if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for '{req.username}' (change_password)")
+        logging.warning(f"No valid pending challenge for user_id={user_id} (change_password)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
 
-    # now verify the signature over the new encrypted private key
     encrypted_privkey = base64.b64decode(req.encrypted_privkey)
     signature = base64.b64decode(req.signature)
     try:
@@ -159,10 +157,11 @@ def change_password_handler(req, db: models.UserDB):
             encrypted_privkey,
             base64.b64decode(req.privkey_nonce)
         )
-        logging.info(f"Password changed for '{req.username}'")
-        db.delete_challenge(req.username)
+        logging.info(f"Password changed for user_id={user_id}")
+        db.delete_challenge(user_id)
         return {"status": "ok", "message": "password changed"}
     except InvalidSignature:
-        logging.warning(f"Bad signature for change_password of '{req.username}'")
-        db.delete_challenge(req.username)
+        logging.warning(f"Bad signature for change_password of user_id={user_id}")
+        db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
+
