@@ -31,6 +31,9 @@ public:
     Q_INVOKABLE void changeUsername(const QJsonObject &payload);
     Q_INVOKABLE void changePassword(const QJsonObject &payload);
 
+    // Ping/check connection without user action
+    Q_INVOKABLE void checkConnection();
+
 signals:
     void signupResult(bool success, const QString &message);
 
@@ -58,6 +61,14 @@ signals:
     void connectionStatusChanged(bool online);
 
 private:
+    // Does a TCP connect + SSL handshake, returns an SSL* on success
+    //   - sockOut is filled with the underlying socket fd
+    //   - on failure, returns nullptr and sets errorMsg; emits connectionStatusChanged(false)
+    SSL *openSslConnection(const QString &host,
+                           quint16 port,
+                           int &sockOut,
+                           QString &errorMsg);
+
     QByteArray postJson(const QString &host,
                         quint16 port,
                         const QString &path,
