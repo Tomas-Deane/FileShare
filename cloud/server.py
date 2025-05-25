@@ -41,7 +41,7 @@ class LoginRequest(BaseModel):
 
 class ChallengeRequest(BaseModel):
     username: str
-    operation: str  # e.g. "login", "change_username", "change_password", "upload_file"
+    operation: str  # e.g. "login", "change_username", ...
 
 
 class AuthenticateRequest(BaseModel):
@@ -81,6 +81,26 @@ class UploadRequest(BaseModel):
     signature: str
 
 
+class ListFilesRequest(BaseModel):
+    username: str
+    nonce: str
+    signature: str
+
+
+class DownloadFileRequest(BaseModel):
+    username: str
+    filename: str
+    nonce: str
+    signature: str
+
+
+class DeleteFileRequest(BaseModel):
+    username: str
+    filename: str
+    nonce: str
+    signature: str
+
+
 @app.post("/signup")
 def signup(req: SignupRequest):
     logging.debug(f"SignupRequest body: {req.json()}")
@@ -100,10 +120,8 @@ def challenge(req: ChallengeRequest):
 @app.post("/login")
 def login(req: LoginRequest):
     logging.debug(f"LoginRequest body: {req.json()}")
-    # internally fetch a nonce via the single challenge endpoint logic
     challenge_req = ChallengeRequest(username=req.username, operation="login")
     chal = handlers.challenge_handler(challenge_req, db)
-    # now tack on the extra user‐specific fields
     full = handlers.login_handler_continue(req, db, chal["nonce"])
     logging.debug(f"Login response: {full}")
     return full
@@ -135,9 +153,40 @@ def change_password(req: ChangePasswordRequest):
 
 @app.post("/upload_file")
 def upload_file(req: UploadRequest):
-    logging.debug(f"UploadRequest body: {req.json()}")
+    # don't log the full encrypted payload
+    logging.debug(
+        "UploadRequest body: %s",
+        req.json(exclude={"encrypted_file"})
+    )
     resp = handlers.upload_file_handler(req, db)
     logging.debug(f"UploadFile response: {resp}")
+    return resp
+
+
+@app.post("/list_files")
+def list_files(req: ListFilesRequest):
+    logging.debug(f"ListFilesRequest body: {req.json()}")
+    resp = handlers.list_files_handler(req, db)
+    logging.debug(f"ListFiles response: {resp}")
+    return resp
+
+
+@app.post("/download_file")
+def download_file(req: DownloadFileRequest):
+    logging.debug(f"DownloadFileRequest body: {req.json()}")
+    resp = handlers.download_file_handler(req, db)
+    # strip out bulky encrypted_file before logging
+    safe_resp = resp.copy()
+    safe_resp.pop("encrypted_file", None)
+    logging.debug(f"DownloadFile response: {safe_resp}")
+    return resp
+
+
+@app.post("/delete_file")
+def delete_file(req: DeleteFileRequest):
+    logging.debug(f"DeleteFileRequest body: {req.json()}")
+    resp = handlers.delete_file_handler(req, db)
+    logging.debug(f"DeleteFile response: {resp}")
     return resp
 
 
