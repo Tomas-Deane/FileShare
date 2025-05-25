@@ -4,6 +4,10 @@
 
 #include <QMainWindow>
 #include <QString>
+#include <QStringList>
+#include <QByteArray>
+#include <QMap>
+#include <QListWidgetItem>       // <<< add this
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -45,15 +49,30 @@ private slots:
     void on_downloadFileList_itemSelectionChanged();
     void on_downloadFileButton_clicked();
 
+    // Delete
+    void on_deleteButton_clicked();
+    void onDeleteFileResult(bool success, const QString &message);
+
+    // New slots for listing and downloading
+    void onListFilesResult(bool success, const QStringList &files, const QString &message);
+    void onDownloadFileResult(bool success, const QString &filename, const QByteArray &data, const QString &message);
+
+    // Clear previews and trigger listFiles only on tab switch
+    void on_tabWidget_currentChanged(int index);
+
 private:
     Ui::MainWindow *ui;
     AuthController *authController;
 
+    // We store the original filename here
     QString currentUploadPath;
     QByteArray currentUploadData;
 
-    // You’ll fill this with filenames → decrypted data
+    // filenames → decrypted data
     QMap<QString, QByteArray> downloadCache;
+
+    // **NEW** pointer to the item we're about to delete
+    QListWidgetItem *pendingDeleteItem;
 };
 
 #endif // MAINWINDOW_H
