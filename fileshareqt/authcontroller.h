@@ -22,6 +22,9 @@ public:
     Q_INVOKABLE void changeUsername(const QString &newUsername);
     Q_INVOKABLE void changePassword(const QString &newPassword);
 
+    // Expose ping/check
+    Q_INVOKABLE void checkConnection();
+
 signals:
     void signupResult(bool success, const QString &message);
     void loginResult(bool success, const QString &message);
