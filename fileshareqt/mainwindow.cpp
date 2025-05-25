@@ -5,6 +5,7 @@
 #include <sodium.h>
 #include <QPixmap>
 #include <QSizePolicy>
+#include <QTimer>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -45,10 +46,16 @@ MainWindow::MainWindow(QWidget *parent)
     connect(authController, &AuthController::changePasswordResult,
             this, &MainWindow::onChangePasswordResult);
 
+    // Update connection status label whenever it changes
     connect(authController, &AuthController::connectionStatusChanged,
             this, &MainWindow::updateConnectionStatus);
 
     Logger::log("UI setup complete");
+
+    // Immediately check server connection on launch
+    QTimer::singleShot(0, this, [this]{
+        authController->checkConnection();
+    });
 }
 
 MainWindow::~MainWindow()
