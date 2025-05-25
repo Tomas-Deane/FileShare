@@ -8,7 +8,8 @@ import {
   Upload as UploadIcon, Share as ShareIcon, Delete as DeleteIcon, Download as DownloadIcon,
   Folder as FolderIcon, Person as PersonIcon, Lock as LockIcon, LockOpen as LockOpenIcon,
   Search as SearchIcon, VerifiedUser as VerifiedUserIcon, People as PeopleIcon,
-  Home as HomeIcon, Storage as StorageIcon, Security as SecurityIcon
+  Home as HomeIcon, Storage as StorageIcon, Security as SecurityIcon, Settings as SettingsIcon,
+  Edit as EditIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
@@ -103,6 +104,24 @@ const mockUsers = [
   { id: 6, email: 'user6@example.com', verified: true },
 ];
 
+// Update the ProfileData interface
+interface ProfileData {
+  username: string;
+  email: string;
+  storageUsed: string;
+  storageLimit: string;
+  lastLogin: string;
+}
+
+// Update the mockUserProfile
+const mockUserProfile: ProfileData = {
+  username: 'cyberpunk_user',
+  email: 'user@example.com',
+  storageUsed: '2.5 GB',
+  storageLimit: '10 GB',
+  lastLogin: '2024-03-20 15:30',
+};
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'home'|'files'|'users'>('home');
@@ -114,6 +133,10 @@ const Dashboard: React.FC = () => {
   const [shareEmail, setShareEmail] = useState('');
   const [openVerify, setOpenVerify] = useState(false);
   const [selectedUser, setSelectedUser] = useState<{ id: number; email: string } | null>(null);
+  const [openProfileSettings, setOpenProfileSettings] = useState(false);
+  const [profileData, setProfileData] = useState<ProfileData>(mockUserProfile);
+  const [editMode, setEditMode] = useState(false);
+  const [editedProfile, setEditedProfile] = useState<ProfileData>(mockUserProfile);
   const [verificationCode] = useState(() => {
     // Generate a random 60-digit integer
     return Array.from({ length: 60 }, () => Math.floor(Math.random() * 10)).join('');
@@ -129,6 +152,7 @@ const Dashboard: React.FC = () => {
     user.email.toLowerCase().includes(userSearchQuery.toLowerCase())
   );
 
+  const handleTabChange = (event: React.SyntheticEvent, newValue: string) => setActiveTab(newValue);
   const handleUpload = () => setOpenUpload(true);
   const handleShare = (fileId: number) => { setSelectedFile(fileId); setOpenShare(true); };
   const handleDelete = (fileId: number) => { /* TODO: Implement delete */ };
@@ -139,13 +163,29 @@ const Dashboard: React.FC = () => {
     setOpenVerify(true);
   };
 
+  const handleProfileEdit = () => {
+    setEditMode(true);
+    setEditedProfile(profileData);
+  };
+
+  const handleProfileSave = () => {
+    setProfileData(editedProfile);
+    setEditMode(false);
+    // TODO: Implement profile update logic
+  };
+
+  const handleProfileCancel = () => {
+    setEditMode(false);
+    setEditedProfile(profileData);
+  };
+
   return (
     <>
       <MatrixBackground />
       <Box sx={{ display: 'flex' }}>
         {/* Left Navigation Drawer */}
         <NavDrawer variant="permanent">
-          <Box sx={{ p: 2 }}>
+          <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
             <Typography
               variant="h6"
               sx={{
@@ -181,7 +221,6 @@ const Dashboard: React.FC = () => {
                 </ListItemIcon>
                 <ListItemText primary="Files" sx={{ color: '#00ff00' }} />
               </ListItem>
-
               <ListItem
                 button
                 selected={activeTab === 'users'}
@@ -192,12 +231,23 @@ const Dashboard: React.FC = () => {
                 </ListItemIcon>
                 <ListItemText primary="Users" sx={{ color: '#00ff00' }} />
               </ListItem>
-
               <ListItem button onClick={() => navigate('/login')}>
                 <ListItemIcon>
                   <LockIcon sx={{ color: '#00ff00' }} />
                 </ListItemIcon>
                 <ListItemText primary="Logout" sx={{ color: '#00ff00' }} />
+              </ListItem>
+            </List>
+            <Divider sx={{ borderColor: 'rgba(0, 255, 0, 0.2)' }} />
+            <List>
+              <ListItem component="div" onClick={() => setActiveTab('profile')}>
+                <ListItemIcon>
+                  <PersonIcon sx={{ color: '#00ff00' }} />
+                </ListItemIcon>
+                <ListItemText 
+                  primary="Profile" 
+                  sx={{ color: '#00ff00' }}
+                />
               </ListItem>
             </List>
           </Box>
@@ -357,7 +407,7 @@ const Dashboard: React.FC = () => {
                   ))}
                 </List>
               </DashboardCard>
-            ) : (
+            ) : activeTab === 'users' ? (
               <DashboardCard>
                 <Box sx={{ mb: 3 }}>
                   <Typography
@@ -428,6 +478,104 @@ const Dashboard: React.FC = () => {
                     </ListItem>
                   ))}
                 </List>
+              </DashboardCard>
+            ) : (
+              <DashboardCard>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      color: '#00ffff',
+                      textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                    }}
+                  >
+                    Profile
+                  </Typography>
+                  <CyberButton
+                    startIcon={<SettingsIcon />}
+                    onClick={() => setOpenProfileSettings(true)}
+                  >
+                    Settings
+                  </CyberButton>
+                </Box>
+
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={6}>
+                    <Paper
+                      sx={{
+                        p: 2,
+                        background: 'rgba(0, 0, 0, 0.5)',
+                        border: '1px solid rgba(0, 255, 0, 0.2)',
+                        borderRadius: 1,
+                      }}
+                    >
+                      <Typography
+                        sx={{
+                          color: '#00ffff',
+                          mb: 1,
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        Storage Usage
+                      </Typography>
+                      <Box sx={{ mb: 1 }}>
+                        <Typography
+                          sx={{
+                            color: '#00ff00',
+                            fontFamily: 'monospace',
+                          }}
+                        >
+                          {profileData.storageUsed} / {profileData.storageLimit}
+                        </Typography>
+                      </Box>
+                      <Box
+                        sx={{
+                          height: 8,
+                          background: 'rgba(0, 255, 0, 0.1)',
+                          borderRadius: 4,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            height: '100%',
+                            width: '25%',
+                            background: 'linear-gradient(90deg, #00ff00, #00ffff)',
+                            borderRadius: 4,
+                          }}
+                        />
+                      </Box>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <Paper
+                      sx={{
+                        p: 2,
+                        background: 'rgba(0, 0, 0, 0.5)',
+                        border: '1px solid rgba(0, 255, 0, 0.2)',
+                        borderRadius: 1,
+                      }}
+                    >
+                      <Typography
+                        sx={{
+                          color: '#00ffff',
+                          mb: 1,
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        Last Login
+                      </Typography>
+                      <Typography
+                        sx={{
+                          color: '#00ff00',
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        {profileData.lastLogin}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                </Grid>
               </DashboardCard>
             )}
           </Container>
@@ -631,6 +779,135 @@ const Dashboard: React.FC = () => {
           >
             Verify
           </CyberButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* Profile Settings Dialog */}
+      <Dialog
+        open={openProfileSettings}
+        onClose={() => setOpenProfileSettings(false)}
+        PaperProps={{
+          sx: {
+            background: 'rgba(0, 0, 0, 0.9)',
+            border: '1px solid rgba(0, 255, 0, 0.2)',
+            color: '#00ff00',
+            minWidth: '400px',
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#00ffff', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
+          Profile Settings
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Box sx={{ mb: 3 }}>
+            <TextField
+              fullWidth
+              label="Username"
+              value={editMode ? editedProfile.username : profileData.username}
+              onChange={(e) => setEditedProfile({ ...editedProfile, username: e.target.value })}
+              disabled={!editMode}
+              sx={{
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  '& fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.3)',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.5)',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#00ff00',
+                  },
+                },
+                '& .MuiInputLabel-root': {
+                  color: 'rgba(0, 255, 0, 0.7)',
+                },
+                '& .MuiInputBase-input': {
+                  color: '#fff',
+                },
+              }}
+            />
+
+            <TextField
+              fullWidth
+              label="Email"
+              value={editMode ? editedProfile.email : profileData.email}
+              onChange={(e) => setEditedProfile({ ...editedProfile, email: e.target.value })}
+              disabled={!editMode}
+              sx={{
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  '& fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.3)',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.5)',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#00ff00',
+                  },
+                },
+                '& .MuiInputLabel-root': {
+                  color: 'rgba(0, 255, 0, 0.7)',
+                },
+                '& .MuiInputBase-input': {
+                  color: '#fff',
+                },
+              }}
+            />
+
+            <TextField
+              fullWidth
+              label="New Password"
+              type="password"
+              disabled={!editMode}
+              sx={{
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  '& fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.3)',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.5)',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#00ff00',
+                  },
+                },
+                '& .MuiInputLabel-root': {
+                  color: 'rgba(0, 255, 0, 0.7)',
+                },
+                '& .MuiInputBase-input': {
+                  color: '#fff',
+                },
+              }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
+          <Button
+            onClick={() => setOpenProfileSettings(false)}
+            sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+          >
+            Cancel
+          </Button>
+          {editMode ? (
+            <>
+              <Button
+                onClick={handleProfileCancel}
+                sx={{ color: 'rgba(255, 0, 0, 0.7)' }}
+              >
+                Cancel Edit
+              </Button>
+              <CyberButton onClick={handleProfileSave}>
+                Save Changes
+              </CyberButton>
+            </>
+          ) : (
+            <CyberButton onClick={handleProfileEdit}>
+              Edit Profile
+            </CyberButton>
+          )}
         </DialogActions>
       </Dialog>
     </>

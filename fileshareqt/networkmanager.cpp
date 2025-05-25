@@ -84,16 +84,52 @@ void NetworkManager::login(const QString &username)
             obj["argon2_memlimit"].toInt(),
             QByteArray::fromBase64(obj["encrypted_privkey"].toString().toUtf8()),
             QByteArray::fromBase64(obj["privkey_nonce"].toString().toUtf8())
-        );
+            );
     } else {
         emit loginResult(false, obj["detail"].toString());
     }
 }
 
-void NetworkManager::authenticate(const QString &username, const QByteArray &signature)
+void NetworkManager::requestChallenge(const QString &username,
+                                      const QString &operation)
 {
     QJsonObject req;
     req["username"]  = username;
+    req["operation"] = operation;
+
+    Logger::log(QString("Requesting challenge for '%1' op='%2'")
+                    .arg(username).arg(operation));
+    Logger::log("Challenge request payload: " +
+                QString::fromUtf8(QJsonDocument(req).toJson(QJsonDocument::Compact)));
+
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3210, "/challenge", req, ok, message);
+
+    Logger::log("Received challenge response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit networkError(message);
+        return;
+    }
+
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "challenge") {
+        QByteArray nonce = QByteArray::fromBase64(
+            obj["nonce"].toString().toUtf8()
+            );
+        emit challengeResult(nonce, operation);
+    } else {
+        emit networkError(obj["detail"].toString());
+    }
+}
+
+void NetworkManager::authenticate(const QString &username,
+                                  const QByteArray &nonce,
+                                  const QByteArray &signature)
+{
+    QJsonObject req;
+    req["username"]  = username;
+    req["nonce"]     = QString::fromUtf8(nonce.toBase64());
     req["signature"] = QString::fromUtf8(signature.toBase64());
 
     Logger::log("Sending authenticate request for user '" + username + "'");
@@ -118,6 +154,52 @@ void NetworkManager::authenticate(const QString &username, const QByteArray &sig
     }
 }
 
+void NetworkManager::changeUsername(const QJsonObject &payload)
+{
+    Logger::log("Sending changeUsername request: " +
+                QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3210, "/change_username", payload, ok, message);
+
+    Logger::log("Received changeUsername response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit changeUsernameResult(false, message);
+        return;
+    }
+
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        emit changeUsernameResult(true, obj["message"].toString());
+    } else {
+        emit changeUsernameResult(false, obj["detail"].toString());
+    }
+}
+
+void NetworkManager::changePassword(const QJsonObject &payload)
+{
+    Logger::log("Sending changePassword request: " +
+                QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3210, "/change_password", payload, ok, message);
+
+    Logger::log("Received changePassword response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit changePasswordResult(false, message);
+        return;
+    }
+
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        emit changePasswordResult(true, obj["message"].toString());
+    } else {
+        emit changePasswordResult(false, obj["detail"].toString());
+    }
+}
+
 QByteArray NetworkManager::postJson(const QString &host,
                                     quint16 port,
                                     const QString &path,
@@ -126,9 +208,8 @@ QByteArray NetworkManager::postJson(const QString &host,
                                     QString &message)
 {
     ok = false;
-
     Logger::log(QString("postJson to https://%1:%2%3")
-                .arg(host).arg(port).arg(path));
+                    .arg(host).arg(port).arg(path));
 
     struct addrinfo hints = {};
     hints.ai_family   = AF_UNSPEC;
@@ -141,6 +222,7 @@ QByteArray NetworkManager::postJson(const QString &host,
                               &hints, &res);
     if (gai_err != 0) {
         message = QString("DNS lookup failed: %1").arg(gai_strerror(gai_err));
+        emit connectionStatusChanged(false);
         emit networkError(message);
         return {};
     }
@@ -159,6 +241,7 @@ QByteArray NetworkManager::postJson(const QString &host,
 
     if (sock < 0) {
         message = QString("Could not connect to %1:%2").arg(host).arg(port);
+        emit connectionStatusChanged(false);
         emit networkError(message);
         return {};
     }
@@ -169,24 +252,29 @@ QByteArray NetworkManager::postJson(const QString &host,
         SSL_free(ssl);
         close(sock);
         message = "SSL handshake failed";
+        emit connectionStatusChanged(false);
         emit networkError(message);
         return {};
     }
 
+    // Connected successfully
+    emit connectionStatusChanged(true);
+
     QByteArray body = QJsonDocument(obj).toJson(QJsonDocument::Compact);
     QByteArray req =
-          "POST " + path.toUtf8() + " HTTP/1.1\r\n"
-          "Host: " + host.toUtf8() + "\r\n"
-          "Content-Type: application/json\r\n"
-          "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
-          "Connection: close\r\n\r\n" +
-          body;
+        "POST " + path.toUtf8() + " HTTP/1.1\r\n"
+                                  "Host: " + host.toUtf8() + "\r\n"
+                          "Content-Type: application/json\r\n"
+                          "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
+                                            "Connection: close\r\n\r\n" +
+        body;
 
     if (SSL_write(ssl, req.constData(), req.size()) <= 0) {
         SSL_shutdown(ssl);
         SSL_free(ssl);
         close(sock);
         message = "Failed to send HTTP request";
+        emit connectionStatusChanged(false);
         emit networkError(message);
         return {};
     }
@@ -205,6 +293,7 @@ QByteArray NetworkManager::postJson(const QString &host,
     int header_end = resp.indexOf("\r\n\r\n");
     if (header_end < 0) {
         message = "Invalid HTTP response";
+        emit connectionStatusChanged(false);
         emit networkError(message);
         return {};
     }
@@ -223,12 +312,13 @@ QByteArray NetworkManager::postJson(const QString &host,
             detail = j.object().value("detail").toString();
         }
         message = detail.isEmpty()
-                  ? QString("HTTP error %1").arg(statusCode)
-                  : detail;
+                      ? QString("HTTP error %1").arg(statusCode)
+                      : detail;
         return {};
     }
 
     ok = true;
+    emit connectionStatusChanged(true);
     message = QString::fromUtf8(bodyResp);
     return bodyResp;
 }
