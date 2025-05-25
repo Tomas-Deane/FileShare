@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   Container, 
@@ -7,24 +7,61 @@ import {
   Button, 
   Link,
   Paper,
-  Grid,
   InputAdornment,
   IconButton,
   Alert,
+  CircularProgress,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import { Visibility, VisibilityOff, Login as LoginIcon, Lock, Person, Home } from '@mui/icons-material';
+import { Visibility, VisibilityOff, Security, Lock, Person, Home } from '@mui/icons-material';
 import { MatrixBackground } from '../components';
+import { apiClient } from '../utils/apiClient';
+import { signChallenge, decryptPrivateKey, CryptoError } from '../utils/crypto';
+
+interface LoginChallenge {
+  status: string;
+  nonce: string;
+  salt: string;
+  argon2_opslimit: number;
+  argon2_memlimit: number;
+  encrypted_privkey: string;
+  privkey_nonce: string;
+  detail?: string;
+}
+
+interface LoginResponse {
+  status: string;
+  message?: string;
+  detail?: string;
+}
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
-    email: '',
     password: '',
   });
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isBrowserCompatible, setIsBrowserCompatible] = useState(true);
+
+  useEffect(() => {
+    // Check browser compatibility
+    try {
+      if (!window.crypto || !window.crypto.subtle) {
+        setIsBrowserCompatible(false);
+        setError('Your browser does not support the required security features. Please use a modern browser like Chrome, Firefox, or Edge.');
+        return;
+      }
+
+      // Test basic crypto support
+      window.crypto.getRandomValues(new Uint8Array(32));
+    } catch (err) {
+      setIsBrowserCompatible(false);
+      setError('Your browser does not support the required security features. Please use a modern browser like Chrome, Firefox, or Edge.');
+    }
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -33,10 +70,86 @@ const Login: React.FC = () => {
     });
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    // TODO: Implement login logic
-    navigate('/dashboard');
+    setError('');
+    setIsLoading(true);
+
+    try {
+      // Validate input
+      if (!formData.username || !formData.password) {
+        throw new Error('Username and password are required');
+      }
+
+      const trimmedUsername = formData.username.trim();
+      if (!trimmedUsername) {
+        throw new Error('Username cannot be empty or contain only spaces');
+      }
+
+      if (!isBrowserCompatible) {
+        throw new Error('Your browser is not compatible with the required security features');
+      }
+
+      console.log('Starting login process...');
+      
+      // Step 1: Request login challenge
+      console.log('Requesting login challenge...');
+      const challengeResponse = await apiClient.post<LoginChallenge>('/login', {
+        username: trimmedUsername
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Login failed');
+      }
+
+      // Step 2: Decrypt private key and sign challenge
+      console.log('Decrypting private key...');
+      const salt = Uint8Array.from(atob(challengeResponse.salt), c => c.charCodeAt(0));
+      const encryptedPrivateKey = Uint8Array.from(atob(challengeResponse.encrypted_privkey), c => c.charCodeAt(0));
+      const nonce = Uint8Array.from(atob(challengeResponse.privkey_nonce), c => c.charCodeAt(0));
+      const challenge = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+
+      const privateKey = await decryptPrivateKey(
+        encryptedPrivateKey,
+        formData.password,
+        salt,
+        nonce,
+        challengeResponse.argon2_opslimit,
+        challengeResponse.argon2_memlimit
+      );
+
+      console.log('Signing challenge...');
+      const signature = await signChallenge(challenge, privateKey);
+
+      // Step 3: Authenticate with signed challenge
+      console.log('Authenticating...');
+      const authResponse = await apiClient.post<LoginResponse>('/authenticate', {
+        username: trimmedUsername,
+        nonce: challengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+      });
+
+      if (authResponse.status === 'ok') {
+        console.log('Login successful, redirecting to dashboard...');
+        navigate('/dashboard');
+      } else {
+        setError(authResponse.detail || 'Authentication failed');
+      }
+    } catch (err: any) {
+      console.error('Login error:', err);
+      if (err instanceof CryptoError) {
+        console.error('Crypto error details:', err.cause);
+        setError('Failed to decrypt private key. Please check your password and try again.');
+      } else if (err.response?.data?.detail) {
+        setError(err.response.data.detail);
+      } else if (err.message) {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred during login');
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -45,7 +158,7 @@ const Login: React.FC = () => {
       <Box
         sx={{
           minHeight: '100vh',
-          background: 'rgba(0,0,0,0.5)', // or 'transparent'
+          background: 'rgba(0,0,0,0.5)',
           display: 'flex',
           alignItems: 'center',
           py: 4,
@@ -105,7 +218,7 @@ const Login: React.FC = () => {
                   fontFamily: 'monospace',
                 }}
               >
-                Secure your files
+                Access your encrypted account
               </Typography>
             </Box>
 
@@ -244,7 +357,8 @@ const Login: React.FC = () => {
                 type="submit"
                 fullWidth
                 variant="contained"
-                startIcon={<LoginIcon />}
+                startIcon={isLoading ? <CircularProgress size={20} color="inherit" /> : <Security />}
+                disabled={isLoading}
                 sx={{
                   mt: 3,
                   mb: 2,
@@ -258,7 +372,7 @@ const Login: React.FC = () => {
                   },
                 }}
               >
-                DECRYPT & LOGIN
+                {isLoading ? 'DECRYPTING...' : 'DECRYPT & LOGIN'}
               </Button>
 
               <Box sx={{ textAlign: 'center' }}>
@@ -274,7 +388,7 @@ const Login: React.FC = () => {
                     },
                   }}
                 >
-                  Need an encrypted account? Sign Up
+                  Don't have an encrypted account? Sign Up
                 </Link>
               </Box>
             </Box>

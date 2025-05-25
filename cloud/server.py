@@ -4,9 +4,11 @@ import base64
 import secrets
 import logging
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import hashes
 from cryptography.exceptions import InvalidSignature
 
 import models
@@ -25,6 +27,14 @@ db = models.UserDB()
 
 app = FastAPI(title="FileShare API")
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://localhost:3000", "https://gobbler.info"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class SignupRequest(BaseModel):
     username: str
@@ -97,7 +107,7 @@ def login(req: LoginRequest):
 
 
 @app.post("/authenticate")
-def authenticate(req: AuthenticateRequest):
+def authenticate(req: AuthenticateRequest, response: Response):
     logging.debug(f"AuthenticateRequest body: {req.json()}")
     logging.info(f"Authenticate attempt for '{req.username}'")
 
@@ -116,9 +126,35 @@ def authenticate(req: AuthenticateRequest):
     logging.debug(f"Verifying signature: challenge={challenge.hex()}, signature={signature.hex()}, pubkey={pubkey.hex()}")
 
     try:
-        Ed25519PublicKey.from_public_bytes(pubkey).verify(signature, challenge)
+        # Convert raw public key bytes to ECDSA public key
+        public_key = ec.EllipticCurvePublicKey.from_encoded_point(
+            ec.SECP256R1(),
+            pubkey
+        )
+        
+        # Verify the signature
+        public_key.verify(
+            signature,
+            challenge,
+            ec.ECDSA(hashes.SHA256())
+        )
+        
         logging.info(f"Signature valid for '{req.username}'")
         db.delete_challenge(req.username)
+        
+        # Create a simple session token (in production, use a proper JWT)
+        session_token = secrets.token_urlsafe(32)
+        
+        # Set session cookie
+        response.set_cookie(
+            key="session_token",
+            value=session_token,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            max_age=86400  # 24 hours
+        )
+        
         resp = {"status": "ok", "message": "login successful"}
         logging.debug(f"Authenticate response: {resp}")
         return resp
@@ -126,6 +162,28 @@ def authenticate(req: AuthenticateRequest):
         logging.warning(f"Bad signature for '{req.username}'")
         db.delete_challenge(req.username)
         raise HTTPException(status_code=401, detail="Bad signature")
+    except Exception as e:
+        logging.error(f"Error verifying signature: {str(e)}")
+        db.delete_challenge(req.username)
+        raise HTTPException(status_code=500, detail="Error verifying signature")
+
+
+@app.get("/auth/check")
+def check_auth(request: Request):
+    """Check if the user is authenticated"""
+    # For now, just return OK if the request has a valid session cookie
+    # In a real implementation, you would verify the session token
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    try:
+        # TODO: Implement proper session token verification
+        # For now, just return OK if token exists
+        return {"status": "ok", "message": "authenticated"}
+    except Exception as e:
+        logging.error(f"Error checking auth: {str(e)}")
+        raise HTTPException(status_code=401, detail="Invalid session")
 
 
 if __name__ == "__main__":
