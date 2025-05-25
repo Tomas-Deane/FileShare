@@ -31,6 +31,8 @@ class SignupRequest(BaseModel):
     public_key: str
     encrypted_privkey: str
     privkey_nonce: str
+    encrypted_kek: str
+    kek_nonce: str
 
 
 class LoginRequest(BaseModel):
@@ -39,7 +41,7 @@ class LoginRequest(BaseModel):
 
 class ChallengeRequest(BaseModel):
     username: str
-    operation: str  # e.g. "login", "change_username", "change_password"
+    operation: str  # e.g. "login", "change_username", "change_password", "upload_file"
 
 
 class AuthenticateRequest(BaseModel):
@@ -62,6 +64,19 @@ class ChangePasswordRequest(BaseModel):
     argon2_memlimit: int
     encrypted_privkey: str
     privkey_nonce: str
+    encrypted_kek: str
+    kek_nonce: str
+    nonce: str
+    signature: str
+
+
+class UploadRequest(BaseModel):
+    username: str
+    filename: str
+    encrypted_file: str
+    file_nonce: str
+    encrypted_dek: str
+    dek_nonce: str
     nonce: str
     signature: str
 
@@ -118,6 +133,14 @@ def change_password(req: ChangePasswordRequest):
     return resp
 
 
+@app.post("/upload_file")
+def upload_file(req: UploadRequest):
+    logging.debug(f"UploadRequest body: {req.json()}")
+    resp = handlers.upload_file_handler(req, db)
+    logging.debug(f"UploadFile response: {resp}")
+    return resp
+
+
 if __name__ == "__main__":
     import uvicorn
 
@@ -139,3 +162,4 @@ if __name__ == "__main__":
         ssl_keyfile=keyfile,
         log_config=None
     )
+
