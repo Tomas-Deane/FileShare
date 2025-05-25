@@ -12,8 +12,8 @@ DB_NAME     = os.environ.get('DB_NAME',     'nrmc')
 
 def init_db():
     """
-    Initialize the users, username_map, pending_challenges, and files tables.
-    Drops existing tables to apply fresh schema.
+    Ensure the users, username_map, pending_challenges, and files tables
+    all exist.  Any that are already there will be left intact.
     """
     conn = connector.connect(
         user     = DB_USER,
@@ -24,15 +24,9 @@ def init_db():
     )
     cursor = conn.cursor()
 
-    # Drop old tables in proper order to avoid FK constraint errors
-    cursor.execute("DROP TABLE IF EXISTS pending_challenges;")
-    cursor.execute("DROP TABLE IF EXISTS files;")
-    cursor.execute("DROP TABLE IF EXISTS username_map;")
-    cursor.execute("DROP TABLE IF EXISTS users;")
-
     # 1) users: crypto data, PK = auto-inc id
     cursor.execute("""
-    CREATE TABLE users (
+    CREATE TABLE IF NOT EXISTS users (
         id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
         salt                BLOB                NOT NULL,
         argon2_opslimit     INT                 NOT NULL,
@@ -47,7 +41,7 @@ def init_db():
 
     # 2) username_map: maps username → users.id
     cursor.execute("""
-    CREATE TABLE username_map (
+    CREATE TABLE IF NOT EXISTS username_map (
         username            VARCHAR(255)        PRIMARY KEY,
         user_id             BIGINT              NOT NULL,
         CONSTRAINT fk_um_user
@@ -60,7 +54,7 @@ def init_db():
 
     # 3) pending_challenges: by user_id + operation
     cursor.execute("""
-    CREATE TABLE pending_challenges (
+    CREATE TABLE IF NOT EXISTS pending_challenges (
         user_id             BIGINT              NOT NULL,
         operation           VARCHAR(64)         NOT NULL,
         challenge           VARBINARY(32)       NOT NULL,
@@ -76,7 +70,7 @@ def init_db():
 
     # 4) files: store encrypted files and DEKs
     cursor.execute("""
-    CREATE TABLE files (
+    CREATE TABLE IF NOT EXISTS files (
         id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
         owner_id            BIGINT              NOT NULL,
         filename            VARCHAR(255)        NOT NULL,
@@ -237,7 +231,7 @@ class UserDB:
                         encrypted_kek, kek_nonce):
         """
         Overwrite crypto fields for password + KEK envelope.
-        """ 
+        """
         user_id = self._get_user_id(username)
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
@@ -288,4 +282,71 @@ class UserDB:
             encrypted_dek,
             dek_nonce
         ))
+        self.conn.commit()
+
+    def list_files(self, username):
+        """
+        Return a list of filenames owned by the given user, ordered by creation time.
+        """
+        user_id = self._get_user_id(username)
+        if user_id is None:
+            raise ValueError(f"Unknown user '{username}'")
+
+        sql = """
+            SELECT filename
+            FROM files
+            WHERE owner_id = %s
+            ORDER BY created_at
+        """
+        self.cursor.execute(sql, (user_id,))
+        rows = self.cursor.fetchall()
+        if not rows:
+            return []
+        if isinstance(rows[0], dict):
+            return [row['filename'] for row in rows]
+        else:
+            return [row[0] for row in rows]
+
+    def get_file(self, username, filename):
+        """
+        Return the encrypted_file, file_nonce, encrypted_dek, and dek_nonce for the specified file.
+        """
+        user_id = self._get_user_id(username)
+        if user_id is None:
+            raise ValueError(f"Unknown user '{username}'")
+
+        sql = """
+            SELECT encrypted_file, file_nonce, encrypted_dek, dek_nonce
+            FROM files
+            WHERE owner_id = %s
+              AND filename = %s
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (user_id, filename))
+        row = self.cursor.fetchone()
+        if not row:
+            return None
+        if isinstance(row, dict):
+            return row
+        columns = [col[0] for col in self.cursor.description]
+        return dict(zip(columns, row))
+
+    def delete_file(self, username, filename):
+        """
+        Delete *one* file record (and its DEK) for the given user.
+        If you’ve ever uploaded the same filename multiple times, this
+        will only remove one instance at a time.
+        """
+        user_id = self._get_user_id(username)
+        if user_id is None:
+            raise ValueError(f"Unknown user '{username}'")
+
+        sql = """
+            DELETE FROM files
+             WHERE owner_id = %s
+               AND filename   = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (user_id, filename))
         self.conn.commit()
