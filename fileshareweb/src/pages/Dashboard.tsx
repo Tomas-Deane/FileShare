@@ -14,6 +14,7 @@ import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
 import { CyberButton, MatrixBackground } from '../components';
 import { QRCodeSVG } from 'qrcode.react';
+import { useAuth } from '../contexts/AuthContext';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -94,8 +95,11 @@ const mockUsers = [
   { id: 3, email: 'user3@example.com', verified: true },
 ];
 
+
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { username, secretKey, pdk, kek } = useAuth();
   const [activeTab, setActiveTab] = useState('files');
   const [searchQuery, setSearchQuery] = useState('');
   const [userSearchQuery, setUserSearchQuery] = useState('');
@@ -129,6 +133,25 @@ const Dashboard: React.FC = () => {
     setSelectedUser(user);
     setOpenVerify(true);
   };
+
+
+  const debugSection = (
+    <Box sx={{ 
+      p: 2, 
+      mb: 2,
+      bgcolor: 'rgba(0,0,0,0.8)', 
+      color: '#00ff00', 
+      fontFamily: 'monospace',
+      border: '1px solid rgba(0, 255, 0, 0.2)',
+      borderRadius: 1
+    }}>
+       <Typography variant="h6" sx={{ color: '#00ffff', mb: 1 }}>Debug Info:</Typography>
+      <Typography>Username: {username}</Typography>
+      <Typography>Secret Key: {secretKey ? 'Present' : 'Not set'}</Typography>
+      <Typography>PDK: {pdk ? 'Present' : 'Not set'}</Typography>
+      <Typography>KEK: {kek ? 'Present' : 'Not set'}</Typography>
+    </Box>
+  );
 
   return (
     <>
@@ -185,6 +208,8 @@ const Dashboard: React.FC = () => {
         <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
           <Container maxWidth="xl">
             {/* Header with Search */}
+            {debugSection}
+
             <Box sx={{ mb: 4 }}>
               <SearchField
                 fullWidth

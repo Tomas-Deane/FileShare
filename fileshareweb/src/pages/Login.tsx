@@ -16,7 +16,8 @@ import { useNavigate } from 'react-router-dom';
 import { Visibility, VisibilityOff, Security, Lock, Person, Home } from '@mui/icons-material';
 import { MatrixBackground } from '../components';
 import { apiClient } from '../utils/apiClient';
-import { signChallenge, decryptPrivateKey, CryptoError } from '../utils/crypto';
+import { signChallenge, decryptPrivateKey, derivePDK, decryptKEK, CryptoError } from '../utils/crypto';
+import { useAuth } from '../contexts/AuthContext';
 
 interface LoginChallenge {
   status: string;
@@ -26,6 +27,8 @@ interface LoginChallenge {
   argon2_memlimit: number;
   encrypted_privkey: string;
   privkey_nonce: string;
+  encrypted_kek: string;
+  kek_nonce: string;
   detail?: string;
 }
 
@@ -37,6 +40,7 @@ interface LoginResponse {
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
+  const { setAuthData } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
@@ -130,8 +134,18 @@ const Login: React.FC = () => {
       });
 
       if (authResponse.status === 'ok') {
-        console.log('Login successful, redirecting to dashboard...');
-        navigate('/dashboard');
+        console.log('Login successful, saving auth data...');
+        
+        // Save the auth data
+        setAuthData({
+            username: trimmedUsername,
+            secretKey: privateKey,  // This is the decrypted private key
+            pdk: await derivePDK(formData.password, salt, challengeResponse.argon2_opslimit, challengeResponse.argon2_memlimit),
+            kek: await decryptKEK(Uint8Array.from(atob(challengeResponse.encrypted_kek), c => c.charCodeAt(0)), formData.password, salt, Uint8Array.from(atob(challengeResponse.kek_nonce), c => c.charCodeAt(0)), challengeResponse.argon2_opslimit, challengeResponse.argon2_memlimit)
+        });
+
+        // Navigate to dashboard
+        navigate('/dashboard', { replace: true });
       } else {
         setError(authResponse.detail || 'Authentication failed');
       }
