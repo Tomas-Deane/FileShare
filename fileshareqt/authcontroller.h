@@ -1,3 +1,4 @@
+// File: fileshareqt/authcontroller.h
 #ifndef AUTHCONTROLLER_H
 #define AUTHCONTROLLER_H
 
@@ -21,6 +22,7 @@ public:
     // New operations
     Q_INVOKABLE void changeUsername(const QString &newUsername);
     Q_INVOKABLE void changePassword(const QString &newPassword);
+    Q_INVOKABLE void uploadFile(const QString &fileContents);
 
     // Expose ping/check
     Q_INVOKABLE void checkConnection();
@@ -34,12 +36,13 @@ signals:
     // Results for change operations
     void changeUsernameResult(bool success, const QString &message);
     void changePasswordResult(bool success, const QString &message);
+    void uploadFileResult(bool success, const QString &message);
 
     // Forwarded connection status
     void connectionStatusChanged(bool online);
 
 private slots:
-    // Login flow
+    // Signup/login callbacks
     void onSignupResult(bool success, const QString &message);
     void onLoginChallenge(
         const QByteArray &nonce,
@@ -47,7 +50,9 @@ private slots:
         int opslimit,
         int memlimit,
         const QByteArray &encryptedSK,
-        const QByteArray &skNonce
+        const QByteArray &skNonce,
+        const QByteArray &encryptedKek,
+        const QByteArray &kekNonce
         );
     void onLoginResult(bool success, const QString &message);
 
@@ -60,6 +65,7 @@ private slots:
     // After sending change requests
     void onChangeUsernameNetwork(bool success, const QString &message);
     void onChangePasswordNetwork(bool success, const QString &message);
+    void onUploadFileNetwork(bool success, const QString &message);
 
 private:
     NetworkManager *networkManager;
@@ -68,10 +74,14 @@ private:
     QString pendingUsername;
     QString pendingPassword;
 
+    // For file upload
+    QString pendingFileContents;
+
     // Session state (cleared on logout)
     QString sessionUsername;
     QByteArray sessionSecretKey;
     QByteArray sessionPdk;
+    QByteArray sessionKek;
 
     // For change‐username
     QString pendingNewUsername;
@@ -82,9 +92,12 @@ private:
     quint64   pendingMemLimit;
     QByteArray pendingEncryptedSK;
     QByteArray pendingPrivKeyNonce;
+    QByteArray pendingEncryptedKek;
+    QByteArray pendingKekNonce;
 
     void processChangeUsername(const QByteArray &nonce);
     void processChangePassword(const QByteArray &nonce);
+    void processUploadFile(const QByteArray &nonce);
 };
 
 #endif // AUTHCONTROLLER_H
