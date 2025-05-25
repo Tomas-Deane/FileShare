@@ -1,3 +1,4 @@
+// File: fileshareqt/networkmanager.cpp
 #include "networkmanager.h"
 #include "logger.h"
 #include <QJsonDocument>
@@ -213,14 +214,17 @@ void NetworkManager::login(const QString &username)
 
     auto obj = QJsonDocument::fromJson(resp).object();
     if (obj["status"].toString() == "challenge") {
-        emit loginChallenge(
-            QByteArray::fromBase64(obj["nonce"].toString().toUtf8()),
-            QByteArray::fromBase64(obj["salt"].toString().toUtf8()),
-            obj["argon2_opslimit"].toInt(),
-            obj["argon2_memlimit"].toInt(),
-            QByteArray::fromBase64(obj["encrypted_privkey"].toString().toUtf8()),
-            QByteArray::fromBase64(obj["privkey_nonce"].toString().toUtf8())
-            );
+        QByteArray nonce = QByteArray::fromBase64(obj["nonce"].toString().toUtf8());
+        QByteArray salt = QByteArray::fromBase64(obj["salt"].toString().toUtf8());
+        QByteArray encryptedPrivKey = QByteArray::fromBase64(obj["encrypted_privkey"].toString().toUtf8());
+        QByteArray privKeyNonce   = QByteArray::fromBase64(obj["privkey_nonce"].toString().toUtf8());
+        QByteArray encryptedKek    = QByteArray::fromBase64(obj["encrypted_kek"].toString().toUtf8());
+        QByteArray kekNonce        = QByteArray::fromBase64(obj["kek_nonce"].toString().toUtf8());
+        int opslimit = obj["argon2_opslimit"].toInt();
+        int memlimit = obj["argon2_memlimit"].toInt();
+        emit loginChallenge(nonce, salt, opslimit, memlimit,
+                            encryptedPrivKey, privKeyNonce,
+                            encryptedKek, kekNonce);
     } else {
         emit loginResult(false, obj["detail"].toString());
     }
@@ -328,18 +332,35 @@ void NetworkManager::changePassword(const QJsonObject &payload)
     }
 }
 
+void NetworkManager::uploadFile(const QJsonObject &payload)
+{
+    Logger::log("Sending uploadFile request: " +
+                QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3210, "/upload_file", payload, ok, message);
+    Logger::log("Received uploadFile response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit uploadFileResult(false, message);
+        return;
+    }
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        emit uploadFileResult(true, obj["message"].toString());
+    } else {
+        emit uploadFileResult(false, obj["detail"].toString());
+    }
+}
+
 void NetworkManager::checkConnection()
 {
     int sock = -1;
     QString error;
     SSL *ssl = openSslConnection("gobbler.info", 3210, sock, error);
     if (!ssl) {
-        // openSslConnection already emitted connectionStatusChanged(false)
         return;
     }
-    // on success we immediately shut down
     SSL_shutdown(ssl);
     SSL_free(ssl);
     close(sock);
-    // openSslConnection already emitted connectionStatusChanged(true)
 }

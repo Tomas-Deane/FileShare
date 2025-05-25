@@ -1,3 +1,4 @@
+// File: fileshareqt/networkmanager.h
 #ifndef NETWORKMANAGER_H
 #define NETWORKMANAGER_H
 
@@ -30,6 +31,7 @@ public:
                                       const QString &operation);
     Q_INVOKABLE void changeUsername(const QJsonObject &payload);
     Q_INVOKABLE void changePassword(const QJsonObject &payload);
+    Q_INVOKABLE void uploadFile(const QJsonObject &payload);
 
     // Ping/check connection without user action
     Q_INVOKABLE void checkConnection();
@@ -44,11 +46,13 @@ signals:
         int opslimit,
         int memlimit,
         const QByteArray &encryptedPrivKey,
-        const QByteArray &privKeyNonce
+        const QByteArray &privKeyNonce,
+        const QByteArray &encryptedKek,
+        const QByteArray &kekNonce
         );
     void loginResult(bool success, const QString &message);
 
-    // Generic challenge for change-ops
+    // Generic challenge for change-ops and upload
     void challengeResult(const QByteArray &nonce,
                          const QString &operation);
 
@@ -57,6 +61,7 @@ signals:
     // New signals
     void changeUsernameResult(bool success, const QString &message);
     void changePasswordResult(bool success, const QString &message);
+    void uploadFileResult(bool success, const QString &message);
 
     void connectionStatusChanged(bool online);
 
