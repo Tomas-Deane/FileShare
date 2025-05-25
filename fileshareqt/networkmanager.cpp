@@ -1,7 +1,15 @@
-// File: fileshareqt/networkmanager.cpp
 #include "networkmanager.h"
 #include "logger.h"
+
 #include <QJsonDocument>
+#include <QJsonArray>
+#include <QStringList>
+
+// POSIX sockets
+#include <netdb.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 
 NetworkManager::NetworkManager(QObject *parent)
     : QObject(parent)
@@ -64,7 +72,7 @@ SSL *NetworkManager::openSslConnection(const QString &host,
         if (::connect(sock, rp->ai_addr, rp->ai_addrlen) == 0) {
             break;
         }
-        close(sock);
+        ::close(sock);
         sock = -1;
     }
     freeaddrinfo(res);
@@ -80,7 +88,7 @@ SSL *NetworkManager::openSslConnection(const QString &host,
     SSL_set_fd(ssl, sock);
     if (SSL_connect(ssl) <= 0) {
         SSL_free(ssl);
-        close(sock);
+        ::close(sock);
         errorMsg = "SSL handshake failed";
         emit connectionStatusChanged(false);
         return nullptr;
@@ -124,7 +132,7 @@ QByteArray NetworkManager::postJson(const QString &host,
     if (SSL_write(ssl, req.constData(), req.size()) <= 0) {
         SSL_shutdown(ssl);
         SSL_free(ssl);
-        close(sock);
+        ::close(sock);
         message = "Failed to send HTTP request";
         emit connectionStatusChanged(false);
         emit networkError(message);
@@ -141,7 +149,7 @@ QByteArray NetworkManager::postJson(const QString &host,
 
     SSL_shutdown(ssl);
     SSL_free(ssl);
-    close(sock);
+    ::close(sock);
 
     // parse HTTP
     int header_end = resp.indexOf("\r\n\r\n");
@@ -334,8 +342,8 @@ void NetworkManager::changePassword(const QJsonObject &payload)
 
 void NetworkManager::uploadFile(const QJsonObject &payload)
 {
-    Logger::log("Sending uploadFile request: " +
-                QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+    // Logger::log("Sending uploadFile request: " +
+    //             QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
     bool ok = false;
     QString message;
     QByteArray resp = postJson("gobbler.info", 3210, "/upload_file", payload, ok, message);
@@ -352,6 +360,74 @@ void NetworkManager::uploadFile(const QJsonObject &payload)
     }
 }
 
+void NetworkManager::listFiles(const QJsonObject &payload)
+{
+    Logger::log("Sending listFiles request: " +
+                QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3210, "/list_files", payload, ok, message);
+    Logger::log("Received listFiles response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit listFilesResult(false, QStringList(), message);
+        return;
+    }
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        QStringList files;
+        for (const QJsonValue &val : obj["files"].toArray()) {
+            files.append(val.toString());
+        }
+        emit listFilesResult(true, files, QString());
+    } else {
+        emit listFilesResult(false, QStringList(), obj["detail"].toString());
+    }
+}
+
+void NetworkManager::downloadFile(const QJsonObject &payload)
+{
+    // Logger::log("Sending downloadFile request: " +
+    //             QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3210, "/download_file", payload, ok, message);
+    // Logger::log("Received downloadFile response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit downloadFileResult(false, QString(), QString(), QString(), QString(), message);
+        return;
+    }
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        QString encryptedFile = obj["encrypted_file"].toString();
+        QString fileNonce = obj["file_nonce"].toString();
+        QString encryptedDek = obj["encrypted_dek"].toString();
+        QString dekNonce = obj["dek_nonce"].toString();
+        emit downloadFileResult(true, encryptedFile, fileNonce, encryptedDek, dekNonce, QString());
+    } else {
+        emit downloadFileResult(false, QString(), QString(), QString(), QString(), obj["detail"].toString());
+    }
+}
+
+void NetworkManager::deleteFile(const QJsonObject &payload)
+{
+    Logger::log("Sending deleteFile request: " +
+                QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3210, "/delete_file", payload, ok, message);
+    Logger::log("Received deleteFile response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit deleteFileResult(false, message);
+        return;
+    }
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        emit deleteFileResult(true, obj["message"].toString());
+    } else {
+        emit deleteFileResult(false, obj["detail"].toString());
+    }
+}
+
 void NetworkManager::checkConnection()
 {
     int sock = -1;
@@ -362,5 +438,5 @@ void NetworkManager::checkConnection()
     }
     SSL_shutdown(ssl);
     SSL_free(ssl);
-    close(sock);
+    ::close(sock);
 }
