@@ -7,6 +7,11 @@
 #include <QPixmap>
 #include <QSizePolicy>
 #include <QTimer>
+#include <QFileDialog>
+#include <QFile>
+#include <QImageReader>
+#include <QMimeDatabase>
+
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -130,11 +135,11 @@ void MainWindow::onChangePasswordResult(bool success, const QString &message)
     }
 }
 
-void MainWindow::on_pushButton_2_clicked()
-{
-    const QString contents = ui->fileContentsLineEdit->text();
-    authController->uploadFile(contents);
-}
+// void MainWindow::on_pushButton_2_clicked()
+// {
+//     const QString contents = ui->fileContentsLineEdit->text();
+//     authController->uploadFile(contents);
+// }
 
 void MainWindow::onUploadFileResult(bool success, const QString &message)
 {
@@ -152,4 +157,132 @@ void MainWindow::updateConnectionStatus(bool online)
     } else {
         ui->serverConnectionLabel->setText("Server Connection: Offline");
     }
+}
+
+void MainWindow::on_selectFileButton_clicked()
+{
+    QString path = QFileDialog::getOpenFileName(
+        this,
+        tr("Select a file to upload")
+        );
+    if (path.isEmpty()) return;
+
+    currentUploadPath = path;
+    QFileInfo fi(path);
+    ui->fileNameLabel->setText(fi.fileName());
+    ui->fileTypeLabel->setText(fi.suffix());
+
+    // Read file
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) {
+        Logger::log("Cannot open file for preview");
+        return;
+    }
+    QByteArray data = f.readAll();
+    f.close();
+    currentUploadData = data;
+
+    // Decide preview type
+    QMimeDatabase db;
+    auto mime = db.mimeTypeForFile(fi);
+    if (mime.name().startsWith("text/")) {
+        ui->uploadTextPreview->setPlainText(QString::fromUtf8(data));
+        ui->uploadPreviewStack->setCurrentIndex(0);
+    }
+    else if (mime.name().startsWith("image/")) {
+        QPixmap pix;
+        pix.loadFromData(data);
+        ui->uploadImagePreview->setPixmap(pix.scaled(
+            ui->uploadImagePreview->size(),
+            Qt::KeepAspectRatio,
+            Qt::SmoothTransformation));
+        ui->uploadPreviewStack->setCurrentIndex(1);
+    }
+    else {
+        ui->uploadTextPreview->setPlainText(tr("No preview available"));
+        ui->uploadPreviewStack->setCurrentIndex(0);
+    }
+}
+
+void MainWindow::on_uploadFileButton_clicked()
+{
+    if (currentUploadData.isEmpty()) {
+        Logger::log("No file selected");
+        return;
+    }
+
+    // Build Base64 payload (or however your controller expects it)
+    QString b64 = QString::fromUtf8(currentUploadData.toBase64());
+    authController->uploadFile(b64);
+}
+
+// void MainWindow::populateDownloadList(const QStringList &files)
+// {
+//     ui->downloadFileList->clear();
+//     ui->downloadFileList->addItems(files);
+//     downloadCache.clear();
+// }
+
+void MainWindow::on_downloadFileList_itemSelectionChanged()
+{
+    auto item = ui->downloadFileList->currentItem();
+    if (!item) return;
+    QString name = item->text();
+
+    // Assume you’ve already fetched & decrypted it into downloadCache[name]
+    QByteArray data = downloadCache.value(name);
+    if (data.isEmpty()) {
+        Logger::log("No data cached for " + name);
+        return;
+    }
+
+    ui->downloadFileNameLabel->setText(name);
+    QFileInfo fi(name);
+    ui->downloadFileTypeLabel->setText(fi.suffix());
+
+    QMimeDatabase db;
+    auto mime = db.mimeTypeForFile(fi);
+
+    if (mime.name().startsWith("text/")) {
+        ui->downloadTextPreview->setPlainText(QString::fromUtf8(data));
+        ui->downloadPreviewStack->setCurrentIndex(0);
+    }
+    else if (mime.name().startsWith("image/")) {
+        QPixmap pix;
+        pix.loadFromData(data);
+        ui->downloadImagePreview->setPixmap(pix.scaled(
+            ui->downloadImagePreview->size(),
+            Qt::KeepAspectRatio,
+            Qt::SmoothTransformation));
+        ui->downloadPreviewStack->setCurrentIndex(1);
+    }
+    else {
+        ui->downloadTextPreview->setPlainText(tr("No preview"));
+        ui->downloadPreviewStack->setCurrentIndex(0);
+    }
+}
+
+void MainWindow::on_downloadFileButton_clicked()
+{
+    auto item = ui->downloadFileList->currentItem();
+    if (!item) return;
+    QString name = item->text();
+    QByteArray data = downloadCache.value(name);
+    if (data.isEmpty()) return;
+
+    QString savePath = QFileDialog::getSaveFileName(
+        this,
+        tr("Save file as"),
+        name
+        );
+    if (savePath.isEmpty()) return;
+
+    QFile out(savePath);
+    if (!out.open(QIODevice::WriteOnly)) {
+        Logger::log("Failed to write file");
+        return;
+    }
+    out.write(data);
+    out.close();
+    Logger::log("Saved " + savePath);
 }

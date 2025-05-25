@@ -25,7 +25,6 @@ private slots:
     void on_logOutButton_clicked();
     void on_changeUsernameButton_clicked();
     void on_changePasswordButton_clicked();
-    void on_pushButton_2_clicked();            // Upload File button
     void onUploadFileResult(bool success, const QString &message);
 
     // Update UI when AuthController tells us user has logged in/out
@@ -38,9 +37,23 @@ private slots:
 
     void updateConnectionStatus(bool online);
 
+    // Upload
+    void on_selectFileButton_clicked();
+    void on_uploadFileButton_clicked();
+
+    // Download
+    void on_downloadFileList_itemSelectionChanged();
+    void on_downloadFileButton_clicked();
+
 private:
     Ui::MainWindow *ui;
     AuthController *authController;
+
+    QString currentUploadPath;
+    QByteArray currentUploadData;
+
+    // You’ll fill this with filenames → decrypted data
+    QMap<QString, QByteArray> downloadCache;
 };
 
 #endif // MAINWINDOW_H
