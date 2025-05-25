@@ -12,7 +12,7 @@ DB_NAME     = os.environ.get('DB_NAME',     'nrmc')
 
 def init_db():
     """
-    Initialize the users, username_map, and pending_challenges tables.
+    Initialize the users, username_map, pending_challenges, and files tables.
     Drops existing tables to apply fresh schema.
     """
     conn = connector.connect(
@@ -24,8 +24,9 @@ def init_db():
     )
     cursor = conn.cursor()
 
-    # Drop old tables if present
+    # Drop old tables in proper order to avoid FK constraint errors
     cursor.execute("DROP TABLE IF EXISTS pending_challenges;")
+    cursor.execute("DROP TABLE IF EXISTS files;")
     cursor.execute("DROP TABLE IF EXISTS username_map;")
     cursor.execute("DROP TABLE IF EXISTS users;")
 
@@ -38,7 +39,9 @@ def init_db():
         argon2_memlimit     INT                 NOT NULL,
         public_key          BLOB                NOT NULL,
         encrypted_privkey   BLOB                NOT NULL,
-        privkey_nonce       BLOB                NOT NULL
+        privkey_nonce       BLOB                NOT NULL,
+        encrypted_kek       BLOB                NOT NULL,
+        kek_nonce           BLOB                NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
@@ -71,6 +74,25 @@ def init_db():
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
+    # 4) files: store encrypted files and DEKs
+    cursor.execute("""
+    CREATE TABLE files (
+        id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+        owner_id            BIGINT              NOT NULL,
+        filename            VARCHAR(255)        NOT NULL,
+        encrypted_file      LONGBLOB            NOT NULL,
+        file_nonce          BLOB                NOT NULL,
+        encrypted_dek       BLOB                NOT NULL,
+        dek_nonce           BLOB                NOT NULL,
+        created_at          DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_file_owner
+          FOREIGN KEY (owner_id)
+          REFERENCES users(id)
+          ON DELETE CASCADE
+          ON UPDATE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """)
+
     conn.commit()
     cursor.close()
     conn.close()
@@ -78,8 +100,7 @@ def init_db():
 
 class UserDB:
     """
-    Wrapper around users, username_map, and pending_challenges tables.
-    Lookup always by numeric user_id under the hood.
+    Wrapper around users, username_map, pending_challenges, and files tables.
     """
     def __init__(self):
         self.conn = connector.connect(
@@ -103,19 +124,20 @@ class UserDB:
         row = self.cursor.fetchone()
         if not row:
             return None
-        # row may be dict or tuple
         return row['user_id'] if isinstance(row, dict) else row[0]
 
     def add_user(self, username, salt, opslimit, memlimit,
-                 public_key, encrypted_privkey, privkey_nonce):
+                 public_key, encrypted_privkey, privkey_nonce,
+                 encrypted_kek, kek_nonce):
         """
         Insert crypto data, get new id, then map username→id.
         """
         sql_user = """
             INSERT INTO users
                 (salt, argon2_opslimit, argon2_memlimit,
-                 public_key, encrypted_privkey, privkey_nonce)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                 public_key, encrypted_privkey, privkey_nonce,
+                 encrypted_kek, kek_nonce)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
         self.cursor.execute(sql_user, (
             salt,
@@ -123,21 +145,22 @@ class UserDB:
             memlimit,
             public_key,
             encrypted_privkey,
-            privkey_nonce
+            privkey_nonce,
+            encrypted_kek,
+            kek_nonce
         ))
         user_id = self.cursor.lastrowid
 
         sql_map = "INSERT INTO username_map (username, user_id) VALUES (%s, %s)"
         self.cursor.execute(sql_map, (username, user_id))
-
         self.conn.commit()
 
     def get_user(self, username):
         """
         JOIN username_map→users. Always returns a dict with:
         user_id, salt, argon2_opslimit, argon2_memlimit,
-        public_key, encrypted_privkey, privkey_nonce
-        or None if not found.
+        public_key, encrypted_privkey, privkey_nonce,
+        encrypted_kek, kek_nonce or None if not found.
         """
         sql = """
             SELECT
@@ -147,7 +170,9 @@ class UserDB:
               u.argon2_memlimit      AS argon2_memlimit,
               u.public_key           AS public_key,
               u.encrypted_privkey    AS encrypted_privkey,
-              u.privkey_nonce        AS privkey_nonce
+              u.privkey_nonce        AS privkey_nonce,
+              u.encrypted_kek        AS encrypted_kek,
+              u.kek_nonce            AS kek_nonce
             FROM users u
             JOIN username_map m
               ON u.id = m.user_id
@@ -158,17 +183,12 @@ class UserDB:
         row = self.cursor.fetchone()
         if not row:
             return None
-        # Guarantee dict:
         if isinstance(row, dict):
             return row
-        # else tuple: map via cursor.description
         columns = [col[0] for col in self.cursor.description]
         return dict(zip(columns, row))
 
     def add_challenge(self, user_id, operation, challenge: bytes):
-        """
-        Store one pending challenge per (user_id, operation).
-        """
         self.cursor.execute(
             "DELETE FROM pending_challenges WHERE user_id = %s AND operation = %s",
             (user_id, operation)
@@ -182,9 +202,6 @@ class UserDB:
         self.conn.commit()
 
     def get_pending_challenge(self, user_id, operation, expiry_seconds=300):
-        """
-        Fetch challenge bytes if created within expiry_seconds.
-        """
         sql = """
             SELECT challenge
             FROM pending_challenges
@@ -200,7 +217,6 @@ class UserDB:
         return row['challenge'] if isinstance(row, dict) else row[0]
 
     def delete_challenge(self, user_id):
-        """Remove all pending challenges for this user_id."""
         self.cursor.execute(
             "DELETE FROM pending_challenges WHERE user_id = %s",
             (user_id,)
@@ -208,9 +224,6 @@ class UserDB:
         self.conn.commit()
 
     def update_username(self, old_username, new_username):
-        """
-        Atomically rename in username_map.
-        """
         sql = """
             UPDATE username_map
             SET username = %s
@@ -220,21 +233,24 @@ class UserDB:
         self.conn.commit()
 
     def update_password(self, username, salt, opslimit, memlimit,
-                        encrypted_privkey, privkey_nonce):
+                        encrypted_privkey, privkey_nonce,
+                        encrypted_kek, kek_nonce):
         """
-        Overwrite crypto fields for user_id(%s).
-        """
+        Overwrite crypto fields for password + KEK envelope.
+        """ 
         user_id = self._get_user_id(username)
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
 
         sql = """
             UPDATE users
-            SET salt = %s,
-                argon2_opslimit = %s,
-                argon2_memlimit = %s,
-                encrypted_privkey = %s,
-                privkey_nonce = %s
+            SET salt               = %s,
+                argon2_opslimit    = %s,
+                argon2_memlimit    = %s,
+                encrypted_privkey  = %s,
+                privkey_nonce      = %s,
+                encrypted_kek      = %s,
+                kek_nonce          = %s
             WHERE id = %s
         """
         self.cursor.execute(sql, (
@@ -243,7 +259,33 @@ class UserDB:
             memlimit,
             encrypted_privkey,
             privkey_nonce,
+            encrypted_kek,
+            kek_nonce,
             user_id
         ))
         self.conn.commit()
 
+    def add_file(self, username, filename, encrypted_file, file_nonce,
+                 encrypted_dek, dek_nonce):
+        """
+        Store a new encrypted file record for the given user.
+        """
+        user_id = self._get_user_id(username)
+        if user_id is None:
+            raise ValueError(f"Unknown user '{username}'")
+
+        sql = """
+            INSERT INTO files
+                (owner_id, filename, encrypted_file, file_nonce,
+                 encrypted_dek, dek_nonce)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        self.cursor.execute(sql, (
+            user_id,
+            filename,
+            encrypted_file,
+            file_nonce,
+            encrypted_dek,
+            dek_nonce
+        ))
+        self.conn.commit()
