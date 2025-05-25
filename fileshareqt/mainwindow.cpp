@@ -1,3 +1,4 @@
+// File: fileshareqt/mainwindow.cpp
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "authcontroller.h"
@@ -45,6 +46,10 @@ MainWindow::MainWindow(QWidget *parent)
             this, &MainWindow::onChangeUsernameResult);
     connect(authController, &AuthController::changePasswordResult,
             this, &MainWindow::onChangePasswordResult);
+
+    // Connect upload file result
+    connect(authController, &AuthController::uploadFileResult,
+            this, &MainWindow::onUploadFileResult);
 
     // Update connection status label whenever it changes
     connect(authController, &AuthController::connectionStatusChanged,
@@ -111,7 +116,6 @@ void MainWindow::onChangeUsernameResult(bool success, const QString &message)
 {
     if (success) {
         Logger::log("Username changed successfully");
-        // UI already updated via handleLoggedIn when AuthController emits it
     } else {
         Logger::log("Failed to change username: " + message);
     }
@@ -123,6 +127,21 @@ void MainWindow::onChangePasswordResult(bool success, const QString &message)
         Logger::log("Password changed successfully");
     } else {
         Logger::log("Failed to change password: " + message);
+    }
+}
+
+void MainWindow::on_pushButton_2_clicked()
+{
+    const QString contents = ui->fileContentsLineEdit->text();
+    authController->uploadFile(contents);
+}
+
+void MainWindow::onUploadFileResult(bool success, const QString &message)
+{
+    if (success) {
+        Logger::log("File uploaded successfully");
+    } else {
+        Logger::log("File upload failed: " + message);
     }
 }
 
