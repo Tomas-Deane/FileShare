@@ -1,3 +1,4 @@
+// File: fileshareqt/authcontroller.cpp
 #include "authcontroller.h"
 #include "networkmanager.h"
 #include "crypto_utils.h"
@@ -6,6 +7,8 @@
 #include <sodium.h>
 #include <QJsonObject>
 #include <QJsonDocument>
+#include <QUuid>
+#include <QDateTime>
 
 AuthController::AuthController(QObject *parent)
     : QObject(parent)
@@ -19,7 +22,7 @@ AuthController::AuthController(QObject *parent)
     connect(networkManager, &NetworkManager::loginResult,
             this, &AuthController::onLoginResult);
 
-    // Generic challenge for change ops
+    // Generic challenge for change ops and upload
     connect(networkManager, &NetworkManager::challengeResult,
             this, &AuthController::onChallengeReceived);
 
@@ -28,13 +31,15 @@ AuthController::AuthController(QObject *parent)
             this, &AuthController::onChangeUsernameNetwork);
     connect(networkManager, &NetworkManager::changePasswordResult,
             this, &AuthController::onChangePasswordNetwork);
+    connect(networkManager, &NetworkManager::uploadFileResult,
+            this, &AuthController::onUploadFileNetwork);
 
     connect(networkManager, &NetworkManager::networkError,
             this, [=](const QString &e){ Logger::log("Network error: " + e); });
 
     // Forward connection status
     connect(networkManager, &NetworkManager::connectionStatusChanged,
-            this,           &AuthController::onConnectionStatusChanged);
+            this, &AuthController::onConnectionStatusChanged);
 }
 
 void AuthController::signup(const QString &username, const QString &password)
@@ -67,16 +72,26 @@ void AuthController::signup(const QString &username, const QString &password)
     QByteArray skNonce;
     auto encryptedSK = CryptoUtils::encryptSecretKey(secKey, pdk, skNonce);
 
-    // 5) Build and send signup request
+    // 5) Generate user-level KEK and encrypt it
+    QByteArray kek(crypto_aead_xchacha20poly1305_ietf_KEYBYTES, 0);
+    randombytes_buf(reinterpret_cast<unsigned char*>(kek.data()), kek.size());
+    QByteArray kekNonce;
+    auto encryptedKek = CryptoUtils::encryptSecretKey(kek, pdk, kekNonce);
+
+    // 6) Build and send signup request
     QJsonObject req{
-        { "username", username },
+        { "username", QString(username) },
         { "salt", QString::fromUtf8(salt.toBase64()) },
         { "argon2_opslimit", int(crypto_pwhash_OPSLIMIT_MODERATE) },
         { "argon2_memlimit", int(crypto_pwhash_MEMLIMIT_MODERATE) },
         { "public_key", QString::fromUtf8(pubKey.toBase64()) },
         { "encrypted_privkey", QString::fromUtf8(encryptedSK.toBase64()) },
-        { "privkey_nonce", QString::fromUtf8(skNonce.toBase64()) }
+        { "privkey_nonce", QString::fromUtf8(skNonce.toBase64()) },
+        { "encrypted_kek", QString::fromUtf8(encryptedKek.toBase64()) },
+        { "kek_nonce", QString::fromUtf8(kekNonce.toBase64()) }
     };
+    // stash session KEK
+    sessionKek = kek;
     networkManager->signup(req);
 }
 
@@ -109,6 +124,13 @@ void AuthController::logout()
             );
         sessionPdk.clear();
     }
+    if (!sessionKek.isEmpty()) {
+        sodium_memzero(
+            reinterpret_cast<unsigned char*>(sessionKek.data()),
+            sessionKek.size()
+            );
+        sessionKek.clear();
+    }
     sessionUsername.clear();
     emit loggedOut();
 }
@@ -126,7 +148,9 @@ void AuthController::onLoginChallenge(
     int opslimit,
     int memlimit,
     const QByteArray &encryptedSK,
-    const QByteArray &skNonce
+    const QByteArray &skNonce,
+    const QByteArray &encryptedKek,
+    const QByteArray &kekNonce
     )
 {
     // 1) Derive the PDK
@@ -137,10 +161,14 @@ void AuthController::onLoginChallenge(
     auto secKey = CryptoUtils::decryptSecretKey(encryptedSK, pdk, skNonce);
     sessionSecretKey = secKey;
 
-    // 3) Sign the challenge
+    // 3) Decrypt the user-level KEK
+    auto kek = CryptoUtils::decryptSecretKey(encryptedKek, pdk, kekNonce);
+    sessionKek = kek;
+
+    // 4) Sign the challenge
     auto signature = CryptoUtils::signMessage(nonce, sessionSecretKey);
 
-    // 4) Send authenticate request (now including the original nonce)
+    // 5) Send authenticate request
     networkManager->authenticate(
         pendingUsername,
         nonce,
@@ -170,7 +198,6 @@ void AuthController::changeUsername(const QString &newUsername)
         return;
     }
     pendingNewUsername = newUsername;
-    // Ask the server for a challenge
     networkManager->requestChallenge(sessionUsername, "change_username");
 }
 
@@ -204,7 +231,14 @@ void AuthController::changePassword(const QString &newPassword)
         pendingPrivKeyNonce
         );
 
-    // 4) Ask the server for a challenge
+    // 4) Re-encrypt KEK under the new PDK
+    pendingEncryptedKek = CryptoUtils::encryptSecretKey(
+        sessionKek,
+        newPdk,
+        pendingKekNonce
+        );
+
+    // 5) Ask the server for a challenge
     networkManager->requestChallenge(sessionUsername, "change_password");
 }
 
@@ -215,6 +249,8 @@ void AuthController::onChallengeReceived(const QByteArray &nonce,
         processChangeUsername(nonce);
     } else if (operation == "change_password") {
         processChangePassword(nonce);
+    } else if (operation == "upload_file") {
+        processUploadFile(nonce);
     } else {
         Logger::log("Unsupported operation received: " + operation);
     }
@@ -250,10 +286,61 @@ void AuthController::processChangePassword(const QByteArray &nonce)
         { "argon2_memlimit", int(pendingMemLimit) },
         { "encrypted_privkey", QString::fromUtf8(pendingEncryptedSK.toBase64()) },
         { "privkey_nonce", QString::fromUtf8(pendingPrivKeyNonce.toBase64()) },
+        { "encrypted_kek", QString::fromUtf8(pendingEncryptedKek.toBase64()) },
+        { "kek_nonce", QString::fromUtf8(pendingKekNonce.toBase64()) },
         { "nonce", QString::fromUtf8(nonce.toBase64()) },
         { "signature", QString::fromUtf8(sig.toBase64()) }
     };
     networkManager->changePassword(req);
+}
+
+void AuthController::uploadFile(const QString &fileContents)
+{
+    if (sessionUsername.isEmpty()) {
+        emit uploadFileResult(false, "Not logged in");
+        return;
+    }
+    pendingFileContents = fileContents;
+    networkManager->requestChallenge(sessionUsername, "upload_file");
+}
+
+void AuthController::processUploadFile(const QByteArray &nonce)
+{
+    // 1) Generate a file-specific DEK
+    QByteArray fileDek(crypto_aead_xchacha20poly1305_ietf_KEYBYTES, 0);
+    randombytes_buf(reinterpret_cast<unsigned char*>(fileDek.data()), fileDek.size());
+
+    // 2) Encrypt the file contents
+    QByteArray fileNonce;
+    auto ciphertext = CryptoUtils::encryptSecretKey(
+        pendingFileContents.toUtf8(),
+        fileDek,
+        fileNonce
+        );
+
+    // 3) Envelope (encrypt) the file DEK under the user KEK
+    QByteArray dekNonce;
+    auto encryptedDek = CryptoUtils::encryptSecretKey(
+        fileDek,
+        sessionKek,
+        dekNonce
+        );
+
+    // 4) Sign the encrypted DEK
+    auto sig = CryptoUtils::signMessage(encryptedDek, sessionSecretKey);
+
+    // 5) Send upload request
+    QJsonObject req{
+        { "username", sessionUsername },
+        { "filename", QString("file_%1.txt").arg(QDateTime::currentDateTimeUtc().toString("yyyyMMddHHmmss")) },
+        { "encrypted_file", QString::fromUtf8(ciphertext.toBase64()) },
+        { "file_nonce",      QString::fromUtf8(fileNonce.toBase64()) },
+        { "encrypted_dek",   QString::fromUtf8(encryptedDek.toBase64()) },
+        { "dek_nonce",       QString::fromUtf8(dekNonce.toBase64()) },
+        { "nonce",           QString::fromUtf8(nonce.toBase64()) },
+        { "signature",       QString::fromUtf8(sig.toBase64()) }
+    };
+    networkManager->uploadFile(req);
 }
 
 void AuthController::onChangeUsernameNetwork(bool success, const QString &message)
@@ -269,6 +356,12 @@ void AuthController::onChangeUsernameNetwork(bool success, const QString &messag
 void AuthController::onChangePasswordNetwork(bool success, const QString &message)
 {
     emit changePasswordResult(success, message);
+}
+
+void AuthController::onUploadFileNetwork(bool success, const QString &message)
+{
+    pendingFileContents.clear();
+    emit uploadFileResult(success, message);
 }
 
 void AuthController::onConnectionStatusChanged(bool online)
