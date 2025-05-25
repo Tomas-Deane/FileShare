@@ -168,24 +168,6 @@ def authenticate(req: AuthenticateRequest, response: Response):
         raise HTTPException(status_code=500, detail="Error verifying signature")
 
 
-@app.get("/auth/check")
-def check_auth(request: Request):
-    """Check if the user is authenticated"""
-    # For now, just return OK if the request has a valid session cookie
-    # In a real implementation, you would verify the session token
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
-    try:
-        # TODO: Implement proper session token verification
-        # For now, just return OK if token exists
-        return {"status": "ok", "message": "authenticated"}
-    except Exception as e:
-        logging.error(f"Error checking auth: {str(e)}")
-        raise HTTPException(status_code=401, detail="Invalid session")
-
-
 if __name__ == "__main__":
     import uvicorn
 

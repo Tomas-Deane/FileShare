@@ -203,4 +203,43 @@ export async function signChallenge(
     console.error('Signature error:', error);
     throw new CryptoError("Failed to sign challenge", error);
   }
+
+  
 } 
+
+export async function decryptKEK(
+  encryptedKek: Uint8Array,
+  password: string,
+  salt: Uint8Array,
+  nonce: Uint8Array,
+  opsLimit: number,
+  memLimit: number
+): Promise<Uint8Array> {
+  return decryptPrivateKey(encryptedKek, password, salt, nonce, opsLimit, memLimit);
+}
+
+export async function derivePDK(
+  password: string,
+  salt: Uint8Array,
+  opsLimit: number,
+  memLimit: number
+): Promise<Uint8Array> {
+  const passwordKey = await window.crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+
+  return new Uint8Array(await window.crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: salt,
+      iterations: opsLimit,
+      hash: "SHA-256"
+    },
+    passwordKey,
+    256
+  ));
+}
