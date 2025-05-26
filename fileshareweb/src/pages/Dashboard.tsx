@@ -148,6 +148,21 @@ interface UploadResponse {
   detail?: string;
 }
 
+// Add this interface for delete response
+interface DeleteResponse {
+  status: string;
+  message?: string;
+  detail?: string;
+}
+
+const DEBUG = true; // Toggle for development
+
+const logDebug = (message: string, data?: any) => {
+  if (DEBUG) {
+    console.log(`[Dashboard Debug] ${message}`, data ? data : '');
+  }
+};
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { username, secretKey, pdk, kek } = useAuth();
@@ -173,6 +188,11 @@ const Dashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isFetching, setIsFetching] = useState(false);
 
+  // Add a ref to track if we've already fetched files
+  const isMounted = React.useRef(false);
+  const hasFetchedFiles = React.useRef(false);
+  const mountCount = React.useRef(0);
+
   // Filter files based on search query
   const filteredFiles = mockFiles.filter(file => 
     file.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -185,11 +205,89 @@ const Dashboard: React.FC = () => {
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: 'home'|'files'|'users'|'profile') => setActiveTab(newValue);
   const handleUpload = () => setOpenUpload(true);
-  const handleShare = (fileId: number) => { setSelectedFile(fileId); setOpenShare(true); };
-  const handleDelete = (fileId: number) => { /* TODO: Implement delete */ };
-  const handleDownload = (fileId: number) => { /* TODO: Implement download */ };
-  const handleRevoke = (fileId: number) => { /* TODO: Implement revoke */ };
+  const handleShare = (fileId: number) => {
+    logDebug('Share initiated', { fileId });
+    setSelectedFile(fileId);
+    setOpenShare(true);
+  };
+  const handleDelete = async (fileId: number) => {
+    try {
+      setLoading(true);
+      setError(null);
+      logDebug('Starting file deletion', { fileId });
+
+      const fileToDelete = files.find(f => f.id === fileId);
+      if (!fileToDelete) {
+        throw new Error('File not found');
+      }
+
+      // Step 1: Request challenge
+      logDebug('Requesting challenge for delete');
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'delete_file'
+      });
+      logDebug('Delete challenge received', {
+        status: challengeResponse.status,
+        hasNonce: !!challengeResponse.nonce
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+
+      // Step 2: Sign the filename
+      logDebug('Signing filename');
+      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(new TextEncoder().encode(fileToDelete.name), secretKey!);
+      logDebug('Filename signed', {
+        signatureLength: signature.length
+      });
+
+      // Step 3: Send delete request
+      logDebug('Sending delete request');
+      const deleteResponse = await apiClient.post<DeleteResponse>('/delete_file', {
+        username,
+        filename: fileToDelete.name,
+        nonce: challengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+      });
+      logDebug('Delete response received', {
+        status: deleteResponse.status,
+        message: deleteResponse.message,
+        detail: deleteResponse.detail
+      });
+
+      if (deleteResponse.status === 'ok') {
+        logDebug('Delete successful, refreshing file list');
+        hasFetchedFiles.current = false; // Reset the flag before refreshing
+        await refreshFiles();
+      } else {
+        throw new Error(deleteResponse.detail || 'Delete failed');
+      }
+    } catch (err: any) {
+      logDebug('Delete error', {
+        errorType: err.constructor.name,
+        message: err.message,
+        hasResponse: !!err.response,
+        responseData: err.response?.data
+      });
+      setError(err.message || 'Failed to delete file');
+    } finally {
+      setLoading(false);
+      logDebug('Delete process completed');
+    }
+  };
+  const handleDownload = (fileId: number) => {
+    logDebug('Download initiated', { fileId });
+    // TODO: Implement download
+  };
+  const handleRevoke = (fileId: number) => {
+    logDebug('Revoke initiated', { fileId });
+    // TODO: Implement revoke
+  };
   const handleVerifyClick = (user: { id: number; email: string }) => {
+    logDebug('Verification initiated', { userId: user.id, email: user.email });
     setSelectedUser(user);
     setOpenVerify(true);
   };
@@ -227,30 +325,37 @@ const Dashboard: React.FC = () => {
     setEditedProfile(profileData);
   };
 
-  // Update the fetchFiles function to use the isFetching flag
+  // Update the fetchFiles function
   const fetchFiles = async () => {
-    // Prevent multiple simultaneous requests
-    if (isFetching) return;
+    if (isFetching || !isMounted.current) {
+      logDebug('Fetch already in progress or component unmounted, skipping');
+      return;
+    }
     
     try {
       setIsFetching(true);
       setLoading(true);
       setError(null);
 
-      // Debug logging
-      console.log('Debug - Keys available:', {
+      logDebug('Starting file fetch', {
+        username,
         hasSecretKey: !!secretKey,
-        secretKeyLength: secretKey?.length,
         hasPdk: !!pdk,
-        pdkLength: pdk?.length,
         hasKek: !!kek,
-        kekLength: kek?.length
+        hasFetchedBefore: hasFetchedFiles.current,
+        isMounted: isMounted.current
       });
 
       // Request challenge
+      logDebug('Requesting challenge for list_files');
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
         operation: 'list_files'
+      });
+      logDebug('Challenge response received', {
+        status: challengeResponse.status,
+        hasNonce: !!challengeResponse.nonce,
+        detail: challengeResponse.detail
       });
 
       if (challengeResponse.status !== 'challenge') {
@@ -259,92 +364,148 @@ const Dashboard: React.FC = () => {
 
       // Convert base64 nonce to Uint8Array
       const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
-      
-      // Debug logging for nonce
-      console.log('Debug - Challenge nonce:', {
+      logDebug('Nonce converted', {
         nonceLength: nonce.length,
         nonceBase64: challengeResponse.nonce
       });
 
-      // Sign the nonce with the secretKey
+      // Sign the nonce
+      logDebug('Signing nonce with secretKey');
       const signature = await signChallenge(nonce, secretKey!);
-
-      // Debug logging for signature
-      console.log('Debug - Signature:', {
+      logDebug('Nonce signed', {
         signatureLength: signature.length,
         signatureBase64: btoa(String.fromCharCode.apply(null, Array.from(signature)))
       });
 
       // List files
+      logDebug('Requesting file list');
       const listResponse = await apiClient.post<{ status: string; files: string[] }>('/list_files', {
         username,
         nonce: challengeResponse.nonce,
         signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
       });
+      logDebug('File list response received', {
+        status: listResponse.status,
+        fileCount: listResponse.files?.length
+      });
 
-      if (listResponse.status === 'ok') {
-        // Convert filenames to FileData objects
+      if (listResponse.status === 'ok' && isMounted.current) {
         const fileData: FileData[] = listResponse.files.map((filename, index) => ({
           id: index + 1,
           name: filename,
           type: filename.split('.').pop() || 'unknown',
-          size: '0 KB', // TODO: Get actual file size from server
+          size: '0 KB',
           shared: false,
           date: new Date()
         }));
+        logDebug('Files processed', {
+          fileCount: fileData.length,
+          fileNames: fileData.map(f => f.name)
+        });
         setFiles(fileData);
+        hasFetchedFiles.current = true;
+      } else if (!isMounted.current) {
+        logDebug('Component unmounted during fetch, skipping state update');
       } else {
         throw new Error('Failed to list files');
       }
     } catch (err: any) {
-      console.error('List files error:', err);
-      setError(err.message || 'Failed to list files');
+      if (isMounted.current) {
+        logDebug('Error in fetchFiles', {
+          errorType: err.constructor.name,
+          message: err.message,
+          hasResponse: !!err.response,
+          responseData: err.response?.data
+        });
+        setError(err.message || 'Failed to list files');
+      }
     } finally {
-      setLoading(false);
-      setIsFetching(false);
+      if (isMounted.current) {
+        setLoading(false);
+        setIsFetching(false);
+        logDebug('File fetch completed');
+      }
     }
   };
 
-  // Update the useEffect hook to include proper cleanup and dependencies
+  // Update the useEffect hook
   useEffect(() => {
-    let mounted = true;
+    mountCount.current++;
+    isMounted.current = true;
+    
+    logDebug('Dashboard mounted', {
+      username,
+      hasPdk: !!pdk,
+      isFetching,
+      hasFetchedBefore: hasFetchedFiles.current,
+      isMounted: isMounted.current,
+      mountCount: mountCount.current
+    });
 
     const loadFiles = async () => {
-      if (!username || !pdk || isFetching) return;
-      
+      // Only fetch on the first mount
+      if (mountCount.current > 1) {
+        logDebug('Skipping file load on subsequent mount', {
+          mountCount: mountCount.current
+        });
+        return;
+      }
+
+      if (!username || !pdk || isFetching) {
+        logDebug('Skipping file load', {
+          hasUsername: !!username,
+          hasPdk: !!pdk,
+          isFetching
+        });
+        return;
+      }
+
       try {
         await fetchFiles();
       } catch (error) {
-        if (mounted) {
-          console.error('Error loading files:', error);
+        if (isMounted.current) {
+          logDebug('Error in loadFiles', { error });
         }
       }
     };
 
     loadFiles();
 
-    // Cleanup function
     return () => {
-      mounted = false;
+      isMounted.current = false;
+      logDebug('Dashboard unmounted', {
+        mountCount: mountCount.current
+      });
     };
-  }, [username, pdk]); // Only depend on username and pdk
+  }, [username, pdk]); // Keep these dependencies
 
-  // Update the refreshFiles function to use the same pattern
+  // Update the refreshFiles function
   const refreshFiles = async () => {
-    if (!username || !pdk || isFetching) return;
+    if (!username || !pdk || isFetching || !isMounted.current) return;
+    hasFetchedFiles.current = false;
     await fetchFiles();
   };
 
-  // Update handleFileUpload to use the async refreshFiles
+  // Update handleFileUpload to use the same pattern
   const handleFileUpload = async (file: File) => {
     try {
       setLoading(true);
       setError(null);
+      logDebug('Starting file upload', {
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type
+      });
 
       // Step 1: Request challenge
+      logDebug('Requesting challenge for upload');
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
         operation: 'upload_file'
+      });
+      logDebug('Upload challenge received', {
+        status: challengeResponse.status,
+        hasNonce: !!challengeResponse.nonce
       });
 
       if (challengeResponse.status !== 'challenge') {
@@ -352,23 +513,45 @@ const Dashboard: React.FC = () => {
       }
 
       // Step 2: Generate file key and encrypt file
+      logDebug('Generating file key');
       const fileKey = await generateFileKey();
-      const fileNonce = new Uint8Array(24); // XChaCha20-Poly1305 nonce size
+      const fileNonce = new Uint8Array(24);
       window.crypto.getRandomValues(fileNonce);
+      logDebug('File key generated', {
+        keyLength: fileKey.length,
+        nonceLength: fileNonce.length
+      });
 
+      logDebug('Reading file data');
       const fileData = await file.arrayBuffer();
+      logDebug('Encrypting file', {
+        fileSize: fileData.byteLength
+      });
       const encryptedFile = await encryptFile(new Uint8Array(fileData), fileKey, fileNonce);
+      logDebug('File encrypted', {
+        encryptedSize: encryptedFile.length
+      });
 
       // Step 3: Encrypt file key with KEK
+      logDebug('Encrypting file key with KEK');
       const kekNonce = new Uint8Array(24);
       window.crypto.getRandomValues(kekNonce);
       const encryptedDek = await encryptFile(fileKey, kek!, kekNonce);
+      logDebug('File key encrypted', {
+        encryptedDekLength: encryptedDek.length,
+        kekNonceLength: kekNonce.length
+      });
 
       // Step 4: Sign the encrypted DEK
+      logDebug('Signing encrypted DEK');
       const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
       const signature = await signChallenge(encryptedDek, secretKey!);
+      logDebug('DEK signed', {
+        signatureLength: signature.length
+      });
 
       // Step 5: Upload the file
+      logDebug('Sending upload request');
       const uploadResponse = await apiClient.post<UploadResponse>('/upload_file', {
         username,
         filename: file.name,
@@ -379,18 +562,31 @@ const Dashboard: React.FC = () => {
         nonce: challengeResponse.nonce,
         signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
       });
+      logDebug('Upload response received', {
+        status: uploadResponse.status,
+        message: uploadResponse.message,
+        detail: uploadResponse.detail
+      });
 
       if (uploadResponse.status === 'ok') {
-        await refreshFiles(); // Now properly awaits the refresh
+        logDebug('Upload successful, refreshing file list');
+        hasFetchedFiles.current = false; // Reset the flag before refreshing
+        await refreshFiles();
         setOpenUpload(false);
       } else {
         throw new Error(uploadResponse.detail || 'Upload failed');
       }
     } catch (err: any) {
-      console.error('Upload error:', err);
+      logDebug('Upload error', {
+        errorType: err.constructor.name,
+        message: err.message,
+        hasResponse: !!err.response,
+        responseData: err.response?.data
+      });
       setError(err.message || 'Failed to upload file');
     } finally {
       setLoading(false);
+      logDebug('Upload process completed');
     }
   };
 
