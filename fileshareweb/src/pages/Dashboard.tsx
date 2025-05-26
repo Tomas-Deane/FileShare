@@ -880,6 +880,12 @@ const Dashboard: React.FC = () => {
                           mb: 1,
                           border: '1px solid rgba(0,255,0,0.2)',
                           borderRadius: 1,
+                          transition: 'all 0.3s ease',
+                          '&:hover': {
+                            border: '1px solid rgba(0,255,0,0.4)',
+                            backgroundColor: 'rgba(0,255,0,0.05)',
+                            boxShadow: '0 0 20px rgba(0,255,0,0.2)',
+                          },
                         }}
                       >
                         <ListItemIcon>
