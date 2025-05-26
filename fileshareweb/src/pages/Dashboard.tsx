@@ -283,9 +283,67 @@ const Dashboard: React.FC = () => {
       logDebug('Delete process completed');
     }
   };
-  const handleDownload = (fileId: number) => {
-    logDebug('Download initiated', { fileId });
-    // TODO: Implement download
+  const handleDownload = async (fileId: number) => {
+    const file = files.find(f => f.id === fileId);
+    if (!file) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Step 1: Request challenge
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'download_file'
+      });
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+      // Step 2: Sign the filename
+      const signature = await signChallenge(new TextEncoder().encode(file.name), secretKey!);
+      // Step 3: Download file
+      const downloadResponse = await apiClient.post<any>('/download_file', {
+        username,
+        filename: file.name,
+        nonce: challengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+      });
+      if (downloadResponse.status !== 'ok') {
+        throw new Error(downloadResponse.detail || 'Failed to download file');
+      }
+      // Step 4: Decrypt file
+      const encryptedFile = Uint8Array.from(atob(downloadResponse.encrypted_file), c => c.charCodeAt(0));
+      const fileNonce = Uint8Array.from(atob(downloadResponse.file_nonce), c => c.charCodeAt(0));
+      const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
+      const decrypted = await decryptFile(encryptedFile, dek, fileNonce);
+
+      // Step 5: Create a Blob and trigger download
+      // Guess MIME type from extension
+      let mime = 'application/octet-stream';
+      if (isTextFile(file.name)) mime = 'text/plain';
+      else if (/\.png$/i.test(file.name)) mime = 'image/png';
+      else if (/\.jpe?g$/i.test(file.name)) mime = 'image/jpeg';
+      else if (/\.gif$/i.test(file.name)) mime = 'image/gif';
+      else if (/\.bmp$/i.test(file.name)) mime = 'image/bmp';
+      else if (/\.webp$/i.test(file.name)) mime = 'image/webp';
+
+      const blob = new Blob([decrypted], { type: mime });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+
+    } catch (err: any) {
+      setError(err.message || 'Failed to download file');
+    } finally {
+      setLoading(false);
+    }
   };
   const handleRevoke = (fileId: number) => {
     logDebug('Revoke initiated', { fileId });
