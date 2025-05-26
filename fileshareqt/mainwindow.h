@@ -1,3 +1,5 @@
+// File: ./fileshareqt/mainwindow.h
+
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -22,14 +24,15 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
-    // Named constants for tab indices to avoid hard-coded values
+    // Updated tab indices to match the new UI (7 tabs total)
     enum TabIndex {
         Home    = 0,
-        Login   = 1,
-        Upload  = 2,
-        Download= 3,
-        Share   = 4,
-        Profile = 5
+        Signup  = 1,
+        Login   = 2,
+        Upload  = 3,
+        Download= 4,
+        Share   = 5,
+        Profile = 6
     };
 
 private slots:

@@ -71,14 +71,19 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_signupButton_clicked()
 {
-    authController->signup(ui->usernameLineEdit->text(),
-                           ui->passwordLineEdit->text());
+    // Use the new signup fields
+    authController->signup(
+        ui->signupUsernameLineEdit->text(),
+        ui->signupPasswordLineEdit->text()
+        );
 }
 
 void MainWindow::on_loginButton_clicked()
 {
-    authController->login(ui->usernameLineEdit->text(),
-                          ui->passwordLineEdit->text());
+    authController->login(
+        ui->loginUsernameLineEdit->text(),
+        ui->loginPasswordLineEdit->text()
+        );
 }
 
 void MainWindow::on_logOutButton_clicked()
@@ -90,7 +95,6 @@ void MainWindow::handleLoggedIn(const QString &username)
 {
     ui->loggedInLabel->setText("Logged in as " + username);
     ui->usernameLabel->setText("Username: " + username);
-    // don't auto-refresh here anymore
 }
 
 void MainWindow::handleLoggedOut()
@@ -356,12 +360,11 @@ void MainWindow::onDeleteFileResult(bool success, const QString &message)
 
 void MainWindow::on_tabWidget_currentChanged(int index)
 {
-    // Use named constants instead of hard-coded indices
+    // Updated Upload and Download indices
     constexpr int uploadIndex   = MainWindow::Upload;
     constexpr int downloadIndex = MainWindow::Download;
 
     if (index != uploadIndex) {
-        // Clear upload preview + reset labels and state
         ui->fileNameLabel->setText(tr("No file selected"));
         ui->fileTypeLabel->setText(tr("-"));
         ui->uploadTextPreview->clear();
@@ -373,21 +376,18 @@ void MainWindow::on_tabWidget_currentChanged(int index)
     }
 
     if (index == downloadIndex) {
-        // Clear all of the old preview before refreshing the list
         ui->downloadTextPreview->clear();
         ui->downloadImagePreview->clear();
         ui->downloadImagePreview->setText(tr("No Image File Selected"));
         ui->downloadPreviewStack->setCurrentIndex(0);
 
-        // Now fetch the up-to-date file list
         authController->listFiles();
     }
 
-    //     // (Optional) if you want to make sure it's also wiped when leaving Download:
-    // else {
-    //     ui->downloadTextPreview->clear();
-    //     ui->downloadImagePreview->clear();
-    //     ui->downloadImagePreview->setText(tr("No Image File Selected"));
-    //     ui->downloadPreviewStack->setCurrentIndex(0);
-    // }
+    else {
+        ui->downloadTextPreview->clear();
+        ui->downloadImagePreview->clear();
+        ui->downloadImagePreview->setText(tr("No Image File Selected"));
+        ui->downloadPreviewStack->setCurrentIndex(0);
+    }
 }
