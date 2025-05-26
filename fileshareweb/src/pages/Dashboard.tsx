@@ -9,7 +9,7 @@ import {
   Folder as FolderIcon, Person as PersonIcon, Lock as LockIcon, LockOpen as LockOpenIcon,
   Search as SearchIcon, VerifiedUser as VerifiedUserIcon, People as PeopleIcon,
   Home as HomeIcon, Storage as StorageIcon, Security as SecurityIcon, Settings as SettingsIcon,
-  Edit as EditIcon
+  Edit as EditIcon, Visibility as VisibilityIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
@@ -17,7 +17,7 @@ import { CyberButton, MatrixBackground } from '../components';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../utils/apiClient';
-import { encryptFile, generateFileKey, signChallenge } from '../utils/crypto';
+import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK } from '../utils/crypto';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -187,6 +187,10 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isFetching, setIsFetching] = useState(false);
+  const [openPreview, setOpenPreview] = useState(false);
+  const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   // Add a ref to track if we've already fetched files
   const isMounted = React.useRef(false);
@@ -590,6 +594,68 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // Helper to check if file is text-based
+  const isTextFile = (filename: string) => {
+    return /\.(txt|json|js|ts|md|env|csv|log|html|css|xml)$/i.test(filename);
+  };
+
+  // Preview handler
+  const handlePreview = async (fileId: number) => {
+    const file = files.find(f => f.id === fileId);
+    if (!file) return;
+    setOpenPreview(true);
+    setPreviewContent(null);
+    setPreviewError(null);
+    setPreviewLoading(true);
+    if (!isTextFile(file.name)) {
+      setPreviewContent(null);
+      setPreviewError('Preview not available for this file type.');
+      setPreviewLoading(false);
+      return;
+    }
+    try {
+      // Step 1: Request challenge
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'download_file'
+      });
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+      // Step 2: Sign the filename
+      const signature = await signChallenge(new TextEncoder().encode(file.name), secretKey!);
+      // Step 3: Download file
+      const downloadResponse = await apiClient.post<any>('/download_file', {
+        username,
+        filename: file.name,
+        nonce: challengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+      });
+      if (downloadResponse.status !== 'ok') {
+        throw new Error(downloadResponse.detail || 'Failed to download file');
+      }
+      // Step 4: Decrypt file
+      const encryptedFile = Uint8Array.from(atob(downloadResponse.encrypted_file), c => c.charCodeAt(0));
+      const fileNonce = Uint8Array.from(atob(downloadResponse.file_nonce), c => c.charCodeAt(0));
+      const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
+      const decrypted = await decryptFile(encryptedFile, dek, fileNonce);
+      // Try to decode as UTF-8 text
+      const text = new TextDecoder('utf-8').decode(decrypted);
+      setPreviewContent(text);
+    } catch (err: any) {
+      setPreviewError(err.message || 'Failed to preview file');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  // Helper to decrypt file key
+  const decryptFileKey = async (b64Dek: string, kek: Uint8Array, b64DekNonce: string) => {
+    const dek = Uint8Array.from(atob(b64Dek), c => c.charCodeAt(0));
+    const dekNonce = Uint8Array.from(atob(b64DekNonce), c => c.charCodeAt(0));
+    return await decryptKEK(dek, kek, dekNonce);
+  };
+
   return (
     <>
       <MatrixBackground />
@@ -785,55 +851,60 @@ const Dashboard: React.FC = () => {
                     <Typography sx={{ color: '#00ff00' }}>No files found. Upload your first file!</Typography>
                   </Box>
                 ) : (
-                  <List>
+                <List>
                     {files
                       .filter(file => file.name.toLowerCase().includes(searchQuery.toLowerCase()))
                       .map((file) => (
-                        <ListItem
-                          key={file.id}
-                          sx={{
-                            border: '1px solid rgba(0, 255, 0, 0.2)',
-                            borderRadius: 1,
-                            mb: 1,
-                            '&:hover': {
-                              border: '1px solid rgba(0, 255, 0, 0.4)',
-                              backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                            },
-                          }}
-                        >
-                          <ListItemIcon>
-                            <FolderIcon sx={{ color: '#00ff00' }} />
-                          </ListItemIcon>
-                          <ListItemText
-                            primary={file.name}
-                            secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
-                            primaryTypographyProps={{
-                              sx: { color: '#00ffff', fontWeight: 'bold' },
-                            }}
-                            secondaryTypographyProps={{
-                              sx: { color: 'rgba(0, 255, 0, 0.7)' },
-                            }}
-                          />
-                          <Box sx={{ display: 'flex', gap: 1 }}>
-                            <Tooltip title="Share">
-                              <IconButton onClick={() => handleShare(file.id)} sx={{ color: '#00ff00' }}>
-                                <ShareIcon />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Download">
-                              <IconButton onClick={() => handleDownload(file.id)} sx={{ color: '#00ff00' }}>
-                                <DownloadIcon />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Delete">
-                              <IconButton onClick={() => handleDelete(file.id)} sx={{ color: '#00ff00' }}>
-                                <DeleteIcon />
-                              </IconButton>
-                            </Tooltip>
-                          </Box>
-                        </ListItem>
-                      ))}
-                  </List>
+                    <ListItem
+                      key={file.id}
+                      sx={{
+                        border: '1px solid rgba(0, 255, 0, 0.2)',
+                        borderRadius: 1,
+                        mb: 1,
+                        '&:hover': {
+                          border: '1px solid rgba(0, 255, 0, 0.4)',
+                          backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                        },
+                      }}
+                    >
+                      <ListItemIcon>
+                        <FolderIcon sx={{ color: '#00ff00' }} />
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={file.name}
+                        secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                        primaryTypographyProps={{
+                          sx: { color: '#00ffff', fontWeight: 'bold' },
+                        }}
+                        secondaryTypographyProps={{
+                          sx: { color: 'rgba(0, 255, 0, 0.7)' },
+                        }}
+                      />
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Tooltip title="Share">
+                          <IconButton onClick={() => handleShare(file.id)} sx={{ color: '#00ff00' }}>
+                            <ShareIcon />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Download">
+                          <IconButton onClick={() => handleDownload(file.id)} sx={{ color: '#00ff00' }}>
+                            <DownloadIcon />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete">
+                          <IconButton onClick={() => handleDelete(file.id)} sx={{ color: '#00ff00' }}>
+                            <DeleteIcon />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Preview">
+                          <IconButton onClick={() => handlePreview(file.id)} sx={{ color: '#00ff00' }}>
+                            <VisibilityIcon />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    </ListItem>
+                  ))}
+                </List>
                 )}
               </DashboardCard>
             ) : activeTab === 'users' ? (
@@ -1067,7 +1138,7 @@ const Dashboard: React.FC = () => {
         </DialogContent>
         <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
           <Button 
-            onClick={() => setOpenUpload(false)} 
+            onClick={() => setOpenUpload(false)}
             sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
             disabled={loading}
           >
@@ -1350,6 +1421,54 @@ const Dashboard: React.FC = () => {
               Edit Profile
             </CyberButton>
           )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Preview Dialog */}
+      <Dialog
+        open={openPreview}
+        onClose={() => setOpenPreview(false)}
+        PaperProps={{
+          sx: {
+            background: 'rgba(0, 0, 0, 0.95)',
+            border: '1px solid rgba(0, 255, 0, 0.2)',
+            color: '#00ff00',
+            minWidth: '600px',
+            maxWidth: '80vw',
+          },
+        }}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: '#00ffff', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
+          File Preview
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          {previewLoading ? (
+            <Typography sx={{ color: '#00ff00' }}>Loading preview...</Typography>
+          ) : previewError ? (
+            <Alert severity="error" sx={{ bgcolor: 'rgba(255, 0, 0, 0.1)' }}>{previewError}</Alert>
+          ) : previewContent ? (
+            <Box sx={{
+              bgcolor: 'rgba(0,255,0,0.05)',
+              border: '1px solid rgba(0,255,0,0.2)',
+              borderRadius: 1,
+              p: 2,
+              maxHeight: '60vh',
+              overflowY: 'auto',
+              fontFamily: 'monospace',
+              color: '#00ff00',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+            }}>
+              {previewContent}
+            </Box>
+          ) : null}
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
+          <Button onClick={() => setOpenPreview(false)} sx={{ color: 'rgba(0, 255, 0, 0.7)' }}>
+            Close
+          </Button>
         </DialogActions>
       </Dialog>
     </>
