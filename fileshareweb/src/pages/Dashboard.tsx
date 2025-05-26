@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box, Container, Typography, Button, Paper, Grid, List, ListItem, ListItemText,
   ListItemIcon, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider
+  TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider, CircularProgress
 } from '@mui/material';
 import {
   Upload as UploadIcon, Share as ShareIcon, Delete as DeleteIcon, Download as DownloadIcon,
@@ -16,6 +16,8 @@ import { useNavigate } from 'react-router-dom';
 import { CyberButton, MatrixBackground } from '../components';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../contexts/AuthContext';
+import { apiClient } from '../utils/apiClient';
+import * as crypto from 'crypto';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -123,6 +125,15 @@ const mockUserProfile: ProfileData = {
   lastLogin: '2024-03-20 15:30',
 };
 
+// Add interface for file data
+interface FileData {
+  filename: string;
+  file_nonce: string;
+  encrypted_dek: string;
+  dek_nonce: string;
+  created_at: string;
+}
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { username, secretKey, pdk, kek } = useAuth();
@@ -131,7 +142,7 @@ const Dashboard: React.FC = () => {
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [openUpload, setOpenUpload] = useState(false);
   const [openShare, setOpenShare] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<number | null>(null);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [shareEmail, setShareEmail] = useState('');
   const [openVerify, setOpenVerify] = useState(false);
   const [selectedUser, setSelectedUser] = useState<{ id: number; email: string } | null>(null);
@@ -143,6 +154,9 @@ const Dashboard: React.FC = () => {
     // Generate a random 60-digit integer
     return Array.from({ length: 60 }, () => Math.floor(Math.random() * 10)).join('');
   });
+  const [files, setFiles] = useState<FileData[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Filter files based on search query
   const filteredFiles = mockFiles.filter(file => 
@@ -156,15 +170,127 @@ const Dashboard: React.FC = () => {
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: 'home'|'files'|'users'|'profile') => setActiveTab(newValue);
   const handleUpload = () => setOpenUpload(true);
-  const handleShare = (fileId: number) => { setSelectedFile(fileId); setOpenShare(true); };
-  const handleDelete = (fileId: number) => { /* TODO: Implement delete */ };
-  const handleDownload = (fileId: number) => { /* TODO: Implement download */ };
-  const handleRevoke = (fileId: number) => { /* TODO: Implement revoke */ };
+  const handleShare = (filename: string) => { 
+    setSelectedFile(filename); 
+    setOpenShare(true); 
+  };
+  const handleDelete = (filename: string) => { 
+    // TODO: Implement delete with authentication
+    console.log('Delete file:', filename);
+  };
+  const handleDownload = (filename: string) => { 
+    // TODO: Implement download with authentication
+    console.log('Download file:', filename);
+  };
+  const handleRevoke = (filename: string) => { 
+    // TODO: Implement revoke with authentication
+    console.log('Revoke file:', filename);
+  };
   const handleVerifyClick = (user: { id: number; email: string }) => {
     setSelectedUser(user);
     setOpenVerify(true);
   };
 
+  // Add useEffect to fetch files when files tab is active
+  useEffect(() => {
+    if (activeTab === 'files') {
+      fetchFiles();
+    }
+  }, [activeTab]);
+
+  // Update authentication flow
+  const authenticate = async () => {
+    try {
+      // Step 1: Get challenge
+      const challengeResponse = await apiClient.post<{ status: string; nonce: string }>('/challenge', {
+        username: username,
+        operation: 'list_files'
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error('Failed to get challenge');
+      }
+
+      const nonce = challengeResponse.nonce;
+      
+      // Step 2: Sign the nonce with PDK
+      if (!pdk) {
+        throw new Error('PDK not available');
+      }
+
+      const signature = crypto.createSign('ed25519')
+        .update(Buffer.from(nonce, 'base64'))
+        .sign(pdk, 'base64');
+
+      // Step 3: Authenticate
+      const authResponse = await apiClient.post<{ status: string }>('/authenticate', {
+        username: username,
+        nonce: nonce,
+        signature: signature
+      });
+
+      if (authResponse.status !== 'ok') {
+        throw new Error('Authentication failed');
+      }
+
+      return true;
+    } catch (err) {
+      console.error('Authentication error:', err);
+      setError(err instanceof Error ? err.message : 'Authentication failed');
+      return false;
+    }
+  };
+
+  const fetchFiles = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // First authenticate
+      const isAuthenticated = await authenticate();
+      if (!isAuthenticated) {
+        return;
+      }
+
+      // Get new challenge for list_files
+      const challengeResponse = await apiClient.post<{ status: string; nonce: string }>('/challenge', {
+        username: username,
+        operation: 'list_files'
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error('Failed to get challenge');
+      }
+
+      const nonce = challengeResponse.nonce;
+      
+      // Sign the nonce
+      if (!pdk) {
+        throw new Error('PDK not available');
+      }
+
+      const signature = crypto.createSign('ed25519')
+        .update(Buffer.from(nonce, 'base64'))
+        .sign(pdk, 'base64');
+
+      // Now fetch files
+      const response = await apiClient.post<{ status: string; files: FileData[] }>('/list_files', {
+        username: username,
+        nonce: nonce,
+        signature: signature
+      });
+      
+      if (response.status === 'ok' && response.files) {
+        setFiles(response.files);
+      } else {
+        setError('Failed to fetch files');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch files');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const debugSection = (
     <Box sx={{ 
@@ -381,53 +507,72 @@ const Dashboard: React.FC = () => {
                     Upload File
                   </CyberButton>
                 </Box>
-                <List>
-                  {filteredFiles.map((file) => (
-                    <ListItem
-                      key={file.id}
-                      sx={{
-                        border: '1px solid rgba(0, 255, 0, 0.2)',
-                        borderRadius: 1,
-                        mb: 1,
-                        '&:hover': {
-                          border: '1px solid rgba(0, 255, 0, 0.4)',
-                          backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                        },
-                      }}
-                    >
-                      <ListItemIcon>
-                        <FolderIcon sx={{ color: '#00ff00' }} />
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={file.name}
-                        secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
-                        primaryTypographyProps={{
-                          sx: { color: '#00ffff', fontWeight: 'bold' },
+
+                {error && (
+                  <Alert severity="error" sx={{ mb: 2, bgcolor: 'rgba(255, 0, 0, 0.1)', color: '#ff4444' }}>
+                    {error}
+                  </Alert>
+                )}
+
+                {loading ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+                    <CircularProgress sx={{ color: '#00ff00' }} />
+                  </Box>
+                ) : files.length === 0 ? (
+                  <Box sx={{ textAlign: 'center', p: 3 }}>
+                    <Typography sx={{ color: 'rgba(0, 255, 0, 0.7)' }}>
+                      No files found. Upload your first file to get started.
+                    </Typography>
+                  </Box>
+                ) : (
+                  <List>
+                    {files.map((file) => (
+                      <ListItem
+                        key={file.filename}
+                        sx={{
+                          border: '1px solid rgba(0, 255, 0, 0.2)',
+                          borderRadius: 1,
+                          mb: 1,
+                          '&:hover': {
+                            border: '1px solid rgba(0, 255, 0, 0.4)',
+                            backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                          },
                         }}
-                        secondaryTypographyProps={{
-                          sx: { color: 'rgba(0, 255, 0, 0.7)' },
-                        }}
-                      />
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Tooltip title="Share">
-                          <IconButton onClick={() => handleShare(file.id)} sx={{ color: '#00ff00' }}>
-                            <ShareIcon />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Download">
-                          <IconButton onClick={() => handleDownload(file.id)} sx={{ color: '#00ff00' }}>
-                            <DownloadIcon />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete">
-                          <IconButton onClick={() => handleDelete(file.id)} sx={{ color: '#00ff00' }}>
-                            <DeleteIcon />
-                          </IconButton>
-                        </Tooltip>
-                      </Box>
-                    </ListItem>
-                  ))}
-                </List>
+                      >
+                        <ListItemIcon>
+                          <FolderIcon sx={{ color: '#00ff00' }} />
+                        </ListItemIcon>
+                        <ListItemText
+                          primary={file.filename}
+                          secondary={`Created: ${new Date(file.created_at).toLocaleString()}`}
+                          primaryTypographyProps={{
+                            sx: { color: '#00ffff', fontWeight: 'bold' },
+                          }}
+                          secondaryTypographyProps={{
+                            sx: { color: 'rgba(0, 255, 0, 0.7)' },
+                          }}
+                        />
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Tooltip title="Share">
+                            <IconButton onClick={() => handleShare(file.filename)} sx={{ color: '#00ff00' }}>
+                              <ShareIcon />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Download">
+                            <IconButton onClick={() => handleDownload(file.filename)} sx={{ color: '#00ff00' }}>
+                              <DownloadIcon />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton onClick={() => handleDelete(file.filename)} sx={{ color: '#00ff00' }}>
+                              <DeleteIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      </ListItem>
+                    ))}
+                  </List>
+                )}
               </DashboardCard>
             ) : activeTab === 'users' ? (
               <DashboardCard>
