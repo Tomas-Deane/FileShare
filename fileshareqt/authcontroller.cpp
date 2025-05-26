@@ -115,10 +115,16 @@ void AuthController::logout()
     emit loggedOut();
 }
 
-void AuthController::onSignupResult(bool success, const QString &message)
-{
-    Logger::log(QString("SignupResult: %1 – %2")
-                    .arg(success).arg(message));
+void AuthController::onSignupResult(bool success, const QString &message) {
+    Logger::log(QString("SignupResult: %1 – %2").arg(success).arg(message));
+
+    if (success) {
+        // immediately trigger the usual login flow
+        Logger::log("Auto-logging in after signup …");
+        login(pendingUsername, pendingPassword);
+        // (you can clear pendingUsername/password in onLoginResult)
+    }
+
     emit signupResult(success, message);
 }
 
