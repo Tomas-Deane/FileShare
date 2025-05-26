@@ -1,4 +1,3 @@
-// File: fileshareqt/mainwindow.h
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -7,7 +6,7 @@
 #include <QStringList>
 #include <QByteArray>
 #include <QMap>
-#include <QListWidgetItem>       // <<< add this
+#include <QListWidgetItem>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -22,6 +21,16 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
+
+    // Named constants for tab indices to avoid hard-coded values
+    enum TabIndex {
+        Home    = 0,
+        Login   = 1,
+        Upload  = 2,
+        Download= 3,
+        Share   = 4,
+        Profile = 5
+    };
 
 private slots:
     void on_signupButton_clicked();
@@ -71,7 +80,7 @@ private:
     // filenames → decrypted data
     QMap<QString, QByteArray> downloadCache;
 
-    // **NEW** pointer to the item we're about to delete
+    // Pointer to the item we're about to delete
     QListWidgetItem *pendingDeleteItem;
 };
 
