@@ -191,6 +191,7 @@ const Dashboard: React.FC = () => {
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
   // Add a ref to track if we've already fetched files
   const isMounted = React.useRef(false);
@@ -599,20 +600,29 @@ const Dashboard: React.FC = () => {
     return /\.(txt|json|js|ts|md|env|csv|log|html|css|xml)$/i.test(filename);
   };
 
+  // Helper to check if file is an image
+  const isImageFile = (filename: string) => {
+    return /\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(filename);
+  };
+
   // Preview handler
   const handlePreview = async (fileId: number) => {
     const file = files.find(f => f.id === fileId);
     if (!file) return;
     setOpenPreview(true);
     setPreviewContent(null);
+    setPreviewImageUrl(null);
     setPreviewError(null);
     setPreviewLoading(true);
-    if (!isTextFile(file.name)) {
+
+    if (!isTextFile(file.name) && !isImageFile(file.name)) {
       setPreviewContent(null);
+      setPreviewImageUrl(null);
       setPreviewError('Preview not available for this file type.');
       setPreviewLoading(false);
       return;
     }
+
     try {
       // Step 1: Request challenge
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
@@ -639,9 +649,23 @@ const Dashboard: React.FC = () => {
       const fileNonce = Uint8Array.from(atob(downloadResponse.file_nonce), c => c.charCodeAt(0));
       const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
       const decrypted = await decryptFile(encryptedFile, dek, fileNonce);
-      // Try to decode as UTF-8 text
-      const text = new TextDecoder('utf-8').decode(decrypted);
-      setPreviewContent(text);
+
+      if (isTextFile(file.name)) {
+        const text = new TextDecoder('utf-8').decode(decrypted);
+        setPreviewContent(text);
+        setPreviewImageUrl(null);
+      } else if (isImageFile(file.name)) {
+        // Guess MIME type from extension
+        let mime = 'image/png';
+        if (/\.jpe?g$/i.test(file.name)) mime = 'image/jpeg';
+        else if (/\.gif$/i.test(file.name)) mime = 'image/gif';
+        else if (/\.bmp$/i.test(file.name)) mime = 'image/bmp';
+        else if (/\.webp$/i.test(file.name)) mime = 'image/webp';
+        const blob = new Blob([decrypted], { type: mime });
+        const url = URL.createObjectURL(blob);
+        setPreviewImageUrl(url);
+        setPreviewContent(null);
+      }
     } catch (err: any) {
       setPreviewError(err.message || 'Failed to preview file');
     } finally {
@@ -1448,6 +1472,10 @@ const Dashboard: React.FC = () => {
             <Typography sx={{ color: '#00ff00' }}>Loading preview...</Typography>
           ) : previewError ? (
             <Alert severity="error" sx={{ bgcolor: 'rgba(255, 0, 0, 0.1)' }}>{previewError}</Alert>
+          ) : previewImageUrl ? (
+            <Box sx={{ textAlign: 'center' }}>
+              <img src={previewImageUrl} alt="Preview" style={{ maxWidth: '100%', maxHeight: 400 }} />
+            </Box>
           ) : previewContent ? (
             <Box sx={{
               bgcolor: 'rgba(0,255,0,0.05)',
