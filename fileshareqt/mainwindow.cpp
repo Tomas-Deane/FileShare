@@ -66,6 +66,23 @@ MainWindow::MainWindow(QWidget *parent)
     // start empty
     ui->passwordStrengthBar->setValue(0);
     ui->passwordStrengthLabel->setText("Too weak");
+
+    ui->passwordStrengthBar->setFixedHeight(20);
+    // Hide the built-in percentage/text
+    ui->passwordStrengthBar->setTextVisible(false);
+
+    // Apply the same base stylesheet up-front
+    ui->passwordStrengthBar->setStyleSheet(R"(
+        QProgressBar {
+            border: 1px solid #555;
+            border-radius: 5px;
+            background: #333;
+        }
+        QProgressBar::chunk {
+            background-color: #39ff14;  /* default to green */
+            width: 10px;
+        }
+    )");
 }
 
 MainWindow::~MainWindow()
@@ -406,8 +423,35 @@ void MainWindow::on_tabWidget_currentChanged(int index)
 
 void MainWindow::on_signupPasswordLineEdit_textChanged(const QString &text)
 {
-    // Use PasswordStrength evaluator
+    // 1) compute score & description
     StrengthResult res = pwEvaluator.evaluate(text);
     ui->passwordStrengthBar->setValue(res.score);
-    ui->passwordStrengthLabel->setText(res.description);
+
+    // 2) colour the bar chunk based on score
+    QString chunkColor;
+    if (res.score < 30)           chunkColor = "#ff1744";   // red
+    else if (res.score < 70)      chunkColor = "#f1c40f";   // amber
+    else                           chunkColor = "#39ff14";   // green
+
+    ui->passwordStrengthBar->setStyleSheet(QString(R"(
+        QProgressBar {
+            border: 1px solid #555;
+            border-radius: 5px;
+            background: #333;
+        }
+        QProgressBar::chunk {
+            background-color: %1;
+            width: 10px;
+        }
+    )").arg(chunkColor));
+
+    // 3) check OWASP minimums & breach
+    QString reason;
+    if (!pwEvaluator.isAcceptable(text, &reason)) {
+        // could be too short, too long, or found in breaches
+        ui->passwordStrengthLabel->setText(reason);
+    } else {
+        // meets OWASP + not breached → show strength label
+        ui->passwordStrengthLabel->setText(res.description);
+    }
 }
