@@ -1,3 +1,4 @@
+# cloud/models.py
 #!/usr/bin/env python3
 import os
 import pymysql as connector
@@ -9,11 +10,10 @@ DB_HOST     = os.environ.get('DB_HOST',     '127.0.0.1')
 DB_PORT     = int(os.environ.get('DB_PORT', '3306'))
 DB_NAME     = os.environ.get('DB_NAME',     'nrmc')
 
-
 def init_db():
     """
     Ensure the users, username_map, pending_challenges, and files tables
-    all exist.  Any that are already there will be left intact.
+    all exist. Any that are already there will be left intact.
     """
     conn = connector.connect(
         user     = DB_USER,
@@ -24,7 +24,7 @@ def init_db():
     )
     cursor = conn.cursor()
 
-    # 1) users: crypto data, PK = auto-inc id
+    # 1) users
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -39,7 +39,7 @@ def init_db():
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
-    # 2) username_map: maps username → users.id
+    # 2) username_map
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS username_map (
         username            VARCHAR(255)        PRIMARY KEY,
@@ -52,7 +52,7 @@ def init_db():
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
-    # 3) pending_challenges: by user_id + operation
+    # 3) pending_challenges
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS pending_challenges (
         user_id             BIGINT              NOT NULL,
@@ -68,7 +68,7 @@ def init_db():
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
-    # 4) files: store encrypted files and DEKs
+    # 4) files
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS files (
         id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -91,28 +91,38 @@ def init_db():
     cursor.close()
     conn.close()
 
-
 class UserDB:
     """
-    Wrapper around users, username_map, pending_challenges, and files tables.
+    Wrapper around users, username_map, pending_challenges, and files tables,
+    with automatic reconnect on lost connection.
     """
     def __init__(self):
+        self._connect()
+
+    def _connect(self):
         self.conn = connector.connect(
             user     = DB_USER,
             password = DB_PASSWORD,
             host     = DB_HOST,
             port     = DB_PORT,
-            database = DB_NAME
+            database = DB_NAME,
+            autocommit=False
         )
         try:
             self.cursor = self.conn.cursor(dictionary=True)
         except TypeError:
             self.cursor = self.conn.cursor()
 
+    def ensure_connection(self):
+        try:
+            # ping with reconnect=True will re-open if needed
+            self.conn.ping(reconnect=True)
+        except Exception:
+            # if ping fails entirely, re-establish
+            self._connect()
+
     def _get_user_id(self, username):
-        """
-        Return integer user_id for a username, or None if absent.
-        """
+        self.ensure_connection()
         sql = "SELECT user_id FROM username_map WHERE username = %s"
         self.cursor.execute(sql, (username,))
         row = self.cursor.fetchone()
@@ -123,9 +133,7 @@ class UserDB:
     def add_user(self, username, salt, opslimit, memlimit,
                  public_key, encrypted_privkey, privkey_nonce,
                  encrypted_kek, kek_nonce):
-        """
-        Insert crypto data, get new id, then map username→id.
-        """
+        self.ensure_connection()
         sql_user = """
             INSERT INTO users
                 (salt, argon2_opslimit, argon2_memlimit,
@@ -150,12 +158,7 @@ class UserDB:
         self.conn.commit()
 
     def get_user(self, username):
-        """
-        JOIN username_map→users. Always returns a dict with:
-        user_id, salt, argon2_opslimit, argon2_memlimit,
-        public_key, encrypted_privkey, privkey_nonce,
-        encrypted_kek, kek_nonce or None if not found.
-        """
+        self.ensure_connection()
         sql = """
             SELECT
               u.id                   AS user_id,
@@ -183,6 +186,7 @@ class UserDB:
         return dict(zip(columns, row))
 
     def add_challenge(self, user_id, operation, challenge: bytes):
+        self.ensure_connection()
         self.cursor.execute(
             "DELETE FROM pending_challenges WHERE user_id = %s AND operation = %s",
             (user_id, operation)
@@ -196,6 +200,7 @@ class UserDB:
         self.conn.commit()
 
     def get_pending_challenge(self, user_id, operation, expiry_seconds=300):
+        self.ensure_connection()
         sql = """
             SELECT challenge
             FROM pending_challenges
@@ -211,6 +216,7 @@ class UserDB:
         return row['challenge'] if isinstance(row, dict) else row[0]
 
     def delete_challenge(self, user_id):
+        self.ensure_connection()
         self.cursor.execute(
             "DELETE FROM pending_challenges WHERE user_id = %s",
             (user_id,)
@@ -218,6 +224,7 @@ class UserDB:
         self.conn.commit()
 
     def update_username(self, old_username, new_username):
+        self.ensure_connection()
         sql = """
             UPDATE username_map
             SET username = %s
@@ -229,13 +236,10 @@ class UserDB:
     def update_password(self, username, salt, opslimit, memlimit,
                         encrypted_privkey, privkey_nonce,
                         encrypted_kek, kek_nonce):
-        """
-        Overwrite crypto fields for password + KEK envelope.
-        """
+        self.ensure_connection()
         user_id = self._get_user_id(username)
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
-
         sql = """
             UPDATE users
             SET salt               = %s,
@@ -261,13 +265,10 @@ class UserDB:
 
     def add_file(self, username, filename, encrypted_file, file_nonce,
                  encrypted_dek, dek_nonce):
-        """
-        Store a new encrypted file record for the given user.
-        """
+        self.ensure_connection()
         user_id = self._get_user_id(username)
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
-
         sql = """
             INSERT INTO files
                 (owner_id, filename, encrypted_file, file_nonce,
@@ -285,13 +286,10 @@ class UserDB:
         self.conn.commit()
 
     def list_files(self, username):
-        """
-        Return a list of filenames owned by the given user, ordered by creation time.
-        """
+        self.ensure_connection()
         user_id = self._get_user_id(username)
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
-
         sql = """
             SELECT filename
             FROM files
@@ -308,13 +306,10 @@ class UserDB:
             return [row[0] for row in rows]
 
     def get_file(self, username, filename):
-        """
-        Return the encrypted_file, file_nonce, encrypted_dek, and dek_nonce for the specified file.
-        """
+        self.ensure_connection()
         user_id = self._get_user_id(username)
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
-
         sql = """
             SELECT encrypted_file, file_nonce, encrypted_dek, dek_nonce
             FROM files
@@ -332,15 +327,10 @@ class UserDB:
         return dict(zip(columns, row))
 
     def delete_file(self, username, filename):
-        """
-        Delete *one* file record (and its DEK) for the given user.
-        If you’ve ever uploaded the same filename multiple times, this
-        will only remove one instance at a time.
-        """
+        self.ensure_connection()
         user_id = self._get_user_id(username)
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
-
         sql = """
             DELETE FROM files
              WHERE owner_id = %s
@@ -350,3 +340,4 @@ class UserDB:
         """
         self.cursor.execute(sql, (user_id, filename))
         self.conn.commit()
+
