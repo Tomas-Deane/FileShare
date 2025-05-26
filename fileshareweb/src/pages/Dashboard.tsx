@@ -873,36 +873,40 @@ const Dashboard: React.FC = () => {
                     Recent Files
                   </Typography>
                   <List sx={{ maxHeight: 400, overflowY: 'auto' }}>
-                    {mockSharedFiles.slice(0, 10).map((f) => (
-                      <ListItem
-                        key={f.id}
-                        sx={{
-                          mb: 1,
-                          border: '1px solid rgba(0,255,0,0.2)',
-                          borderRadius: 1,
-                          transition: 'all 0.3s ease',
-                          '&:hover': {
-                            border: '1px solid rgba(0,255,0,0.4)',
-                            backgroundColor: 'rgba(0,255,0,0.05)',
-                            boxShadow: '0 0 20px rgba(0,255,0,0.2)',
-                          },
-                        }}
-                      >
-                        <ListItemIcon>
-                          <FolderIcon sx={{ color: '#00ff00' }} />
-                        </ListItemIcon>
-                        <ListItemText
-                          primary={f.name}
-                          secondary={`${f.type.toUpperCase()} • ${f.size} • from ${f.sharedBy} • ${f.date.toLocaleDateString('en-GB')} ${f.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
-                          primaryTypographyProps={{
-                            sx: { color: '#00ffff', fontWeight: 'bold' },
+                    {files
+                      .slice()
+                      .sort((a, b) => b.date.getTime() - a.date.getTime())
+                      .slice(0, 10)
+                      .map((f) => (
+                        <ListItem
+                          key={f.id}
+                          sx={{
+                            mb: 1,
+                            border: '1px solid rgba(0,255,0,0.2)',
+                            borderRadius: 1,
+                            transition: 'all 0.3s ease',
+                            '&:hover': {
+                              border: '1px solid rgba(0,255,0,0.4)',
+                              backgroundColor: 'rgba(0,255,0,0.05)',
+                              boxShadow: '0 0 20px rgba(0,255,0,0.2)',
+                            },
                           }}
-                          secondaryTypographyProps={{
-                            sx: { color: 'rgba(0,255,0,0.7)' },
-                          }}
-                        />
-                      </ListItem>
-                    ))}
+                        >
+                          <ListItemIcon>
+                            <FolderIcon sx={{ color: '#00ff00' }} />
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={f.name}
+                            secondary={`${f.type.toUpperCase()} • ${f.size} • ${f.date.toLocaleDateString('en-GB')} ${f.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                            primaryTypographyProps={{
+                              sx: { color: '#00ffff', fontWeight: 'bold' },
+                            }}
+                            secondaryTypographyProps={{
+                              sx: { color: 'rgba(0,255,0,0.7)' },
+                            }}
+                          />
+                        </ListItem>
+                      ))}
                   </List>
                 </DashboardCard>
               </>
