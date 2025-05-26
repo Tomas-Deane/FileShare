@@ -1,0 +1,71 @@
+QMainWindow {
+background-color: #121212;
+color: #e0e0e0;
+}
+
+QPushButton {
+background-color: #1e1e1e;
+color: #39ff14;
+border: 1px solid #39ff14;
+border-radius: 4px;
+padding: 6px 12px;
+}
+
+QPushButton:hover {
+background-color: #39ff14;
+color: #121212;
+}
+
+QPushButton:pressed {
+background-color: #ff1744;
+color: #121212;
+}
+
+QTabWidget::pane {
+background: #1e1e1e;
+border: none;
+}
+
+QTabBar::tab {
+background: #1e1e1e;
+color: #e0e0e0;
+padding: 8px;
+border-top-left-radius: 4px;
+border-top-right-radius: 4px;
+}
+
+QTabBar::tab:selected {
+background: #39ff14;
+color: #121212;
+}
+
+QLabel#serverConnectionLabel,
+QLabel#loggedInLabel {
+color: #39ff14;
+font-weight: bold;
+}
+
+QPlainTextEdit,
+QListWidget {
+background: #1e1e1e;
+color: #e0e0e0;
+border: 1px solid #39ff14;
+border-radius: 4px;
+}
+
+QScrollBar:vertical {
+background: #121212;
+width: 8px;
+margin: 0;
+}
+
+QScrollBar::handle:vertical {
+background: #39ff14;
+min-height: 20px;
+border-radius: 4px;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+background: none;
+}
