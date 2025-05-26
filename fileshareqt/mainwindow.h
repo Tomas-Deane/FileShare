@@ -74,6 +74,7 @@ private slots:
     void on_tabWidget_currentChanged(int index);
 
     void on_signupPasswordLineEdit_textChanged(const QString &text);
+    void on_changePasswordLineEdit_textChanged(const QString &text);
 
 private:
     Ui::MainWindow *ui;
