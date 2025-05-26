@@ -207,3 +207,18 @@ export async function encryptFile(
     key
   );
 }
+
+export async function decryptFile(
+  encrypted: Uint8Array,
+  key: Uint8Array,
+  nonce: Uint8Array
+): Promise<Uint8Array> {
+  await sodium.ready;
+  return sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
+    null, // no additional data
+    encrypted,
+    null, // no additional data
+    nonce,
+    key
+  );
+}
