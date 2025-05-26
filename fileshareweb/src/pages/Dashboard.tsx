@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Container, Typography, Button, Paper, Grid, List, ListItem, ListItemText,
   ListItemIcon, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider, CircularProgress
+  TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider
 } from '@mui/material';
 import {
   Upload as UploadIcon, Share as ShareIcon, Delete as DeleteIcon, Download as DownloadIcon,
@@ -17,7 +17,7 @@ import { CyberButton, MatrixBackground } from '../components';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../utils/apiClient';
-import * as sodium from 'libsodium-wrappers';
+import { encryptFile, generateFileKey, signChallenge } from '../utils/crypto';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -125,13 +125,27 @@ const mockUserProfile: ProfileData = {
   lastLogin: '2024-03-20 15:30',
 };
 
-// Add interface for file data
+// Add this interface for file data
 interface FileData {
-  filename: string;
-  file_nonce: string;
-  encrypted_dek: string;
-  dek_nonce: string;
-  created_at: string;
+  id: number;
+  name: string;
+  type: string;
+  size: string;
+  shared: boolean;
+  date: Date;
+}
+
+// Add these interfaces
+interface ChallengeResponse {
+  status: string;
+  nonce: string;
+  detail?: string;
+}
+
+interface UploadResponse {
+  status: string;
+  message?: string;
+  detail?: string;
 }
 
 const Dashboard: React.FC = () => {
@@ -142,7 +156,7 @@ const Dashboard: React.FC = () => {
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [openUpload, setOpenUpload] = useState(false);
   const [openShare, setOpenShare] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<number | null>(null);
   const [shareEmail, setShareEmail] = useState('');
   const [openVerify, setOpenVerify] = useState(false);
   const [selectedUser, setSelectedUser] = useState<{ id: number; email: string } | null>(null);
@@ -157,6 +171,7 @@ const Dashboard: React.FC = () => {
   const [files, setFiles] = useState<FileData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isFetching, setIsFetching] = useState(false);
 
   // Filter files based on search query
   const filteredFiles = mockFiles.filter(file => 
@@ -170,128 +185,13 @@ const Dashboard: React.FC = () => {
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: 'home'|'files'|'users'|'profile') => setActiveTab(newValue);
   const handleUpload = () => setOpenUpload(true);
-  const handleShare = (filename: string) => { 
-    setSelectedFile(filename); 
-    setOpenShare(true); 
-  };
-  const handleDelete = (filename: string) => { 
-    // TODO: Implement delete with authentication
-    console.log('Delete file:', filename);
-  };
-  const handleDownload = (filename: string) => { 
-    // TODO: Implement download with authentication
-    console.log('Download file:', filename);
-  };
-  const handleRevoke = (filename: string) => { 
-    // TODO: Implement revoke with authentication
-    console.log('Revoke file:', filename);
-  };
+  const handleShare = (fileId: number) => { setSelectedFile(fileId); setOpenShare(true); };
+  const handleDelete = (fileId: number) => { /* TODO: Implement delete */ };
+  const handleDownload = (fileId: number) => { /* TODO: Implement download */ };
+  const handleRevoke = (fileId: number) => { /* TODO: Implement revoke */ };
   const handleVerifyClick = (user: { id: number; email: string }) => {
     setSelectedUser(user);
     setOpenVerify(true);
-  };
-
-  // Add useEffect to fetch files when files tab is active
-  useEffect(() => {
-    if (activeTab === 'files') {
-      fetchFiles();
-    }
-  }, [activeTab]);
-
-  // Update authentication flow
-  const authenticate = async () => {
-    try {
-      // Step 1: Get challenge
-      const challengeResponse = await apiClient.post<{ status: string; nonce: string }>('/challenge', {
-        username: username,
-        operation: 'list_files'
-      });
-
-      if (challengeResponse.status !== 'challenge') {
-        throw new Error('Failed to get challenge');
-      }
-
-      const nonce = challengeResponse.nonce;
-      
-      // Step 2: Sign the nonce with PDK using libsodium
-      if (!pdk) {
-        throw new Error('PDK not available');
-      }
-
-      await sodium.ready;
-      const nonceBytes = sodium.from_base64(nonce);
-      const signature = sodium.crypto_sign_detached(nonceBytes, pdk);
-      const signatureBase64 = sodium.to_base64(signature);
-
-      // Step 3: Authenticate
-      const authResponse = await apiClient.post<{ status: string }>('/authenticate', {
-        username: username,
-        nonce: nonce,
-        signature: signatureBase64
-      });
-
-      if (authResponse.status !== 'ok') {
-        throw new Error('Authentication failed');
-      }
-
-      return true;
-    } catch (err) {
-      console.error('Authentication error:', err);
-      setError(err instanceof Error ? err.message : 'Authentication failed');
-      return false;
-    }
-  };
-
-  const fetchFiles = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // First authenticate
-      const isAuthenticated = await authenticate();
-      if (!isAuthenticated) {
-        return;
-      }
-
-      // Get new challenge for list_files
-      const challengeResponse = await apiClient.post<{ status: string; nonce: string }>('/challenge', {
-        username: username,
-        operation: 'list_files'
-      });
-
-      if (challengeResponse.status !== 'challenge') {
-        throw new Error('Failed to get challenge');
-      }
-
-      const nonce = challengeResponse.nonce;
-      
-      // Sign the nonce with libsodium
-      if (!pdk) {
-        throw new Error('PDK not available');
-      }
-
-      await sodium.ready;
-      const nonceBytes = sodium.from_base64(nonce);
-      const signature = sodium.crypto_sign_detached(nonceBytes, pdk);
-      const signatureBase64 = sodium.to_base64(signature);
-
-      // Now fetch files
-      const response = await apiClient.post<{ status: string; files: FileData[] }>('/list_files', {
-        username: username,
-        nonce: nonce,
-        signature: signatureBase64
-      });
-      
-      if (response.status === 'ok' && response.files) {
-        setFiles(response.files);
-      } else {
-        setError('Failed to fetch files');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch files');
-    } finally {
-      setLoading(false);
-    }
   };
 
   const debugSection = (
@@ -325,6 +225,173 @@ const Dashboard: React.FC = () => {
   const handleProfileCancel = () => {
     setEditMode(false);
     setEditedProfile(profileData);
+  };
+
+  // Update the fetchFiles function to use the isFetching flag
+  const fetchFiles = async () => {
+    // Prevent multiple simultaneous requests
+    if (isFetching) return;
+    
+    try {
+      setIsFetching(true);
+      setLoading(true);
+      setError(null);
+
+      // Debug logging
+      console.log('Debug - Keys available:', {
+        hasSecretKey: !!secretKey,
+        secretKeyLength: secretKey?.length,
+        hasPdk: !!pdk,
+        pdkLength: pdk?.length,
+        hasKek: !!kek,
+        kekLength: kek?.length
+      });
+
+      // Request challenge
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'list_files'
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+
+      // Convert base64 nonce to Uint8Array
+      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+      
+      // Debug logging for nonce
+      console.log('Debug - Challenge nonce:', {
+        nonceLength: nonce.length,
+        nonceBase64: challengeResponse.nonce
+      });
+
+      // Sign the nonce with the secretKey
+      const signature = await signChallenge(nonce, secretKey!);
+
+      // Debug logging for signature
+      console.log('Debug - Signature:', {
+        signatureLength: signature.length,
+        signatureBase64: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+      });
+
+      // List files
+      const listResponse = await apiClient.post<{ status: string; files: string[] }>('/list_files', {
+        username,
+        nonce: challengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+      });
+
+      if (listResponse.status === 'ok') {
+        // Convert filenames to FileData objects
+        const fileData: FileData[] = listResponse.files.map((filename, index) => ({
+          id: index + 1,
+          name: filename,
+          type: filename.split('.').pop() || 'unknown',
+          size: '0 KB', // TODO: Get actual file size from server
+          shared: false,
+          date: new Date()
+        }));
+        setFiles(fileData);
+      } else {
+        throw new Error('Failed to list files');
+      }
+    } catch (err: any) {
+      console.error('List files error:', err);
+      setError(err.message || 'Failed to list files');
+    } finally {
+      setLoading(false);
+      setIsFetching(false);
+    }
+  };
+
+  // Update the useEffect hook to include proper cleanup and dependencies
+  useEffect(() => {
+    let mounted = true;
+
+    const loadFiles = async () => {
+      if (!username || !pdk || isFetching) return;
+      
+      try {
+        await fetchFiles();
+      } catch (error) {
+        if (mounted) {
+          console.error('Error loading files:', error);
+        }
+      }
+    };
+
+    loadFiles();
+
+    // Cleanup function
+    return () => {
+      mounted = false;
+    };
+  }, [username, pdk]); // Only depend on username and pdk
+
+  // Update the refreshFiles function to use the same pattern
+  const refreshFiles = async () => {
+    if (!username || !pdk || isFetching) return;
+    await fetchFiles();
+  };
+
+  // Update handleFileUpload to use the async refreshFiles
+  const handleFileUpload = async (file: File) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Step 1: Request challenge
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'upload_file'
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+
+      // Step 2: Generate file key and encrypt file
+      const fileKey = await generateFileKey();
+      const fileNonce = new Uint8Array(24); // XChaCha20-Poly1305 nonce size
+      window.crypto.getRandomValues(fileNonce);
+
+      const fileData = await file.arrayBuffer();
+      const encryptedFile = await encryptFile(new Uint8Array(fileData), fileKey, fileNonce);
+
+      // Step 3: Encrypt file key with KEK
+      const kekNonce = new Uint8Array(24);
+      window.crypto.getRandomValues(kekNonce);
+      const encryptedDek = await encryptFile(fileKey, kek!, kekNonce);
+
+      // Step 4: Sign the encrypted DEK
+      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(encryptedDek, secretKey!);
+
+      // Step 5: Upload the file
+      const uploadResponse = await apiClient.post<UploadResponse>('/upload_file', {
+        username,
+        filename: file.name,
+        encrypted_file: btoa(String.fromCharCode.apply(null, Array.from(encryptedFile))),
+        file_nonce: btoa(String.fromCharCode.apply(null, Array.from(fileNonce))),
+        encrypted_dek: btoa(String.fromCharCode.apply(null, Array.from(encryptedDek))),
+        dek_nonce: btoa(String.fromCharCode.apply(null, Array.from(kekNonce))),
+        nonce: challengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+      });
+
+      if (uploadResponse.status === 'ok') {
+        await refreshFiles(); // Now properly awaits the refresh
+        setOpenUpload(false);
+      } else {
+        throw new Error(uploadResponse.detail || 'Upload failed');
+      }
+    } catch (err: any) {
+      console.error('Upload error:', err);
+      setError(err.message || 'Failed to upload file');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -509,70 +576,67 @@ const Dashboard: React.FC = () => {
                     Upload File
                   </CyberButton>
                 </Box>
-
-                {error && (
-                  <Alert severity="error" sx={{ mb: 2, bgcolor: 'rgba(255, 0, 0, 0.1)', color: '#ff4444' }}>
+                {loading ? (
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography sx={{ color: '#00ff00' }}>Loading files...</Typography>
+                  </Box>
+                ) : error ? (
+                  <Alert severity="error" sx={{ bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
                     {error}
                   </Alert>
-                )}
-
-                {loading ? (
-                  <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-                    <CircularProgress sx={{ color: '#00ff00' }} />
-                  </Box>
                 ) : files.length === 0 ? (
-                  <Box sx={{ textAlign: 'center', p: 3 }}>
-                    <Typography sx={{ color: 'rgba(0, 255, 0, 0.7)' }}>
-                      No files found. Upload your first file to get started.
-                    </Typography>
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography sx={{ color: '#00ff00' }}>No files found. Upload your first file!</Typography>
                   </Box>
                 ) : (
                   <List>
-                    {files.map((file) => (
-                      <ListItem
-                        key={file.filename}
-                        sx={{
-                          border: '1px solid rgba(0, 255, 0, 0.2)',
-                          borderRadius: 1,
-                          mb: 1,
-                          '&:hover': {
-                            border: '1px solid rgba(0, 255, 0, 0.4)',
-                            backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                          },
-                        }}
-                      >
-                        <ListItemIcon>
-                          <FolderIcon sx={{ color: '#00ff00' }} />
-                        </ListItemIcon>
-                        <ListItemText
-                          primary={file.filename}
-                          secondary={`Created: ${new Date(file.created_at).toLocaleString()}`}
-                          primaryTypographyProps={{
-                            sx: { color: '#00ffff', fontWeight: 'bold' },
+                    {files
+                      .filter(file => file.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                      .map((file) => (
+                        <ListItem
+                          key={file.id}
+                          sx={{
+                            border: '1px solid rgba(0, 255, 0, 0.2)',
+                            borderRadius: 1,
+                            mb: 1,
+                            '&:hover': {
+                              border: '1px solid rgba(0, 255, 0, 0.4)',
+                              backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                            },
                           }}
-                          secondaryTypographyProps={{
-                            sx: { color: 'rgba(0, 255, 0, 0.7)' },
-                          }}
-                        />
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          <Tooltip title="Share">
-                            <IconButton onClick={() => handleShare(file.filename)} sx={{ color: '#00ff00' }}>
-                              <ShareIcon />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Download">
-                            <IconButton onClick={() => handleDownload(file.filename)} sx={{ color: '#00ff00' }}>
-                              <DownloadIcon />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Delete">
-                            <IconButton onClick={() => handleDelete(file.filename)} sx={{ color: '#00ff00' }}>
-                              <DeleteIcon />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
-                      </ListItem>
-                    ))}
+                        >
+                          <ListItemIcon>
+                            <FolderIcon sx={{ color: '#00ff00' }} />
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={file.name}
+                            secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                            primaryTypographyProps={{
+                              sx: { color: '#00ffff', fontWeight: 'bold' },
+                            }}
+                            secondaryTypographyProps={{
+                              sx: { color: 'rgba(0, 255, 0, 0.7)' },
+                            }}
+                          />
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Tooltip title="Share">
+                              <IconButton onClick={() => handleShare(file.id)} sx={{ color: '#00ff00' }}>
+                                <ShareIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Download">
+                              <IconButton onClick={() => handleDownload(file.id)} sx={{ color: '#00ff00' }}>
+                                <DownloadIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete">
+                              <IconButton onClick={() => handleDelete(file.id)} sx={{ color: '#00ff00' }}>
+                                <DeleteIcon />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        </ListItem>
+                      ))}
                   </List>
                 )}
               </DashboardCard>
@@ -779,27 +843,40 @@ const Dashboard: React.FC = () => {
                 backgroundColor: 'rgba(0, 255, 0, 0.05)',
               },
             }}
+            component="label"
           >
+            <input
+              type="file"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  handleFileUpload(file);
+                }
+              }}
+            />
             <UploadIcon sx={{ fontSize: 48, color: '#00ff00', mb: 2 }} />
             <Typography sx={{ color: '#00ffff', mb: 1 }}>
-              Drag and drop your file here
+              {loading ? 'Uploading...' : 'Drag and drop your file here'}
             </Typography>
             <Typography sx={{ color: 'rgba(0, 255, 0, 0.7)', fontSize: '0.875rem' }}>
               or click to browse
             </Typography>
           </Box>
+          {error && (
+            <Alert severity="error" sx={{ mt: 2, bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
+              {error}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
-          <Button onClick={() => setOpenUpload(false)} sx={{ color: 'rgba(0, 255, 0, 0.7)' }}>
+          <Button 
+            onClick={() => setOpenUpload(false)} 
+            sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+            disabled={loading}
+          >
             Cancel
           </Button>
-          <CyberButton
-            onClick={() => setOpenUpload(false)}
-            size="small"
-            sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
-          >
-            Upload
-          </CyberButton>
         </DialogActions>
       </Dialog>
 
