@@ -15,7 +15,7 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
     , authController(new AuthController(this))
-    , pendingDeleteItem(nullptr)           // <<< initialize here
+    , pendingDeleteItem(nullptr)
 {
     ui->setupUi(this);
 
@@ -356,8 +356,9 @@ void MainWindow::onDeleteFileResult(bool success, const QString &message)
 
 void MainWindow::on_tabWidget_currentChanged(int index)
 {
-    constexpr int uploadIndex = 2;
-    constexpr int downloadIndex = 3;
+    // Use named constants instead of hard-coded indices
+    constexpr int uploadIndex   = MainWindow::Upload;
+    constexpr int downloadIndex = MainWindow::Download;
 
     if (index != uploadIndex) {
         // Clear upload preview + reset labels and state
@@ -372,15 +373,15 @@ void MainWindow::on_tabWidget_currentChanged(int index)
     }
 
     if (index == downloadIndex) {
-           // Clear all of the old preview before refreshing the list:
-         ui->downloadTextPreview->clear();
-         ui->downloadImagePreview->clear();
-         ui->downloadImagePreview->setText(tr("No Image File Selected"));
-         ui->downloadPreviewStack->setCurrentIndex(0);
+        // Clear all of the old preview before refreshing the list
+        ui->downloadTextPreview->clear();
+        ui->downloadImagePreview->clear();
+        ui->downloadImagePreview->setText(tr("No Image File Selected"));
+        ui->downloadPreviewStack->setCurrentIndex(0);
 
         // Now fetch the up-to-date file list
         authController->listFiles();
-       }
+    }
 
     //     // (Optional) if you want to make sure it's also wiped when leaving Download:
     // else {
