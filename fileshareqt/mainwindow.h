@@ -1,3 +1,4 @@
+// File: fileshareqt/mainwindow.h
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -7,6 +8,9 @@
 #include <QByteArray>
 #include <QMap>
 #include <QListWidgetItem>
+#include <QProgressBar>
+#include <QLabel>
+#include "passwordstrength.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -22,14 +26,15 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
-    // Named constants for tab indices to avoid hard-coded values
+    // Updated tab indices to match the new UI (7 tabs total)
     enum TabIndex {
         Home    = 0,
-        Login   = 1,
-        Upload  = 2,
-        Download= 3,
-        Share   = 4,
-        Profile = 5
+        Signup  = 1,
+        Login   = 2,
+        Upload  = 3,
+        Download= 4,
+        Share   = 5,
+        Profile = 6
     };
 
 private slots:
@@ -69,19 +74,29 @@ private slots:
     // Clear previews and trigger listFiles only on tab switch
     void on_tabWidget_currentChanged(int index);
 
+    // **Password‐strength slots** (now just thin wrappers)
+    void on_signupPasswordLineEdit_textChanged(const QString &text);
+    void on_changePasswordLineEdit_textChanged(const QString &text);
+
 private:
-    Ui::MainWindow *ui;
-    AuthController *authController;
+    Ui::MainWindow        *ui;
+    AuthController        *authController;
+    PasswordStrength       pwEvaluator;
 
     // We store the original filename here
-    QString currentUploadPath;
-    QByteArray currentUploadData;
+    QString                currentUploadPath;
+    QByteArray             currentUploadData;
 
     // filenames → decrypted data
     QMap<QString, QByteArray> downloadCache;
 
     // Pointer to the item we're about to delete
-    QListWidgetItem *pendingDeleteItem;
+    QListWidgetItem       *pendingDeleteItem;
+
+    // **Helper to consolidate password‐strength UI updates**
+    void updatePasswordStrength(const QString &text,
+                                QProgressBar *bar,
+                                QLabel *label);
 };
 
 #endif // MAINWINDOW_H
