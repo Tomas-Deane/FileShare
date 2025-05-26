@@ -1,86 +1,24 @@
 #!/usr/bin/env python3
-# File: cloud/handlers.py
-
 import base64
 import secrets
 import logging
 from fastapi import HTTPException
-from pydantic import BaseModel
+from schemas import (
+    SignupRequest,
+    LoginRequest,
+    ChallengeRequest,
+    AuthenticateRequest,
+    ChangeUsernameRequest,
+    ChangePasswordRequest,
+    UploadRequest,
+    ListFilesRequest,
+    DownloadFileRequest,
+    DeleteFileRequest,
+)
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
 
 import models
-
-# --- Request models ------------------------------------------------------
-
-class SignupRequest(BaseModel):
-    username: str
-    salt: str
-    argon2_opslimit: int
-    argon2_memlimit: int
-    public_key: str
-    encrypted_privkey: str
-    privkey_nonce: str
-    encrypted_kek: str
-    kek_nonce: str
-
-class LoginRequest(BaseModel):
-    username: str
-
-class ChallengeRequest(BaseModel):
-    username: str
-    operation: str  # e.g. "login", "change_username", "change_password", "upload_file", "list_files", "download_file", "delete_file"
-
-class AuthenticateRequest(BaseModel):
-    username: str
-    nonce: str
-    signature: str
-
-class ChangeUsernameRequest(BaseModel):
-    username: str
-    new_username: str
-    nonce: str
-    signature: str
-
-class ChangePasswordRequest(BaseModel):
-    username: str
-    salt: str
-    argon2_opslimit: int
-    argon2_memlimit: int
-    encrypted_privkey: str
-    privkey_nonce: str
-    encrypted_kek: str
-    kek_nonce: str
-    nonce: str
-    signature: str
-
-class UploadRequest(BaseModel):
-    username: str
-    filename: str
-    encrypted_file: str
-    file_nonce: str
-    encrypted_dek: str
-    dek_nonce: str
-    nonce: str
-    signature: str
-
-class ListFilesRequest(BaseModel):
-    username: str
-    nonce: str
-    signature: str
-
-class DownloadFileRequest(BaseModel):
-    username: str
-    filename: str
-    nonce: str
-    signature: str
-
-class DeleteFileRequest(BaseModel):
-    username: str
-    filename: str
-    nonce: str
-    signature: str
-
 
 # --- CHALLENGE HANDLER --------------------------------------------
 def challenge_handler(req: ChallengeRequest, db: models.UserDB):
@@ -98,7 +36,6 @@ def challenge_handler(req: ChallengeRequest, db: models.UserDB):
         "status": "challenge",
         "nonce": base64.b64encode(challenge).decode()
     }
-
 
 # --- LOGIN CONTINUATION ------------------------------------------------
 def login_handler_continue(req: LoginRequest, db: models.UserDB, b64_nonce: str):
@@ -118,7 +55,6 @@ def login_handler_continue(req: LoginRequest, db: models.UserDB, b64_nonce: str)
         "encrypted_kek": base64.b64encode(user["encrypted_kek"]).decode(),
         "kek_nonce": base64.b64encode(user["kek_nonce"]).decode()
     }
-
 
 # --- SIGNUP ------------------------------------------------------------
 def signup_handler(req: SignupRequest, db: models.UserDB):
@@ -141,7 +77,6 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
 
     logging.info(f"Signup successful for '{req.username}'")
     return {"status": "ok"}
-
 
 # --- AUTHENTICATE (LOGIN COMPLETE) --------------------------------------
 def authenticate_handler(req: AuthenticateRequest, db: models.UserDB):
@@ -170,7 +105,6 @@ def authenticate_handler(req: AuthenticateRequest, db: models.UserDB):
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
-
 # --- CHANGE USERNAME ------------------------------------------------------
 def change_username_handler(req: ChangeUsernameRequest, db: models.UserDB):
     logging.debug(f"ChangeUsername: {req.json()}")
@@ -198,7 +132,6 @@ def change_username_handler(req: ChangeUsernameRequest, db: models.UserDB):
         logging.warning(f"Bad signature for change_username of user_id={user_id}")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
-
 
 # --- CHANGE PASSWORD ------------------------------------------------------
 def change_password_handler(req: ChangePasswordRequest, db: models.UserDB):
@@ -239,10 +172,8 @@ def change_password_handler(req: ChangePasswordRequest, db: models.UserDB):
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
-
 # --- FILE UPLOAD ------------------------------------------------------
 def upload_file_handler(req: UploadRequest, db: models.UserDB):
-#    logging.debug(f"UploadRequest: {req.json()}")
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' at upload_file")
@@ -276,7 +207,6 @@ def upload_file_handler(req: UploadRequest, db: models.UserDB):
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
-
 # --- LIST FILES ------------------------------------------------------
 def list_files_handler(req: ListFilesRequest, db: models.UserDB):
     logging.debug(f"ListFilesRequest: {req.json()}")
@@ -304,10 +234,8 @@ def list_files_handler(req: ListFilesRequest, db: models.UserDB):
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
-
 # --- DOWNLOAD FILE ------------------------------------------------------
 def download_file_handler(req: DownloadFileRequest, db: models.UserDB):
-    #logging.debug(f"DownloadFileRequest: {req.json()}")
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' at download_file")
@@ -341,7 +269,6 @@ def download_file_handler(req: DownloadFileRequest, db: models.UserDB):
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
-
 # --- DELETE FILE ------------------------------------------------------
 def delete_file_handler(req: DeleteFileRequest, db: models.UserDB):
     logging.debug(f"DeleteFileRequest: {req.json()}")
@@ -359,11 +286,9 @@ def delete_file_handler(req: DeleteFileRequest, db: models.UserDB):
 
     signature = base64.b64decode(req.signature)
     try:
-        # verify signature over the filename
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, req.filename.encode())
 
-        # delete that single file
         db.delete_file(req.username, req.filename)
         logging.info(f"File '{req.filename}' deleted for user_id={user_id}")
         db.delete_challenge(user_id)
