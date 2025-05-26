@@ -9,6 +9,7 @@
 #include <QByteArray>
 #include <QMap>
 #include <QListWidgetItem>
+#include "passwordstrength.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -72,9 +73,12 @@ private slots:
     // Clear previews and trigger listFiles only on tab switch
     void on_tabWidget_currentChanged(int index);
 
+    void on_signupPasswordLineEdit_textChanged(const QString &text);
+
 private:
     Ui::MainWindow *ui;
     AuthController *authController;
+    PasswordStrength pwEvaluator;
 
     // We store the original filename here
     QString currentUploadPath;
