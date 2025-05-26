@@ -106,23 +106,23 @@ const Login: React.FC = () => {
         throw new Error(challengeResponse.detail || 'Login failed');
       }
 
-      // Step 2: Decrypt private key and sign challenge
-      console.log('Decrypting private key...');
+      // Step 2: Derive PDK and decrypt private key
+      console.log('Deriving PDK...');
       const salt = Uint8Array.from(atob(challengeResponse.salt), c => c.charCodeAt(0));
-      const encryptedPrivateKey = Uint8Array.from(atob(challengeResponse.encrypted_privkey), c => c.charCodeAt(0));
-      const nonce = Uint8Array.from(atob(challengeResponse.privkey_nonce), c => c.charCodeAt(0));
-      const challenge = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
-
-      const privateKey = await decryptPrivateKey(
-        encryptedPrivateKey,
+      const pdk = await derivePDK(
         formData.password,
         salt,
-        nonce,
         challengeResponse.argon2_opslimit,
         challengeResponse.argon2_memlimit
       );
 
+      console.log('Decrypting private key...');
+      const encryptedPrivateKey = Uint8Array.from(atob(challengeResponse.encrypted_privkey), c => c.charCodeAt(0));
+      const nonce = Uint8Array.from(atob(challengeResponse.privkey_nonce), c => c.charCodeAt(0));
+      const privateKey = await decryptPrivateKey(encryptedPrivateKey, pdk, nonce);
+
       console.log('Signing challenge...');
+      const challenge = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
       const signature = await signChallenge(challenge, privateKey);
 
       // Step 3: Authenticate with signed challenge
@@ -136,12 +136,17 @@ const Login: React.FC = () => {
       if (authResponse.status === 'ok') {
         console.log('Login successful, saving auth data...');
         
+        // Decrypt KEK
+        const encryptedKek = Uint8Array.from(atob(challengeResponse.encrypted_kek), c => c.charCodeAt(0));
+        const kekNonce = Uint8Array.from(atob(challengeResponse.kek_nonce), c => c.charCodeAt(0));
+        const kek = await decryptKEK(encryptedKek, pdk, kekNonce);
+        
         // Save the auth data
         setAuthData({
-            username: trimmedUsername,
-            secretKey: privateKey,  // This is the decrypted private key
-            pdk: await derivePDK(formData.password, salt, challengeResponse.argon2_opslimit, challengeResponse.argon2_memlimit),
-            kek: await decryptKEK(Uint8Array.from(atob(challengeResponse.encrypted_kek), c => c.charCodeAt(0)), formData.password, salt, Uint8Array.from(atob(challengeResponse.kek_nonce), c => c.charCodeAt(0)), challengeResponse.argon2_opslimit, challengeResponse.argon2_memlimit)
+          username: trimmedUsername,
+          secretKey: privateKey,
+          pdk: pdk,
+          kek: kek
         });
 
         // Navigate to dashboard
