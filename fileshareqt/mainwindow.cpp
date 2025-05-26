@@ -83,6 +83,27 @@ MainWindow::MainWindow(QWidget *parent)
             width: 10px;
         }
     )");
+
+    ui->passwordStrengthBar_2->setRange(0,100);
+    ui->passwordStrengthBar_2->setValue(0);
+    ui->passwordStrengthLabel_2->setText("Too weak");
+    ui->passwordStrengthBar_2->setFixedHeight(20);
+    ui->passwordStrengthBar_2->setTextVisible(false);
+    ui->passwordStrengthBar_2->setStyleSheet(R"(
+        QProgressBar {
+            border: 1px solid #555;
+            border-radius: 5px;
+            background: #333;
+        }
+        QProgressBar::chunk {
+            background-color: #39ff14;
+            width: 10px;
+        }
+    )");
+
+    // Wire the Profile‐tab QLineEdit → strength slot
+    connect(ui->changePasswordLineEdit, &QLineEdit::textChanged,
+            this, &MainWindow::on_changePasswordLineEdit_textChanged);
 }
 
 MainWindow::~MainWindow()
@@ -453,5 +474,38 @@ void MainWindow::on_signupPasswordLineEdit_textChanged(const QString &text)
     } else {
         // meets OWASP + not breached → show strength label
         ui->passwordStrengthLabel->setText(res.description);
+    }
+}
+
+void MainWindow::on_changePasswordLineEdit_textChanged(const QString &text)
+{
+    StrengthResult res = pwEvaluator.evaluate(text);
+    ui->passwordStrengthBar_2->setValue(res.score);
+
+    QString chunkColor;
+    if (res.score < 30)
+        chunkColor = "#ff1744";
+    else if (res.score < 70)
+        chunkColor = "#f1c40f";
+    else
+        chunkColor = "#39ff14";
+
+    ui->passwordStrengthBar_2->setStyleSheet(QString(R"(
+        QProgressBar {
+            border: 1px solid #555;
+            border-radius: 5px;
+            background: #333;
+        }
+        QProgressBar::chunk {
+            background-color: %1;
+            width: 10px;
+        }
+    )").arg(chunkColor));
+
+    QString reason;
+    if (!pwEvaluator.isAcceptable(text, &reason)) {
+        ui->passwordStrengthLabel_2->setText(reason);
+    } else {
+        ui->passwordStrengthLabel_2->setText(res.description);
     }
 }
