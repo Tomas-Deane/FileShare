@@ -1,6 +1,6 @@
 export const securityConfig = {
   // Enforce HTTPS for all API calls
-  apiBaseUrl: process.env.REACT_APP_API_URL?.replace('http://', 'https://') || 'https://localhost:3001',
+  apiBaseUrl: 'https://gobbler.info:3210',
   
   // Security headers configuration
   headers: {
@@ -19,12 +19,10 @@ export const securityConfig = {
   },
 
   // CORS configuration
-  corsOptions: {
-    origin: process.env.NODE_ENV === 'production' 
-      ? process.env.REACT_APP_ALLOWED_ORIGINS?.split(',') 
-      : ['https://localhost:3000'],
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  cors: {
+    allowedOrigins: ['https://gobbler.info:3210'],
+    allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    allowCredentials: true,
   },
 }; 

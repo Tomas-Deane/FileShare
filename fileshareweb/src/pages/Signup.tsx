@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   Container, 
@@ -7,14 +7,22 @@ import {
   Button, 
   Link,
   Paper,
-  Grid,
   InputAdornment,
   IconButton,
   Alert,
+  CircularProgress,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { Visibility, VisibilityOff, Security, Lock, Person, Home } from '@mui/icons-material';
 import { MatrixBackground } from '../components';
+import { apiClient } from '../utils/apiClient';
+import { generateKeyPair, encryptPrivateKey, generateSalt, derivePDK, generateKEK, encryptKEK, CryptoError } from '../utils/crypto';
+import sodium from 'libsodium-wrappers-sumo';
+
+interface SignupResponse {
+  status: string;
+  detail?: string;
+}
 
 const Signup: React.FC = () => {
   const navigate = useNavigate();
@@ -25,6 +33,25 @@ const Signup: React.FC = () => {
     password: '',
   });
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isBrowserCompatible, setIsBrowserCompatible] = useState(true);
+
+  useEffect(() => {
+    // Check browser compatibility
+    try {
+      if (!window.crypto || !window.crypto.subtle) {
+        setIsBrowserCompatible(false);
+        setError('Your browser does not support the required security features. Please use a modern browser like Chrome, Firefox, or Edge.');
+        return;
+      }
+
+      // Test basic crypto support
+      window.crypto.getRandomValues(new Uint8Array(32));
+    } catch (err) {
+      setIsBrowserCompatible(false);
+      setError('Your browser does not support the required security features. Please use a modern browser like Chrome, Firefox, or Edge.');
+    }
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -33,10 +60,109 @@ const Signup: React.FC = () => {
     });
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    // TODO: Implement signup logic
-    navigate('/login');
+    setError('');
+    setIsLoading(true);
+
+    try {
+      // Validate input
+      if (!formData.username || !formData.password) {
+        throw new Error('Username and password are required');
+      }
+
+      const trimmedUsername = formData.username.trim();
+      if (!trimmedUsername) {
+        throw new Error('Username cannot be empty or contain only spaces');
+      }
+
+      if (formData.password.length < 8) {
+        throw new Error('Password must be at least 8 characters long');
+      }
+
+      if (!isBrowserCompatible) {
+        throw new Error('Your browser is not compatible with the required security features');
+      }
+
+      console.log('Starting signup process...');
+      
+      // Generate cryptographic keys and salt
+      console.log('Generating key pair...');
+      const { publicKey, privateKey } = await generateKeyPair();
+      
+      console.log('Generating salt...');
+      const salt = await generateSalt();
+      
+      console.log('Deriving PDK...');
+      const pdk = await derivePDK(formData.password, salt, 3, 67108864);
+      
+      console.log('Generating KEK...');
+      const kek = await generateKEK();
+      const kekNonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+      const privateKeyNonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+      
+      console.log('Encrypting private key...');
+      const { encryptedPrivateKey, nonce: encryptedNonce } = await encryptPrivateKey(
+        privateKey,
+        pdk,
+        privateKeyNonce
+      );
+
+      console.log('Encrypting KEK...');
+      const { encryptedPrivateKey: encryptedKek, nonce: encryptedKekNonce } = await encryptKEK(
+        kek,
+        pdk,
+        kekNonce
+      );
+
+      // Convert binary data to base64 strings
+      console.log('Preparing payload...');
+      const payload = {
+        username: trimmedUsername,
+        salt: btoa(String.fromCharCode.apply(null, Array.from(salt))),
+        argon2_opslimit: 3,
+        argon2_memlimit: 67108864,
+        public_key: btoa(String.fromCharCode.apply(null, Array.from(publicKey))),
+        encrypted_privkey: btoa(String.fromCharCode.apply(null, Array.from(encryptedPrivateKey))),
+        privkey_nonce: btoa(String.fromCharCode.apply(null, Array.from(encryptedNonce))),
+        encrypted_kek: btoa(String.fromCharCode.apply(null, Array.from(encryptedKek))),
+        kek_nonce: btoa(String.fromCharCode.apply(null, Array.from(encryptedKekNonce)))
+      };
+
+      // Make API call
+      console.log('Sending signup request...');
+      const response = await apiClient.post<SignupResponse>('/signup', payload);
+      
+      if (response.status === 'ok') {
+        console.log('Signup successful, redirecting to login...');
+        navigate('/login');
+      } else {
+        setError(response.detail || 'Signup failed');
+      }
+    } catch (err: any) {
+      console.error('Signup error:', err);
+      if (err instanceof CryptoError) {
+        console.error('Crypto error details:', err.cause);
+        setError('Failed to generate secure keys. Please try again or use a different browser.');
+      } else if (err.message?.includes('SSL Certificate Error')) {
+        // Show a more user-friendly message for SSL certificate errors
+        setError(
+          'The server is using a self-signed certificate. This is expected in development. ' +
+          'Please proceed with caution. If you\'re in a production environment, ' +
+          'please contact the administrator.'
+        );
+      } else if (err.message?.includes('Unable to establish a secure connection')) {
+        setError('Unable to establish a secure connection to the server. Please ensure you\'re using a trusted network and try again.');
+      } else if (err.response?.data?.detail) {
+        setError(err.response.data.detail);
+      } else if (err.message) {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred during signup');
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -244,7 +370,8 @@ const Signup: React.FC = () => {
                 type="submit"
                 fullWidth
                 variant="contained"
-                startIcon={<Security />}
+                startIcon={isLoading ? <CircularProgress size={20} color="inherit" /> : <Security />}
+                disabled={isLoading}
                 sx={{
                   mt: 3,
                   mb: 2,
@@ -258,7 +385,7 @@ const Signup: React.FC = () => {
                   },
                 }}
               >
-                ENCRYPT & SIGNUP
+                {isLoading ? 'ENCRYPTING...' : 'ENCRYPT & SIGNUP'}
               </Button>
 
               <Box sx={{ textAlign: 'center' }}>
