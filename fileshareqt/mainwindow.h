@@ -3,6 +3,10 @@
 
 #include <QMainWindow>
 #include <QString>
+#include <QStringList>
+#include <QByteArray>
+#include <QMap>
+#include <QListWidgetItem>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -18,12 +22,23 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    // Named constants for tab indices to avoid hard-coded values
+    enum TabIndex {
+        Home    = 0,
+        Login   = 1,
+        Upload  = 2,
+        Download= 3,
+        Share   = 4,
+        Profile = 5
+    };
+
 private slots:
     void on_signupButton_clicked();
     void on_loginButton_clicked();
     void on_logOutButton_clicked();
     void on_changeUsernameButton_clicked();
     void on_changePasswordButton_clicked();
+    void onUploadFileResult(bool success, const QString &message);
 
     // Update UI when AuthController tells us user has logged in/out
     void handleLoggedIn(const QString &username);
@@ -35,10 +50,38 @@ private slots:
 
     void updateConnectionStatus(bool online);
 
+    // Upload
+    void on_selectFileButton_clicked();
+    void on_uploadFileButton_clicked();
+
+    // Download
+    void on_downloadFileList_itemSelectionChanged();
+    void on_downloadFileButton_clicked();
+
+    // Delete
+    void on_deleteButton_clicked();
+    void onDeleteFileResult(bool success, const QString &message);
+
+    // New slots for listing and downloading
+    void onListFilesResult(bool success, const QStringList &files, const QString &message);
+    void onDownloadFileResult(bool success, const QString &filename, const QByteArray &data, const QString &message);
+
+    // Clear previews and trigger listFiles only on tab switch
+    void on_tabWidget_currentChanged(int index);
 
 private:
     Ui::MainWindow *ui;
     AuthController *authController;
+
+    // We store the original filename here
+    QString currentUploadPath;
+    QByteArray currentUploadData;
+
+    // filenames → decrypted data
+    QMap<QString, QByteArray> downloadCache;
+
+    // Pointer to the item we're about to delete
+    QListWidgetItem *pendingDeleteItem;
 };
 
 #endif // MAINWINDOW_H
