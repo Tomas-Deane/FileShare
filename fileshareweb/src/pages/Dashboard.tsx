@@ -126,7 +126,7 @@ const mockUserProfile: ProfileData = {
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { username, secretKey, pdk, kek } = useAuth();
-  const [activeTab, setActiveTab] = useState<'home'|'files'|'users'>('home');
+  const [activeTab, setActiveTab] = useState<'home'|'files'|'users'|'profile'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [openUpload, setOpenUpload] = useState(false);
@@ -154,7 +154,7 @@ const Dashboard: React.FC = () => {
     user.email.toLowerCase().includes(userSearchQuery.toLowerCase())
   );
 
-  const handleTabChange = (event: React.SyntheticEvent, newValue: string) => setActiveTab(newValue);
+  const handleTabChange = (event: React.SyntheticEvent, newValue: 'home'|'files'|'users'|'profile') => setActiveTab(newValue);
   const handleUpload = () => setOpenUpload(true);
   const handleShare = (fileId: number) => { setSelectedFile(fileId); setOpenShare(true); };
   const handleDelete = (fileId: number) => { /* TODO: Implement delete */ };
