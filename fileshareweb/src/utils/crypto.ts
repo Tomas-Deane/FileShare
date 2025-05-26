@@ -1,3 +1,4 @@
+import sodium from 'libsodium-wrappers-sumo';
 import { generateKeyPair as generateEd25519KeyPair, sign as signEd25519 } from '@stablelib/ed25519';
 
 // TypeScript module declaration
@@ -27,195 +28,23 @@ export class CryptoError extends Error {
   }
 }
 
-// Check if Web Crypto API is available
-export async function checkWebCryptoSupport(): Promise<boolean> {
-  return window.crypto && window.crypto.subtle !== undefined;
-}
-
-// Check if ECDH is supported
-export async function checkECDHSupport(): Promise<boolean> {
-  try {
-    await window.crypto.subtle.generateKey(
-      {
-        name: "ECDH",
-        namedCurve: "P-256"
-      },
-      true,
-      ["deriveKey", "deriveBits"]
-    );
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function generateKeyPair(): Promise<KeyPair> {
-  try {
-    // Generate Ed25519 key pair using the polyfill
-    const { publicKey, secretKey } = generateEd25519KeyPair();
-    
-    return {
-      publicKey: publicKey,
-      privateKey: secretKey
-    };
-  } catch (error) {
-    console.error('Key generation error:', error);
-    throw new CryptoError("Failed to generate key pair", error);
+// Initialize libsodium
+let sodiumReady = false;
+export async function initSodium(): Promise<void> {
+  if (!sodiumReady) {
+    await sodium.ready;
+    sodiumReady = true;
   }
 }
 
 export async function generateSalt(): Promise<Uint8Array> {
   try {
-    return window.crypto.getRandomValues(new Uint8Array(32));
+    await initSodium();
+    // Generate 128-bit (16-byte) salt for Argon2id
+    return sodium.randombytes_buf(16);
   } catch (error) {
     throw new CryptoError("Failed to generate salt", error);
   }
-}
-
-export async function encryptPrivateKey(
-  privateKey: Uint8Array,
-  password: string,
-  salt: Uint8Array,
-  nonce: Uint8Array,
-  opsLimit: number = 3,
-  memLimit: number = 67108864
-): Promise<EncryptedPrivateKey> {
-  try {
-    console.log('Encrypting private key with parameters:', {
-      privateKeyLength: privateKey.length,
-      passwordLength: password.length,
-      saltLength: salt.length,
-      nonceLength: nonce.length,
-      opsLimit,
-      memLimit
-    });
-
-    // Derive encryption key from password
-    const passwordKey = await window.crypto.subtle.importKey(
-      "raw",
-      new TextEncoder().encode(password),
-      "PBKDF2",
-      false,
-      ["deriveBits", "deriveKey"]
-    );
-
-    const derivedKey = await window.crypto.subtle.deriveKey(
-      {
-        name: "PBKDF2",
-        salt: salt,
-        iterations: opsLimit,
-        hash: "SHA-256"
-      },
-      passwordKey,
-      { name: "AES-GCM", length: 256 },
-      false,
-      ["encrypt"]
-    );
-
-    // Encrypt the private key
-    const encryptedPrivateKey = await window.crypto.subtle.encrypt(
-      {
-        name: "AES-GCM",
-        iv: nonce
-      },
-      derivedKey,
-      privateKey
-    );
-
-    console.log('Private key encrypted successfully');
-    return {
-      encryptedPrivateKey: new Uint8Array(encryptedPrivateKey),
-      nonce: nonce
-    };
-  } catch (error) {
-    console.error('Encryption error:', error);
-    throw new CryptoError("Failed to encrypt private key", error);
-  }
-}
-
-export async function decryptPrivateKey(
-  encryptedPrivateKey: Uint8Array,
-  password: string,
-  salt: Uint8Array,
-  nonce: Uint8Array,
-  opsLimit: number,
-  memLimit: number
-): Promise<Uint8Array> {
-  try {
-    console.log('Decrypting private key with parameters:', {
-      encryptedKeyLength: encryptedPrivateKey.length,
-      passwordLength: password.length,
-      saltLength: salt.length,
-      nonceLength: nonce.length,
-      opsLimit,
-      memLimit
-    });
-
-    // Derive decryption key from password
-    const passwordKey = await window.crypto.subtle.importKey(
-      "raw",
-      new TextEncoder().encode(password),
-      "PBKDF2",
-      false,
-      ["deriveBits", "deriveKey"]
-    );
-
-    const derivedKey = await window.crypto.subtle.deriveKey(
-      {
-        name: "PBKDF2",
-        salt: salt,
-        iterations: opsLimit,
-        hash: "SHA-256"
-      },
-      passwordKey,
-      { name: "AES-GCM", length: 256 },
-      false,
-      ["decrypt"]
-    );
-
-    // Decrypt the private key
-    const decryptedPrivateKey = await window.crypto.subtle.decrypt(
-      {
-        name: "AES-GCM",
-        iv: nonce
-      },
-      derivedKey,
-      encryptedPrivateKey
-    );
-
-    console.log('Private key decrypted successfully');
-    return new Uint8Array(decryptedPrivateKey);
-  } catch (error) {
-    console.error('Decryption error:', error);
-    throw new CryptoError("Failed to decrypt private key", error);
-  }
-}
-
-export async function signChallenge(
-  challenge: Uint8Array,
-  privateKey: Uint8Array
-): Promise<Uint8Array> {
-  try {
-    // Sign the challenge using the polyfill
-    const signature = signEd25519(privateKey, challenge);
-    return signature;
-  } catch (error) {
-    console.error('Signature error:', error);
-    throw new CryptoError("Failed to sign challenge", error);
-  }
-
-  
-} 
-
-export async function decryptKEK(
-  encryptedKek: Uint8Array,
-  password: string,
-  salt: Uint8Array,
-  nonce: Uint8Array,
-  opsLimit: number,
-  memLimit: number
-): Promise<Uint8Array> {
-  return decryptPrivateKey(encryptedKek, password, salt, nonce, opsLimit, memLimit);
 }
 
 export async function derivePDK(
@@ -224,22 +53,136 @@ export async function derivePDK(
   opsLimit: number,
   memLimit: number
 ): Promise<Uint8Array> {
-  const passwordKey = await window.crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    "PBKDF2",
-    false,
-    ["deriveBits"]
-  );
+  try {
+    await initSodium();
+    return sodium.crypto_pwhash(
+      sodium.crypto_aead_xchacha20poly1305_ietf_KEYBYTES,
+      password,
+      salt,
+      opsLimit,
+      memLimit,
+      sodium.crypto_pwhash_ALG_ARGON2ID13
+    );
+  } catch (error) {
+    throw new CryptoError("Failed to derive PDK", error);
+  }
+}
 
-  return new Uint8Array(await window.crypto.subtle.deriveBits(
-    {
-      name: "PBKDF2",
-      salt: salt,
-      iterations: opsLimit,
-      hash: "SHA-256"
-    },
-    passwordKey,
-    256
-  ));
+export async function generateKeyPair(): Promise<KeyPair> {
+  try {
+    await initSodium();
+    const keypair = sodium.crypto_sign_keypair();
+    return {
+      publicKey: keypair.publicKey,
+      privateKey: keypair.privateKey
+    };
+  } catch (error) {
+    throw new CryptoError("Failed to generate key pair", error);
+  }
+}
+
+export async function generateKEK(): Promise<Uint8Array> {
+  try {
+    await initSodium();
+    // Generate 256-bit (32-byte) KEK using libsodium's CSPRNG
+    return sodium.randombytes_buf(32);
+  } catch (error) {
+    throw new CryptoError("Failed to generate KEK", error);
+  }
+}
+
+export async function encryptPrivateKey(
+  privateKey: Uint8Array,
+  pdk: Uint8Array,
+  nonce: Uint8Array
+): Promise<EncryptedPrivateKey> {
+  try {
+    await initSodium();
+    const encrypted = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+      privateKey,
+      null, // No additional data
+      null, // No additional data
+      nonce,
+      pdk
+    );
+    return {
+      encryptedPrivateKey: encrypted,
+      nonce: nonce
+    };
+  } catch (error) {
+    throw new CryptoError("Failed to encrypt private key", error);
+  }
+}
+
+export async function decryptPrivateKey(
+  encryptedPrivateKey: Uint8Array,
+  pdk: Uint8Array,
+  nonce: Uint8Array
+): Promise<Uint8Array> {
+  try {
+    await initSodium();
+    return sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
+      null, // No additional data
+      encryptedPrivateKey,
+      null, // No additional data
+      nonce,
+      pdk
+    );
+  } catch (error) {
+    throw new CryptoError("Failed to decrypt private key", error);
+  }
+}
+
+export async function encryptKEK(
+  kek: Uint8Array,
+  pdk: Uint8Array,
+  nonce: Uint8Array
+): Promise<EncryptedPrivateKey> {
+  try {
+    await initSodium();
+    const encrypted = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+      kek,
+      null, // No additional data
+      null, // No additional data
+      nonce,
+      pdk
+    );
+    return {
+      encryptedPrivateKey: encrypted,
+      nonce: nonce
+    };
+  } catch (error) {
+    throw new CryptoError("Failed to encrypt KEK", error);
+  }
+}
+
+export async function decryptKEK(
+  encryptedKek: Uint8Array,
+  pdk: Uint8Array,
+  nonce: Uint8Array
+): Promise<Uint8Array> {
+  try {
+    await initSodium();
+    return sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
+      null, // No additional data
+      encryptedKek,
+      null, // No additional data
+      nonce,
+      pdk
+    );
+  } catch (error) {
+    throw new CryptoError("Failed to decrypt KEK", error);
+  }
+}
+
+export async function signChallenge(
+  challenge: Uint8Array,
+  privateKey: Uint8Array
+): Promise<Uint8Array> {
+  try {
+    await initSodium();
+    return sodium.crypto_sign_detached(challenge, privateKey);
+  } catch (error) {
+    throw new CryptoError("Failed to sign challenge", error);
+  }
 }

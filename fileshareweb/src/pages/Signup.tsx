@@ -16,7 +16,8 @@ import { useNavigate } from 'react-router-dom';
 import { Visibility, VisibilityOff, Security, Lock, Person, Home } from '@mui/icons-material';
 import { MatrixBackground } from '../components';
 import { apiClient } from '../utils/apiClient';
-import { generateKeyPair, encryptPrivateKey, generateSalt, CryptoError } from '../utils/crypto';
+import { generateKeyPair, encryptPrivateKey, generateSalt, derivePDK, generateKEK, encryptKEK, CryptoError } from '../utils/crypto';
+import sodium from 'libsodium-wrappers-sumo';
 
 interface SignupResponse {
   status: string;
@@ -92,31 +93,26 @@ const Signup: React.FC = () => {
       console.log('Generating salt...');
       const salt = await generateSalt();
       
-      console.log('Generating nonce...');
-      const nonce = window.crypto.getRandomValues(new Uint8Array(12));
+      console.log('Deriving PDK...');
+      const pdk = await derivePDK(formData.password, salt, 3, 67108864);
       
       console.log('Generating KEK...');
-      const kek = window.crypto.getRandomValues(new Uint8Array(32));
-      const kekNonce = window.crypto.getRandomValues(new Uint8Array(12));
+      const kek = await generateKEK();
+      const kekNonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+      const privateKeyNonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
       
       console.log('Encrypting private key...');
       const { encryptedPrivateKey, nonce: encryptedNonce } = await encryptPrivateKey(
         privateKey,
-        formData.password,
-        salt,
-        nonce,
-        3, // opsLimit
-        67108864 // memLimit (64MB)
+        pdk,
+        privateKeyNonce
       );
 
       console.log('Encrypting KEK...');
-      const { encryptedPrivateKey: encryptedKek, nonce: encryptedKekNonce } = await encryptPrivateKey(
+      const { encryptedPrivateKey: encryptedKek, nonce: encryptedKekNonce } = await encryptKEK(
         kek,
-        formData.password,
-        salt,
-        kekNonce,
-        3, // opsLimit
-        67108864 // memLimit (64MB)
+        pdk,
+        kekNonce
       );
 
       // Convert binary data to base64 strings
