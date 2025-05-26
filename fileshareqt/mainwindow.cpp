@@ -61,6 +61,49 @@ MainWindow::MainWindow(QWidget *parent)
     QTimer::singleShot(0, this, [this]{
         authController->checkConnection();
     });
+
+    ui->passwordStrengthBar->setRange(0,100);
+    // start empty
+    ui->passwordStrengthBar->setValue(0);
+    ui->passwordStrengthLabel->setText("Too weak");
+
+    ui->passwordStrengthBar->setFixedHeight(20);
+    // Hide the built-in percentage/text
+    ui->passwordStrengthBar->setTextVisible(false);
+
+    // Apply the same base stylesheet up-front
+    ui->passwordStrengthBar->setStyleSheet(R"(
+        QProgressBar {
+            border: 1px solid #555;
+            border-radius: 5px;
+            background: #333;
+        }
+        QProgressBar::chunk {
+            background-color: #39ff14;  /* default to green */
+            width: 10px;
+        }
+    )");
+
+    ui->passwordStrengthBar_2->setRange(0,100);
+    ui->passwordStrengthBar_2->setValue(0);
+    ui->passwordStrengthLabel_2->setText("Too weak");
+    ui->passwordStrengthBar_2->setFixedHeight(20);
+    ui->passwordStrengthBar_2->setTextVisible(false);
+    ui->passwordStrengthBar_2->setStyleSheet(R"(
+        QProgressBar {
+            border: 1px solid #555;
+            border-radius: 5px;
+            background: #333;
+        }
+        QProgressBar::chunk {
+            background-color: #39ff14;
+            width: 10px;
+        }
+    )");
+
+    // Wire the Profile‐tab QLineEdit → strength slot
+    connect(ui->changePasswordLineEdit, &QLineEdit::textChanged,
+            this, &MainWindow::on_changePasswordLineEdit_textChanged);
 }
 
 MainWindow::~MainWindow()
@@ -71,14 +114,26 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_signupButton_clicked()
 {
-    authController->signup(ui->usernameLineEdit->text(),
-                           ui->passwordLineEdit->text());
+    QString pwd = ui->signupPasswordLineEdit->text();
+    // Enforce OWASP minimum length (8 chars); abort on too weak
+    QString reason;
+    if (!pwEvaluator.isAcceptable(pwd, &reason)) {
+        Logger::log("Signup aborted: " + reason);
+        return;
+    }
+    // Otherwise proceed
+    authController->signup(
+        ui->signupUsernameLineEdit->text(),
+        pwd
+        );
 }
 
 void MainWindow::on_loginButton_clicked()
 {
-    authController->login(ui->usernameLineEdit->text(),
-                          ui->passwordLineEdit->text());
+    authController->login(
+        ui->loginUsernameLineEdit->text(),
+        ui->loginPasswordLineEdit->text()
+        );
 }
 
 void MainWindow::on_logOutButton_clicked()
@@ -90,7 +145,6 @@ void MainWindow::handleLoggedIn(const QString &username)
 {
     ui->loggedInLabel->setText("Logged in as " + username);
     ui->usernameLabel->setText("Username: " + username);
-    // don't auto-refresh here anymore
 }
 
 void MainWindow::handleLoggedOut()
@@ -356,12 +410,11 @@ void MainWindow::onDeleteFileResult(bool success, const QString &message)
 
 void MainWindow::on_tabWidget_currentChanged(int index)
 {
-    // Use named constants instead of hard-coded indices
+    // Updated Upload and Download indices
     constexpr int uploadIndex   = MainWindow::Upload;
     constexpr int downloadIndex = MainWindow::Download;
 
     if (index != uploadIndex) {
-        // Clear upload preview + reset labels and state
         ui->fileNameLabel->setText(tr("No file selected"));
         ui->fileTypeLabel->setText(tr("-"));
         ui->uploadTextPreview->clear();
@@ -373,21 +426,64 @@ void MainWindow::on_tabWidget_currentChanged(int index)
     }
 
     if (index == downloadIndex) {
-        // Clear all of the old preview before refreshing the list
         ui->downloadTextPreview->clear();
         ui->downloadImagePreview->clear();
         ui->downloadImagePreview->setText(tr("No Image File Selected"));
         ui->downloadPreviewStack->setCurrentIndex(0);
 
-        // Now fetch the up-to-date file list
         authController->listFiles();
     }
 
-    //     // (Optional) if you want to make sure it's also wiped when leaving Download:
-    // else {
-    //     ui->downloadTextPreview->clear();
-    //     ui->downloadImagePreview->clear();
-    //     ui->downloadImagePreview->setText(tr("No Image File Selected"));
-    //     ui->downloadPreviewStack->setCurrentIndex(0);
-    // }
+    else {
+        ui->downloadTextPreview->clear();
+        ui->downloadImagePreview->clear();
+        ui->downloadImagePreview->setText(tr("No Image File Selected"));
+        ui->downloadPreviewStack->setCurrentIndex(0);
+    }
+}
+
+void MainWindow::on_signupPasswordLineEdit_textChanged(const QString &text)
+{
+    updatePasswordStrength(text,
+                           ui->passwordStrengthBar,
+                           ui->passwordStrengthLabel);
+}
+
+void MainWindow::on_changePasswordLineEdit_textChanged(const QString &text)
+{
+    updatePasswordStrength(text,
+                           ui->passwordStrengthBar_2,
+                           ui->passwordStrengthLabel_2);
+}
+
+void MainWindow::updatePasswordStrength(const QString &text,
+                                        QProgressBar *bar,
+                                        QLabel *label)
+{
+    StrengthResult res = pwEvaluator.evaluate(text);
+    bar->setValue(res.score);
+
+    QString chunkColor;
+    if (res.score < 30)      chunkColor = "#ff1744";
+    else if (res.score < 70) chunkColor = "#f1c40f";
+    else                      chunkColor = "#39ff14";
+
+    bar->setStyleSheet(QString(R"(
+        QProgressBar {
+            border: 1px solid #555;
+            border-radius: 5px;
+            background: #333;
+        }
+        QProgressBar::chunk {
+            background-color: %1;
+            width: 10px;
+        }
+    )").arg(chunkColor));
+
+    QString reason;
+    if (!pwEvaluator.isAcceptable(text, &reason)) {
+        label->setText(reason);
+    } else {
+        label->setText(res.description);
+    }
 }
