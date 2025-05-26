@@ -17,7 +17,7 @@ import { CyberButton, MatrixBackground } from '../components';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../utils/apiClient';
-import * as crypto from 'crypto';
+import * as sodium from 'libsodium-wrappers';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -213,20 +213,21 @@ const Dashboard: React.FC = () => {
 
       const nonce = challengeResponse.nonce;
       
-      // Step 2: Sign the nonce with PDK
+      // Step 2: Sign the nonce with PDK using libsodium
       if (!pdk) {
         throw new Error('PDK not available');
       }
 
-      const signature = crypto.createSign('ed25519')
-        .update(Buffer.from(nonce, 'base64'))
-        .sign(pdk, 'base64');
+      await sodium.ready;
+      const nonceBytes = sodium.from_base64(nonce);
+      const signature = sodium.crypto_sign_detached(nonceBytes, pdk);
+      const signatureBase64 = sodium.to_base64(signature);
 
       // Step 3: Authenticate
       const authResponse = await apiClient.post<{ status: string }>('/authenticate', {
         username: username,
         nonce: nonce,
-        signature: signature
+        signature: signatureBase64
       });
 
       if (authResponse.status !== 'ok') {
@@ -264,20 +265,21 @@ const Dashboard: React.FC = () => {
 
       const nonce = challengeResponse.nonce;
       
-      // Sign the nonce
+      // Sign the nonce with libsodium
       if (!pdk) {
         throw new Error('PDK not available');
       }
 
-      const signature = crypto.createSign('ed25519')
-        .update(Buffer.from(nonce, 'base64'))
-        .sign(pdk, 'base64');
+      await sodium.ready;
+      const nonceBytes = sodium.from_base64(nonce);
+      const signature = sodium.crypto_sign_detached(nonceBytes, pdk);
+      const signatureBase64 = sodium.to_base64(signature);
 
       // Now fetch files
       const response = await apiClient.post<{ status: string; files: FileData[] }>('/list_files', {
         username: username,
         nonce: nonce,
-        signature: signature
+        signature: signatureBase64
       });
       
       if (response.status === 'ok' && response.files) {
