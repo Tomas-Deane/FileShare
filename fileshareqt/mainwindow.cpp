@@ -444,53 +444,31 @@ void MainWindow::on_tabWidget_currentChanged(int index)
 
 void MainWindow::on_signupPasswordLineEdit_textChanged(const QString &text)
 {
-    // 1) compute score & description
-    StrengthResult res = pwEvaluator.evaluate(text);
-    ui->passwordStrengthBar->setValue(res.score);
-
-    // 2) colour the bar chunk based on score
-    QString chunkColor;
-    if (res.score < 30)           chunkColor = "#ff1744";   // red
-    else if (res.score < 70)      chunkColor = "#f1c40f";   // amber
-    else                           chunkColor = "#39ff14";   // green
-
-    ui->passwordStrengthBar->setStyleSheet(QString(R"(
-        QProgressBar {
-            border: 1px solid #555;
-            border-radius: 5px;
-            background: #333;
-        }
-        QProgressBar::chunk {
-            background-color: %1;
-            width: 10px;
-        }
-    )").arg(chunkColor));
-
-    // 3) check OWASP minimums & breach
-    QString reason;
-    if (!pwEvaluator.isAcceptable(text, &reason)) {
-        // could be too short, too long, or found in breaches
-        ui->passwordStrengthLabel->setText(reason);
-    } else {
-        // meets OWASP + not breached → show strength label
-        ui->passwordStrengthLabel->setText(res.description);
-    }
+    updatePasswordStrength(text,
+                           ui->passwordStrengthBar,
+                           ui->passwordStrengthLabel);
 }
 
 void MainWindow::on_changePasswordLineEdit_textChanged(const QString &text)
 {
+    updatePasswordStrength(text,
+                           ui->passwordStrengthBar_2,
+                           ui->passwordStrengthLabel_2);
+}
+
+void MainWindow::updatePasswordStrength(const QString &text,
+                                        QProgressBar *bar,
+                                        QLabel *label)
+{
     StrengthResult res = pwEvaluator.evaluate(text);
-    ui->passwordStrengthBar_2->setValue(res.score);
+    bar->setValue(res.score);
 
     QString chunkColor;
-    if (res.score < 30)
-        chunkColor = "#ff1744";
-    else if (res.score < 70)
-        chunkColor = "#f1c40f";
-    else
-        chunkColor = "#39ff14";
+    if (res.score < 30)      chunkColor = "#ff1744";
+    else if (res.score < 70) chunkColor = "#f1c40f";
+    else                      chunkColor = "#39ff14";
 
-    ui->passwordStrengthBar_2->setStyleSheet(QString(R"(
+    bar->setStyleSheet(QString(R"(
         QProgressBar {
             border: 1px solid #555;
             border-radius: 5px;
@@ -504,8 +482,8 @@ void MainWindow::on_changePasswordLineEdit_textChanged(const QString &text)
 
     QString reason;
     if (!pwEvaluator.isAcceptable(text, &reason)) {
-        ui->passwordStrengthLabel_2->setText(reason);
+        label->setText(reason);
     } else {
-        ui->passwordStrengthLabel_2->setText(res.description);
+        label->setText(res.description);
     }
 }
