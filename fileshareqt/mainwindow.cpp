@@ -61,6 +61,11 @@ MainWindow::MainWindow(QWidget *parent)
     QTimer::singleShot(0, this, [this]{
         authController->checkConnection();
     });
+
+    ui->passwordStrengthBar->setRange(0,100);
+    // start empty
+    ui->passwordStrengthBar->setValue(0);
+    ui->passwordStrengthLabel->setText("Too weak");
 }
 
 MainWindow::~MainWindow()
@@ -71,10 +76,17 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_signupButton_clicked()
 {
-    // Use the new signup fields
+    QString pwd = ui->signupPasswordLineEdit->text();
+    // Enforce OWASP minimum length (8 chars); abort on too weak
+    QString reason;
+    if (!pwEvaluator.isAcceptable(pwd, &reason)) {
+        Logger::log("Signup aborted: " + reason);
+        return;
+    }
+    // Otherwise proceed
     authController->signup(
         ui->signupUsernameLineEdit->text(),
-        ui->signupPasswordLineEdit->text()
+        pwd
         );
 }
 
@@ -390,4 +402,12 @@ void MainWindow::on_tabWidget_currentChanged(int index)
         ui->downloadImagePreview->setText(tr("No Image File Selected"));
         ui->downloadPreviewStack->setCurrentIndex(0);
     }
+}
+
+void MainWindow::on_signupPasswordLineEdit_textChanged(const QString &text)
+{
+    // Use PasswordStrength evaluator
+    StrengthResult res = pwEvaluator.evaluate(text);
+    ui->passwordStrengthBar->setValue(res.score);
+    ui->passwordStrengthLabel->setText(res.description);
 }

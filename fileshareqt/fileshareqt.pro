@@ -20,14 +20,16 @@ SOURCES += \
     logger.cpp \
     main.cpp \
     mainwindow.cpp \
-    networkmanager.cpp
+    networkmanager.cpp \
+    passwordstrength.cpp
 
 HEADERS += \
     authcontroller.h \
     crypto_utils.h \
     logger.h \
     mainwindow.h \
-    networkmanager.h
+    networkmanager.h \
+    passwordstrength.h
 
 FORMS     += mainwindow.ui
 RESOURCES += nrmc_image.png \
