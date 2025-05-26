@@ -30,9 +30,13 @@ HEADERS += \
     networkmanager.h
 
 FORMS     += mainwindow.ui
-RESOURCES += nrmc_image.png
+RESOURCES += nrmc_image.png \
+    resources.qrc
 
 # Install path
 qnx:    target.path = /tmp/$${TARGET}/bin
 else:   unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
+
+DISTFILES += \
+    styles/style.qss

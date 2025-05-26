@@ -8,7 +8,8 @@ import {
   Upload as UploadIcon, Share as ShareIcon, Delete as DeleteIcon, Download as DownloadIcon,
   Folder as FolderIcon, Person as PersonIcon, Lock as LockIcon, LockOpen as LockOpenIcon,
   Search as SearchIcon, VerifiedUser as VerifiedUserIcon, People as PeopleIcon,
-  Home as HomeIcon, Storage as StorageIcon, Security as SecurityIcon
+  Home as HomeIcon, Storage as StorageIcon, Security as SecurityIcon, Settings as SettingsIcon,
+  Edit as EditIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
@@ -79,28 +80,53 @@ const SearchField = styled(TextField)(({ theme }) => ({
 
 // Mock data for demonstration
 const mockFiles = [
-  { id: 1, name: 'document.pdf', type: 'pdf', size: '2.5 MB', shared: false },
-  { id: 2, name: 'image.jpg', type: 'image', size: '1.8 MB', shared: true },
-  { id: 3, name: 'code.zip', type: 'archive', size: '5.2 MB', shared: false },
-];
+  { id: 1, name: 'document.pdf', type: 'pdf', size: '2.5 MB', shared: false, date: new Date('2024-03-15T10:30:00') },
+  { id: 2, name: 'image.jpg', type: 'image', size: '1.8 MB', shared: true, date: new Date('2024-03-14T15:45:00') },
+  { id: 3, name: 'code.zip', type: 'archive', size: '5.2 MB', shared: false, date: new Date('2024-03-13T09:20:00') },
+  { id: 4, name: 'presentation.pptx', type: 'ppt', size: '4.1 MB', shared: false, date: new Date('2024-03-12T14:15:00') },
+  { id: 5, name: 'notes.txt', type: 'text', size: '0.8 MB', shared: false, date: new Date('2024-03-11T11:00:00') },
+  { id: 6, name: 'spreadsheet.xlsx', type: 'excel', size: '3.7 MB', shared: false, date: new Date('2024-03-10T16:30:00') },
+].sort((a, b) => b.date.getTime() - a.date.getTime());
 
 const mockSharedFiles = [
-  { id: 4, name: 'shared_doc.pdf', type: 'pdf', size: '3.1 MB', sharedBy: 'user1' },
-  { id: 5, name: 'shared_image.jpg', type: 'image', size: '2.3 MB', sharedBy: 'user2' },
-];
+  { id: 4, name: 'shared_doc.pdf', type: 'pdf', size: '3.1 MB', sharedBy: 'user1', date: new Date('2024-03-15T13:20:00') },
+  { id: 5, name: 'shared_image.jpg', type: 'image', size: '2.3 MB', sharedBy: 'user2', date: new Date('2024-03-14T17:45:00') },
+  { id: 6, name: 'project_plan.docx', type: 'doc', size: '1.9 MB', sharedBy: 'user3', date: new Date('2024-03-13T08:30:00') },
+  { id: 7, name: 'budget.xlsx', type: 'excel', size: '2.8 MB', sharedBy: 'user4', date: new Date('2024-03-12T10:15:00') },
+  { id: 8, name: 'meeting_minutes.txt', type: 'text', size: '0.6 MB', sharedBy: 'user5', date: new Date('2024-03-11T14:00:00') },
+].sort((a, b) => b.date.getTime() - a.date.getTime());
 
 const mockUsers = [
   { id: 1, email: 'user1@example.com', verified: true },
-  { id: 2, email: 'user2@example.com', verified: false },
+  { id: 2, email: 'user2@example.com', verified: true },
   { id: 3, email: 'user3@example.com', verified: true },
+  { id: 4, email: 'user4@example.com', verified: true },
+  { id: 5, email: 'user5@example.com', verified: true },
+  { id: 6, email: 'user6@example.com', verified: true },
 ];
 
+// Update the ProfileData interface
+interface ProfileData {
+  username: string;
+  email: string;
+  storageUsed: string;
+  storageLimit: string;
+  lastLogin: string;
+}
 
+// Update the mockUserProfile
+const mockUserProfile: ProfileData = {
+  username: 'cyberpunk_user',
+  email: 'user@example.com',
+  storageUsed: '2.5 GB',
+  storageLimit: '10 GB',
+  lastLogin: '2024-03-20 15:30',
+};
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { username, secretKey, pdk, kek } = useAuth();
-  const [activeTab, setActiveTab] = useState('files');
+  const [activeTab, setActiveTab] = useState<'home'|'files'|'users'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [openUpload, setOpenUpload] = useState(false);
@@ -109,6 +135,10 @@ const Dashboard: React.FC = () => {
   const [shareEmail, setShareEmail] = useState('');
   const [openVerify, setOpenVerify] = useState(false);
   const [selectedUser, setSelectedUser] = useState<{ id: number; email: string } | null>(null);
+  const [openProfileSettings, setOpenProfileSettings] = useState(false);
+  const [profileData, setProfileData] = useState<ProfileData>(mockUserProfile);
+  const [editMode, setEditMode] = useState(false);
+  const [editedProfile, setEditedProfile] = useState<ProfileData>(mockUserProfile);
   const [verificationCode] = useState(() => {
     // Generate a random 60-digit integer
     return Array.from({ length: 60 }, () => Math.floor(Math.random() * 10)).join('');
@@ -124,6 +154,7 @@ const Dashboard: React.FC = () => {
     user.email.toLowerCase().includes(userSearchQuery.toLowerCase())
   );
 
+  const handleTabChange = (event: React.SyntheticEvent, newValue: string) => setActiveTab(newValue);
   const handleUpload = () => setOpenUpload(true);
   const handleShare = (fileId: number) => { setSelectedFile(fileId); setOpenShare(true); };
   const handleDelete = (fileId: number) => { /* TODO: Implement delete */ };
@@ -152,6 +183,21 @@ const Dashboard: React.FC = () => {
       <Typography>KEK: {kek ? 'Present' : 'Not set'}</Typography>
     </Box>
   );
+  const handleProfileEdit = () => {
+    setEditMode(true);
+    setEditedProfile(profileData);
+  };
+
+  const handleProfileSave = () => {
+    setProfileData(editedProfile);
+    setEditMode(false);
+    // TODO: Implement profile update logic
+  };
+
+  const handleProfileCancel = () => {
+    setEditMode(false);
+    setEditedProfile(profileData);
+  };
 
   return (
     <>
@@ -159,7 +205,7 @@ const Dashboard: React.FC = () => {
       <Box sx={{ display: 'flex' }}>
         {/* Left Navigation Drawer */}
         <NavDrawer variant="permanent">
-          <Box sx={{ p: 2 }}>
+          <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
             <Typography
               variant="h6"
               sx={{
@@ -173,30 +219,53 @@ const Dashboard: React.FC = () => {
               FileShare
             </Typography>
             <List>
-              <ListItem button onClick={() => setActiveTab('files')}>
+              <ListItem
+                button
+                selected={activeTab === 'home'}
+                onClick={() => setActiveTab('home')}
+              >
+                <ListItemIcon>
+                  <HomeIcon sx={{ color: '#00ff00' }} />
+                </ListItemIcon>
+                <ListItemText primary="Home" sx={{ color: '#00ff00' }} />
+              </ListItem>
+              <Divider sx={{ borderColor: 'rgba(0,255,0,0.2)', my: 1 }} />
+
+              <ListItem
+                button
+                selected={activeTab === 'files'}
+                onClick={() => setActiveTab('files')}
+              >
                 <ListItemIcon>
                   <StorageIcon sx={{ color: '#00ff00' }} />
                 </ListItemIcon>
-                <ListItemText 
-                  primary="Files" 
-                  sx={{ color: '#00ff00' }}
-                />
+                <ListItemText primary="Files" sx={{ color: '#00ff00' }} />
               </ListItem>
-              <ListItem button onClick={() => setActiveTab('users')}>
+              <ListItem
+                button
+                selected={activeTab === 'users'}
+                onClick={() => setActiveTab('users')}
+              >
                 <ListItemIcon>
                   <PeopleIcon sx={{ color: '#00ff00' }} />
                 </ListItemIcon>
-                <ListItemText 
-                  primary="Users" 
-                  sx={{ color: '#00ff00' }}
-                />
+                <ListItemText primary="Users" sx={{ color: '#00ff00' }} />
               </ListItem>
               <ListItem button onClick={() => navigate('/login')}>
                 <ListItemIcon>
                   <LockIcon sx={{ color: '#00ff00' }} />
                 </ListItemIcon>
+                <ListItemText primary="Logout" sx={{ color: '#00ff00' }} />
+              </ListItem>
+            </List>
+            <Divider sx={{ borderColor: 'rgba(0, 255, 0, 0.2)' }} />
+            <List>
+              <ListItem component="div" onClick={() => setActiveTab('profile')}>
+                <ListItemIcon>
+                  <PersonIcon sx={{ color: '#00ff00' }} />
+                </ListItemIcon>
                 <ListItemText 
-                  primary="Logout" 
+                  primary="Profile" 
                   sx={{ color: '#00ff00' }}
                 />
               </ListItem>
@@ -227,7 +296,72 @@ const Dashboard: React.FC = () => {
             </Box>
 
             {/* Content Area */}
-            {activeTab === 'files' ? (
+            {activeTab === 'home' ? (
+              <>
+                {/* Verified Users Section */}
+                <DashboardCard sx={{ mb: 3 }}>
+                  <Typography variant="h6" sx={{ color: '#00ffff', mb: 2 }}>
+                    Verified Users
+                  </Typography>
+                  <Grid container spacing={2}>
+                    {mockUsers
+                      .filter((u) => u.verified)
+                      .slice(0, 6)
+                      .map((u) => (
+                        <Grid item xs={4} sm={2} key={u.id}>
+                          <Paper
+                            sx={{
+                              p: 2,
+                              textAlign: 'center',
+                              background: 'rgba(0,0,0,0.6)',
+                            }}
+                          >
+                            <VerifiedUserIcon sx={{ fontSize: 32, color: '#00ff00' }} />
+                            <Typography
+                              sx={{ mt: 1, color: '#00ffff', fontSize: '0.875rem' }}
+                            >
+                              {u.email}
+                            </Typography>
+                          </Paper>
+                        </Grid>
+                      ))}
+                  </Grid>
+                </DashboardCard>
+
+                {/* Recent Files Section */}
+                <DashboardCard>
+                  <Typography variant="h6" sx={{ color: '#00ffff', mb: 2 }}>
+                    Recent Files
+                  </Typography>
+                  <List sx={{ maxHeight: 400, overflowY: 'auto' }}>
+                    {mockSharedFiles.slice(0, 10).map((f) => (
+                      <ListItem
+                        key={f.id}
+                        sx={{
+                          mb: 1,
+                          border: '1px solid rgba(0,255,0,0.2)',
+                          borderRadius: 1,
+                        }}
+                      >
+                        <ListItemIcon>
+                          <FolderIcon sx={{ color: '#00ff00' }} />
+                        </ListItemIcon>
+                        <ListItemText
+                          primary={f.name}
+                          secondary={`${f.type.toUpperCase()} • ${f.size} • from ${f.sharedBy} • ${f.date.toLocaleDateString('en-GB')} ${f.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                          primaryTypographyProps={{
+                            sx: { color: '#00ffff', fontWeight: 'bold' },
+                          }}
+                          secondaryTypographyProps={{
+                            sx: { color: 'rgba(0,255,0,0.7)' },
+                          }}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                </DashboardCard>
+              </>
+            ) : activeTab === 'files' ? (
               <DashboardCard>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
                   <Typography
@@ -266,7 +400,7 @@ const Dashboard: React.FC = () => {
                       </ListItemIcon>
                       <ListItemText
                         primary={file.name}
-                        secondary={`${file.type.toUpperCase()} • ${file.size}`}
+                        secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
                         primaryTypographyProps={{
                           sx: { color: '#00ffff', fontWeight: 'bold' },
                         }}
@@ -295,7 +429,7 @@ const Dashboard: React.FC = () => {
                   ))}
                 </List>
               </DashboardCard>
-            ) : (
+            ) : activeTab === 'users' ? (
               <DashboardCard>
                 <Box sx={{ mb: 3 }}>
                   <Typography
@@ -366,6 +500,104 @@ const Dashboard: React.FC = () => {
                     </ListItem>
                   ))}
                 </List>
+              </DashboardCard>
+            ) : (
+              <DashboardCard>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      color: '#00ffff',
+                      textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                    }}
+                  >
+                    Profile
+                  </Typography>
+                  <CyberButton
+                    startIcon={<SettingsIcon />}
+                    onClick={() => setOpenProfileSettings(true)}
+                  >
+                    Settings
+                  </CyberButton>
+                </Box>
+
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={6}>
+                    <Paper
+                      sx={{
+                        p: 2,
+                        background: 'rgba(0, 0, 0, 0.5)',
+                        border: '1px solid rgba(0, 255, 0, 0.2)',
+                        borderRadius: 1,
+                      }}
+                    >
+                      <Typography
+                        sx={{
+                          color: '#00ffff',
+                          mb: 1,
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        Storage Usage
+                      </Typography>
+                      <Box sx={{ mb: 1 }}>
+                        <Typography
+                          sx={{
+                            color: '#00ff00',
+                            fontFamily: 'monospace',
+                          }}
+                        >
+                          {profileData.storageUsed} / {profileData.storageLimit}
+                        </Typography>
+                      </Box>
+                      <Box
+                        sx={{
+                          height: 8,
+                          background: 'rgba(0, 255, 0, 0.1)',
+                          borderRadius: 4,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            height: '100%',
+                            width: '25%',
+                            background: 'linear-gradient(90deg, #00ff00, #00ffff)',
+                            borderRadius: 4,
+                          }}
+                        />
+                      </Box>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <Paper
+                      sx={{
+                        p: 2,
+                        background: 'rgba(0, 0, 0, 0.5)',
+                        border: '1px solid rgba(0, 255, 0, 0.2)',
+                        borderRadius: 1,
+                      }}
+                    >
+                      <Typography
+                        sx={{
+                          color: '#00ffff',
+                          mb: 1,
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        Last Login
+                      </Typography>
+                      <Typography
+                        sx={{
+                          color: '#00ff00',
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        {profileData.lastLogin}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                </Grid>
               </DashboardCard>
             )}
           </Container>
@@ -569,6 +801,135 @@ const Dashboard: React.FC = () => {
           >
             Verify
           </CyberButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* Profile Settings Dialog */}
+      <Dialog
+        open={openProfileSettings}
+        onClose={() => setOpenProfileSettings(false)}
+        PaperProps={{
+          sx: {
+            background: 'rgba(0, 0, 0, 0.9)',
+            border: '1px solid rgba(0, 255, 0, 0.2)',
+            color: '#00ff00',
+            minWidth: '400px',
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#00ffff', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
+          Profile Settings
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Box sx={{ mb: 3 }}>
+            <TextField
+              fullWidth
+              label="Username"
+              value={editMode ? editedProfile.username : profileData.username}
+              onChange={(e) => setEditedProfile({ ...editedProfile, username: e.target.value })}
+              disabled={!editMode}
+              sx={{
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  '& fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.3)',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.5)',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#00ff00',
+                  },
+                },
+                '& .MuiInputLabel-root': {
+                  color: 'rgba(0, 255, 0, 0.7)',
+                },
+                '& .MuiInputBase-input': {
+                  color: '#fff',
+                },
+              }}
+            />
+
+            <TextField
+              fullWidth
+              label="Email"
+              value={editMode ? editedProfile.email : profileData.email}
+              onChange={(e) => setEditedProfile({ ...editedProfile, email: e.target.value })}
+              disabled={!editMode}
+              sx={{
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  '& fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.3)',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.5)',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#00ff00',
+                  },
+                },
+                '& .MuiInputLabel-root': {
+                  color: 'rgba(0, 255, 0, 0.7)',
+                },
+                '& .MuiInputBase-input': {
+                  color: '#fff',
+                },
+              }}
+            />
+
+            <TextField
+              fullWidth
+              label="New Password"
+              type="password"
+              disabled={!editMode}
+              sx={{
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  '& fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.3)',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.5)',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#00ff00',
+                  },
+                },
+                '& .MuiInputLabel-root': {
+                  color: 'rgba(0, 255, 0, 0.7)',
+                },
+                '& .MuiInputBase-input': {
+                  color: '#fff',
+                },
+              }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
+          <Button
+            onClick={() => setOpenProfileSettings(false)}
+            sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+          >
+            Cancel
+          </Button>
+          {editMode ? (
+            <>
+              <Button
+                onClick={handleProfileCancel}
+                sx={{ color: 'rgba(255, 0, 0, 0.7)' }}
+              >
+                Cancel Edit
+              </Button>
+              <CyberButton onClick={handleProfileSave}>
+                Save Changes
+              </CyberButton>
+            </>
+          ) : (
+            <CyberButton onClick={handleProfileEdit}>
+              Edit Profile
+            </CyberButton>
+          )}
         </DialogActions>
       </Dialog>
     </>
