@@ -17,6 +17,8 @@ QT_END_NAMESPACE
 
 class AuthController;
 class ProfileController;
+class FileController;
+class NetworkManager;
 
 class MainWindow : public QMainWindow
 {
@@ -73,12 +75,11 @@ private:
     Ui::MainWindow        *ui;
     AuthController        *authController;
     ProfileController     *profileController;
+    FileController        *fileController;
     PasswordStrength       pwEvaluator;
 
     QString                currentUploadPath;
     QByteArray             currentUploadData;
-
-    QMap<QString, QByteArray> downloadCache;
 
     QListWidgetItem       *pendingDeleteItem;
 
