@@ -1,13 +1,14 @@
 #include "authcontroller.h"
 #include "networkmanager.h"
 #include "crypto_utils.h"
+#include "authcontroller.h"
+#include "networkmanager.h"
+#include "crypto_utils.h"
 #include "logger.h"
 
 #include <sodium.h>
 #include <QJsonObject>
 #include <QJsonDocument>
-#include <QUuid>
-#include <QDateTime>
 
 AuthController::AuthController(QObject *parent)
     : QObject(parent)
@@ -19,24 +20,12 @@ AuthController::AuthController(QObject *parent)
             this, &AuthController::onLoginChallenge);
     connect(networkManager, &NetworkManager::loginResult,
             this, &AuthController::onLoginResult);
-
     connect(networkManager, &NetworkManager::challengeResult,
             this, &AuthController::onChallengeReceived);
-
-    connect(networkManager, &NetworkManager::uploadFileResult,
-            this, &AuthController::onUploadFileNetwork);
-    connect(networkManager, &NetworkManager::listFilesResult,
-            this, &AuthController::onListFilesNetwork);
-    connect(networkManager, &NetworkManager::downloadFileResult,
-            this, &AuthController::onDownloadFileNetwork);
-    connect(networkManager, &NetworkManager::deleteFileResult,
-            this, &AuthController::onDeleteFileNetwork);
-
-    connect(networkManager, &NetworkManager::networkError,
-            this, [=](const QString &e){ Logger::log("Network error: " + e); });
-
     connect(networkManager, &NetworkManager::connectionStatusChanged,
             this, &AuthController::onConnectionStatusChanged);
+    connect(networkManager, &NetworkManager::networkError,
+            this, [=](const QString &e){ Logger::log("Network error: " + e); });
 }
 
 QString AuthController::getSessionUsername() const {
@@ -178,124 +167,117 @@ void AuthController::onLoginResult(bool success, const QString &message)
 void AuthController::onChallengeReceived(const QByteArray &nonce,
                                          const QString &operation)
 {
-    if (operation == "upload_file") {
-        processUploadFile(nonce);
-    } else if (operation == "list_files") {
-        processListFiles(nonce);
-    } else if (operation == "download_file") {
-        processDownloadFile(nonce);
-    } else if (operation == "delete_file") {
-        processDeleteFile(nonce);
-    } else {
-        Logger::log("Unknown operation: " + operation);
+    // we no longer handle file operations here
+    if (operation != "login" && operation != "change_username" && operation != "change_password") {
+        Logger::log("AuthController: ignoring challenge for " + operation);
     }
 }
 
-void AuthController::processUploadFile(const QByteArray &nonce)
-{
-    // generate file DEK
-    QByteArray fileDek(crypto_aead_xchacha20poly1305_ietf_KEYBYTES, 0);
-    randombytes_buf(reinterpret_cast<unsigned char*>(fileDek.data()), fileDek.size());
+// void AuthController::processUploadFile(const QByteArray &nonce)
+// {
+//     // generate file DEK
+//     QByteArray fileDek(crypto_aead_xchacha20poly1305_ietf_KEYBYTES, 0);
+//     randombytes_buf(reinterpret_cast<unsigned char*>(fileDek.data()), fileDek.size());
 
-    // encrypt file contents
-    QByteArray fileNonce;
-    QByteArray ciphertext = CryptoUtils::encryptSecretKey(
-        QByteArray::fromBase64(pendingFileContents.toUtf8()),
-        fileDek,
-        fileNonce
-        );
+//     // encrypt file contents
+//     QByteArray fileNonce;
+//     QByteArray ciphertext = CryptoUtils::encryptSecretKey(
+//         QByteArray::fromBase64(pendingFileContents.toUtf8()),
+//         fileDek,
+//         fileNonce
+//         );
 
-    // envelope DEK under session KEK
-    QByteArray dekNonce;
-    QByteArray encryptedDek = CryptoUtils::encryptSecretKey(fileDek, sessionKek, dekNonce);
+//     // envelope DEK under session KEK
+//     QByteArray dekNonce;
+//     QByteArray encryptedDek = CryptoUtils::encryptSecretKey(fileDek, sessionKek, dekNonce);
 
-    // sign the encrypted DEK
-    QByteArray sig = CryptoUtils::signMessage(encryptedDek, sessionSecretKey);
+//     // sign the encrypted DEK
+//     QByteArray sig = CryptoUtils::signMessage(encryptedDek, sessionSecretKey);
 
-    QJsonObject req{
-        { "username", sessionUsername },
-        { "filename", pendingFileName },
-        { "encrypted_file", QString::fromUtf8(ciphertext.toBase64()) },
-        { "file_nonce", QString::fromUtf8(fileNonce.toBase64()) },
-        { "encrypted_dek", QString::fromUtf8(encryptedDek.toBase64()) },
-        { "dek_nonce", QString::fromUtf8(dekNonce.toBase64()) },
-        { "nonce", QString::fromUtf8(nonce.toBase64()) },
-        { "signature", QString::fromUtf8(sig.toBase64()) }
-    };
-    networkManager->uploadFile(req);
-}
+//     QJsonObject req{
+//         { "username", sessionUsername },
+//         { "filename", pendingFileName },
+//         { "encrypted_file", QString::fromUtf8(ciphertext.toBase64()) },
+//         { "file_nonce", QString::fromUtf8(fileNonce.toBase64()) },
+//         { "encrypted_dek", QString::fromUtf8(encryptedDek.toBase64()) },
+//         { "dek_nonce", QString::fromUtf8(dekNonce.toBase64()) },
+//         { "nonce", QString::fromUtf8(nonce.toBase64()) },
+//         { "signature", QString::fromUtf8(sig.toBase64()) }
+//     };
+//     networkManager->uploadFile(req);
+// }
 
-void AuthController::processListFiles(const QByteArray &nonce)
-{
-    QByteArray sig = CryptoUtils::signMessage(nonce, sessionSecretKey);
-    QJsonObject req{
-        { "username", sessionUsername },
-        { "nonce", QString::fromUtf8(nonce.toBase64()) },
-        { "signature", QString::fromUtf8(sig.toBase64()) }
-    };
-    networkManager->listFiles(req);
-}
+// void AuthController::processListFiles(const QByteArray &nonce)
+// {
+//     QByteArray sig = CryptoUtils::signMessage(nonce, sessionSecretKey);
+//     QJsonObject req{
+//         { "username", sessionUsername },
+//         { "nonce", QString::fromUtf8(nonce.toBase64()) },
+//         { "signature", QString::fromUtf8(sig.toBase64()) }
+//     };
+//     networkManager->listFiles(req);
+// }
 
-void AuthController::processDownloadFile(const QByteArray &nonce)
-{
-    QByteArray sig = CryptoUtils::signMessage(selectedFilename.toUtf8(), sessionSecretKey);
-    QJsonObject req{
-        { "username", sessionUsername },
-        { "filename", selectedFilename },
-        { "nonce", QString::fromUtf8(nonce.toBase64()) },
-        { "signature", QString::fromUtf8(sig.toBase64()) }
-    };
-    networkManager->downloadFile(req);
-}
+// void AuthController::processDownloadFile(const QByteArray &nonce)
+// {
+//     QByteArray sig = CryptoUtils::signMessage(selectedFilename.toUtf8(), sessionSecretKey);
+//     QJsonObject req{
+//         { "username", sessionUsername },
+//         { "filename", selectedFilename },
+//         { "nonce", QString::fromUtf8(nonce.toBase64()) },
+//         { "signature", QString::fromUtf8(sig.toBase64()) }
+//     };
+//     networkManager->downloadFile(req);
+// }
 
-void AuthController::processDeleteFile(const QByteArray &nonce)
-{
-    QByteArray sig = CryptoUtils::signMessage(selectedFilename.toUtf8(), sessionSecretKey);
-    QJsonObject req{
-        { "username",    sessionUsername },
-        { "filename",    selectedFilename },
-        { "nonce",       QString::fromUtf8(nonce.toBase64()) },
-        { "signature",   QString::fromUtf8(sig.toBase64()) }
-    };
-    networkManager->deleteFile(req);
-}
+// void AuthController::processDeleteFile(const QByteArray &nonce)
+// {
+//     QByteArray sig = CryptoUtils::signMessage(selectedFilename.toUtf8(), sessionSecretKey);
+//     QJsonObject req{
+//         { "username",    sessionUsername },
+//         { "filename",    selectedFilename },
+//         { "nonce",       QString::fromUtf8(nonce.toBase64()) },
+//         { "signature",   QString::fromUtf8(sig.toBase64()) }
+//     };
+//     networkManager->deleteFile(req);
+// }
 
-void AuthController::onUploadFileNetwork(bool success, const QString &message)
-{
-    pendingFileContents.clear();
-    emit uploadFileResult(success, message);
-}
+// void AuthController::onUploadFileNetwork(bool success, const QString &message)
+// {
+//     pendingFileContents.clear();
+//     emit uploadFileResult(success, message);
+// }
 
-void AuthController::onListFilesNetwork(bool success, const QStringList &files, const QString &message)
-{
-    emit listFilesResult(success, files, message);
-}
+// void AuthController::onListFilesNetwork(bool success, const QStringList &files, const QString &message)
+// {
+//     emit listFilesResult(success, files, message);
+// }
 
-void AuthController::onDownloadFileNetwork(bool success,
-                                           const QString &encryptedFileB64,
-                                           const QString &fileNonceB64,
-                                           const QString &encryptedDekB64,
-                                           const QString &dekNonceB64,
-                                           const QString &message)
-{
-    if (!success) {
-        emit downloadFileResult(false, selectedFilename, {}, message);
-        return;
-    }
-    QByteArray encryptedFile = QByteArray::fromBase64(encryptedFileB64.toUtf8());
-    QByteArray fileNonce     = QByteArray::fromBase64(fileNonceB64.toUtf8());
-    QByteArray encryptedDek  = QByteArray::fromBase64(encryptedDekB64.toUtf8());
-    QByteArray dekNonce      = QByteArray::fromBase64(dekNonceB64.toUtf8());
+// void AuthController::onDownloadFileNetwork(bool success,
+//                                            const QString &encryptedFileB64,
+//                                            const QString &fileNonceB64,
+//                                            const QString &encryptedDekB64,
+//                                            const QString &dekNonceB64,
+//                                            const QString &message)
+// {
+//     if (!success) {
+//         emit downloadFileResult(false, selectedFilename, {}, message);
+//         return;
+//     }
+//     QByteArray encryptedFile = QByteArray::fromBase64(encryptedFileB64.toUtf8());
+//     QByteArray fileNonce     = QByteArray::fromBase64(fileNonceB64.toUtf8());
+//     QByteArray encryptedDek  = QByteArray::fromBase64(encryptedDekB64.toUtf8());
+//     QByteArray dekNonce      = QByteArray::fromBase64(dekNonceB64.toUtf8());
 
-    QByteArray fileDek = CryptoUtils::decryptSecretKey(encryptedDek, sessionKek, dekNonce);
-    QByteArray data   = CryptoUtils::decryptSecretKey(encryptedFile, fileDek, fileNonce);
-    emit downloadFileResult(true, selectedFilename, data, {});
-}
+//     QByteArray fileDek = CryptoUtils::decryptSecretKey(encryptedDek, sessionKek, dekNonce);
+//     QByteArray data   = CryptoUtils::decryptSecretKey(encryptedFile, fileDek, fileNonce);
+//     emit downloadFileResult(true, selectedFilename, data, {});
+// }
 
-void AuthController::onDeleteFileNetwork(bool success, const QString &message)
-{
-    emit deleteFileResult(success, message);
-}
+// void AuthController::onDeleteFileNetwork(bool success, const QString &message)
+// {
+//     emit deleteFileResult(success, message);
+// }
 
 void AuthController::onConnectionStatusChanged(bool online)
 {
@@ -309,22 +291,22 @@ void AuthController::checkConnection()
     networkManager->checkConnection();
 }
 
-void AuthController::uploadFile(const QString &filename, const QString &fileContents) {
-    pendingFileName     = filename;
-    pendingFileContents = fileContents.toUtf8();   // or store as QString if you prefer
-    networkManager->requestChallenge(sessionUsername, "upload_file");
-}
+// void AuthController::uploadFile(const QString &filename, const QString &fileContents) {
+//     pendingFileName     = filename;
+//     pendingFileContents = fileContents.toUtf8();   // or store as QString if you prefer
+//     networkManager->requestChallenge(sessionUsername, "upload_file");
+// }
 
-void AuthController::listFiles() {
-    networkManager->requestChallenge(sessionUsername, "list_files");
-}
+// void AuthController::listFiles() {
+//     networkManager->requestChallenge(sessionUsername, "list_files");
+// }
 
-void AuthController::downloadFile(const QString &filename) {
-    selectedFilename = filename;
-    networkManager->requestChallenge(sessionUsername, "download_file");
-}
+// void AuthController::downloadFile(const QString &filename) {
+//     selectedFilename = filename;
+//     networkManager->requestChallenge(sessionUsername, "download_file");
+// }
 
-void AuthController::deleteFile(const QString &filename) {
-    selectedFilename = filename;
-    networkManager->requestChallenge(sessionUsername, "delete_file");
-}
+// void AuthController::deleteFile(const QString &filename) {
+//     selectedFilename = filename;
+//     networkManager->requestChallenge(sessionUsername, "delete_file");
+// }
