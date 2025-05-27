@@ -31,8 +31,6 @@ HEADERS += \
     utils/cryptoservice.h \
     utils/icryptoservice.h \
     utils/logger.h \
-    utils/icryptoservice.h \
-    utils/cryptoservice.h \
     views/mainwindow.h
 
 SOURCES += \

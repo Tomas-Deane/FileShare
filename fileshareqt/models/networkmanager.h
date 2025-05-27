@@ -22,24 +22,24 @@ public:
     explicit NetworkManager(QObject *parent = nullptr);
     ~NetworkManager();
 
-    Q_INVOKABLE void signup(const QJsonObject &payload);
-    Q_INVOKABLE void login(const QString &username);
-    Q_INVOKABLE void authenticate(const QString &username,
+     void signup(const QJsonObject &payload);
+     void login(const QString &username);
+     void authenticate(const QString &username,
                                   const QByteArray &nonce,
                                   const QByteArray &signature);
 
     // New operations
-    Q_INVOKABLE void requestChallenge(const QString &username,
+     void requestChallenge(const QString &username,
                                       const QString &operation);
-    Q_INVOKABLE void changeUsername(const QJsonObject &payload);
-    Q_INVOKABLE void changePassword(const QJsonObject &payload);
-    Q_INVOKABLE void uploadFile(const QJsonObject &payload);
-    Q_INVOKABLE void listFiles(const QJsonObject &payload);
-    Q_INVOKABLE void downloadFile(const QJsonObject &payload);
-    Q_INVOKABLE void deleteFile(const QJsonObject &payload);
+     void changeUsername(const QJsonObject &payload);
+     void changePassword(const QJsonObject &payload);
+     void uploadFile(const QJsonObject &payload);
+     void listFiles(const QJsonObject &payload);
+     void downloadFile(const QJsonObject &payload);
+     void deleteFile(const QJsonObject &payload);
 
     // Ping/check connection without user action
-    Q_INVOKABLE void checkConnection();
+     void checkConnection();
 
 signals:
     void signupResult(bool success, const QString &message);
