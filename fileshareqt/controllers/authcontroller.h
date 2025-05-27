@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QString>
 #include <QByteArray>
+#include "icryptoservice.h"
 
 class NetworkManager;
 
@@ -12,7 +13,9 @@ class AuthController : public QObject
     Q_OBJECT
 
 public:
-    explicit AuthController(QObject *parent = nullptr);
+    // Now takes an ICryptoService to handle all crypto.
+    explicit AuthController(ICryptoService *cryptoService,
+                            QObject *parent = nullptr);
 
     Q_INVOKABLE void signup(const QString &username, const QString &password);
     Q_INVOKABLE void login(const QString &username, const QString &password);
@@ -50,6 +53,8 @@ private slots:
 
 private:
     NetworkManager *networkManager;
+    ICryptoService *cryptoService;
+
     QString pendingUsername;
     QString pendingPassword;
     QString sessionUsername;
@@ -57,7 +62,8 @@ private:
     QByteArray sessionPdk;
     QByteArray sessionKek;
 
-    void processUploadFile(const QByteArray &nonce) = delete;   // now in FileController
+    // file‐operation stubs deleted as before
+    void processUploadFile(const QByteArray &nonce) = delete;
     void processListFiles(const QByteArray &nonce) = delete;
     void processDownloadFile(const QByteArray &nonce) = delete;
     void processDeleteFile(const QByteArray &nonce) = delete;
