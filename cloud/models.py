@@ -213,6 +213,7 @@ class UserDB:
         sql_map = "INSERT INTO username_map (username, user_id) VALUES (%s, %s)"
         self.cursor.execute(sql_map, (username, user_id))
         self.conn.commit()
+        return user_id
 
     def get_user(self, username):
         self.ensure_connection()
