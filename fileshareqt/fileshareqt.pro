@@ -14,22 +14,41 @@ unix:!macx {
     LIBS        += -L/usr/local/lib -lsodium -lssl -lcrypto
 }
 
-SOURCES += \
-    authcontroller.cpp \
-    crypto_utils.cpp \
-    logger.cpp \
-    main.cpp \
-    mainwindow.cpp \
-    networkmanager.cpp
+# --- add our MVC include dirs so #include "Foo.h" works ---
+INCLUDEPATH += \
+    $$PWD/controllers \
+    $$PWD/models      \
+    $$PWD/utils       \
+    $$PWD/views
 
 HEADERS += \
-    authcontroller.h \
-    crypto_utils.h \
-    logger.h \
-    mainwindow.h \
-    networkmanager.h
+    controllers/authcontroller.h \
+    controllers/filecontroller.h \
+    controllers/profilecontroller.h \
+    models/crypto_utils.h \
+    models/networkmanager.h \
+    models/passwordstrength.h \
+    utils/cryptoservice.h \
+    utils/icryptoservice.h \
+    utils/inetworkmanager.h \
+    utils/logger.h \
+    views/mainwindow.h
 
-FORMS     += mainwindow.ui
+SOURCES += \
+    controllers/authcontroller.cpp \
+    controllers/filecontroller.cpp \
+    controllers/profilecontroller.cpp \
+    main.cpp \
+    models/crypto_utils.cpp \
+    models/networkmanager.cpp \
+    models/passwordstrength.cpp \
+    utils/cryptoservice.cpp \
+    utils/logger.cpp \
+    views/mainwindow.cpp
+
+FORMS += \
+    views/mainwindow.ui
+
 RESOURCES += nrmc_image.png \
     resources.qrc
 

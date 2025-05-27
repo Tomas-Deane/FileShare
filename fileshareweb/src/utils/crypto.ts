@@ -1,5 +1,4 @@
 import sodium from 'libsodium-wrappers-sumo';
-import { generateKeyPair as generateEd25519KeyPair, sign as signEd25519 } from '@stablelib/ed25519';
 
 // TypeScript module declaration
 declare global {
@@ -185,4 +184,41 @@ export async function signChallenge(
   } catch (error) {
     throw new CryptoError("Failed to sign challenge", error);
   }
+}
+
+export async function generateFileKey(): Promise<Uint8Array> {
+  const key = new Uint8Array(32); // XChaCha20-Poly1305 key size
+  window.crypto.getRandomValues(key);
+  return key;
+}
+
+export async function encryptFile(
+  data: Uint8Array,
+  key: Uint8Array,
+  nonce: Uint8Array
+): Promise<Uint8Array> {
+  // Use libsodium's crypto_aead_xchacha20poly1305_ietf_encrypt
+  await sodium.ready;
+  return sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+    data,
+    null, // no additional data
+    null, // no additional data
+    nonce,
+    key
+  );
+}
+
+export async function decryptFile(
+  encrypted: Uint8Array,
+  key: Uint8Array,
+  nonce: Uint8Array
+): Promise<Uint8Array> {
+  await sodium.ready;
+  return sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
+    null, // no additional data
+    encrypted,
+    null, // no additional data
+    nonce,
+    key
+  );
 }

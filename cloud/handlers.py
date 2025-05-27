@@ -1,3 +1,4 @@
+# cloud/handlers.py
 #!/usr/bin/env python3
 import base64
 import secrets
@@ -22,6 +23,7 @@ import models
 
 # --- CHALLENGE HANDLER --------------------------------------------
 def challenge_handler(req: ChallengeRequest, db: models.UserDB):
+    logging.debug(f"Challenge: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' at challenge")
@@ -39,6 +41,7 @@ def challenge_handler(req: ChallengeRequest, db: models.UserDB):
 
 # --- LOGIN CONTINUATION ------------------------------------------------
 def login_handler_continue(req: LoginRequest, db: models.UserDB, b64_nonce: str):
+    logging.debug(f"Login continuation: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' in login continuation")
@@ -58,7 +61,7 @@ def login_handler_continue(req: LoginRequest, db: models.UserDB, b64_nonce: str)
 
 # --- SIGNUP ------------------------------------------------------------
 def signup_handler(req: SignupRequest, db: models.UserDB):
-    logging.debug(f"Signup: {req.json()}")
+    logging.debug(f"Signup: {req.model_dump_json()}")
     if db.get_user(req.username):
         logging.warning(f"User '{req.username}' already exists")
         raise HTTPException(status_code=400, detail="User already exists")
@@ -80,7 +83,7 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
 
 # --- AUTHENTICATE (LOGIN COMPLETE) --------------------------------------
 def authenticate_handler(req: AuthenticateRequest, db: models.UserDB):
-    logging.debug(f"Authenticate: {req.json()}")
+    logging.debug(f"Authenticate: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' at authenticate")
@@ -107,7 +110,7 @@ def authenticate_handler(req: AuthenticateRequest, db: models.UserDB):
 
 # --- CHANGE USERNAME ------------------------------------------------------
 def change_username_handler(req: ChangeUsernameRequest, db: models.UserDB):
-    logging.debug(f"ChangeUsername: {req.json()}")
+    logging.debug(f"ChangeUsername: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' at change_username")
@@ -135,7 +138,7 @@ def change_username_handler(req: ChangeUsernameRequest, db: models.UserDB):
 
 # --- CHANGE PASSWORD ------------------------------------------------------
 def change_password_handler(req: ChangePasswordRequest, db: models.UserDB):
-    logging.debug(f"ChangePassword: {req.json()}")
+    logging.debug(f"ChangePassword: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' at change_password")
@@ -174,6 +177,7 @@ def change_password_handler(req: ChangePasswordRequest, db: models.UserDB):
 
 # --- FILE UPLOAD ------------------------------------------------------
 def upload_file_handler(req: UploadRequest, db: models.UserDB):
+    logging.debug(f"UploadFile: {req.model_dump_json(exclude={'encrypted_file'})}")
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' at upload_file")
@@ -209,7 +213,7 @@ def upload_file_handler(req: UploadRequest, db: models.UserDB):
 
 # --- LIST FILES ------------------------------------------------------
 def list_files_handler(req: ListFilesRequest, db: models.UserDB):
-    logging.debug(f"ListFilesRequest: {req.json()}")
+    logging.debug(f"ListFiles: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' at list_files")
@@ -236,6 +240,7 @@ def list_files_handler(req: ListFilesRequest, db: models.UserDB):
 
 # --- DOWNLOAD FILE ------------------------------------------------------
 def download_file_handler(req: DownloadFileRequest, db: models.UserDB):
+    logging.debug(f"DownloadFile: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' at download_file")
@@ -271,7 +276,7 @@ def download_file_handler(req: DownloadFileRequest, db: models.UserDB):
 
 # --- DELETE FILE ------------------------------------------------------
 def delete_file_handler(req: DeleteFileRequest, db: models.UserDB):
-    logging.debug(f"DeleteFileRequest: {req.json()}")
+    logging.debug(f"DeleteFile: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' at delete_file")
@@ -297,3 +302,4 @@ def delete_file_handler(req: DeleteFileRequest, db: models.UserDB):
         logging.warning(f"Bad signature for delete_file of user_id={user_id}")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
+

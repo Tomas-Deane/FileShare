@@ -12,7 +12,7 @@
 #include <unistd.h>
 
 NetworkManager::NetworkManager(QObject *parent)
-    : QObject(parent)
+    : INetworkManager(parent)
     , ssl_ctx(nullptr)
 {
     initOpenSSL();
@@ -42,13 +42,11 @@ void NetworkManager::cleanupOpenSSL()
     EVP_cleanup();
 }
 
-/// Centralized TCP+SSL connect + handshake
 SSL *NetworkManager::openSslConnection(const QString &host,
                                        quint16 port,
                                        int &sockOut,
                                        QString &errorMsg)
 {
-    // DNS lookup
     struct addrinfo hints = {};
     hints.ai_family   = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -64,14 +62,11 @@ SSL *NetworkManager::openSslConnection(const QString &host,
         return nullptr;
     }
 
-    // TCP connect
     int sock = -1;
     for (struct addrinfo *rp = res; rp; rp = rp->ai_next) {
         sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (sock < 0) continue;
-        if (::connect(sock, rp->ai_addr, rp->ai_addrlen) == 0) {
-            break;
-        }
+        if (::connect(sock, rp->ai_addr, rp->ai_addrlen) == 0) break;
         ::close(sock);
         sock = -1;
     }
@@ -83,7 +78,6 @@ SSL *NetworkManager::openSslConnection(const QString &host,
         return nullptr;
     }
 
-    // SSL handshake
     SSL *ssl = SSL_new(ssl_ctx);
     SSL_set_fd(ssl, sock);
     if (SSL_connect(ssl) <= 0) {
@@ -94,7 +88,6 @@ SSL *NetworkManager::openSslConnection(const QString &host,
         return nullptr;
     }
 
-    // success!
     sockOut = sock;
     emit connectionStatusChanged(true);
     return ssl;
@@ -108,8 +101,7 @@ QByteArray NetworkManager::postJson(const QString &host,
                                     QString &message)
 {
     ok = false;
-    Logger::log(QString("postJson to https://%1:%2%3")
-                    .arg(host).arg(port).arg(path));
+    Logger::log(QString("postJson to https://%1:%2%3").arg(host).arg(port).arg(path));
 
     int sock = -1;
     QString err;
@@ -119,15 +111,13 @@ QByteArray NetworkManager::postJson(const QString &host,
         return {};
     }
 
-    // build request
     QByteArray body = QJsonDocument(obj).toJson(QJsonDocument::Compact);
     QByteArray req =
         "POST " + path.toUtf8() + " HTTP/1.1\r\n"
                                   "Host: " + host.toUtf8() + "\r\n"
                           "Content-Type: application/json\r\n"
                           "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
-                                            "Connection: close\r\n\r\n" +
-        body;
+                                            "Connection: close\r\n\r\n" + body;
 
     if (SSL_write(ssl, req.constData(), req.size()) <= 0) {
         SSL_shutdown(ssl);
@@ -139,7 +129,6 @@ QByteArray NetworkManager::postJson(const QString &host,
         return {};
     }
 
-    // read response
     QByteArray resp;
     char buf[4096];
     int len;
@@ -151,7 +140,6 @@ QByteArray NetworkManager::postJson(const QString &host,
     SSL_free(ssl);
     ::close(sock);
 
-    // parse HTTP
     int header_end = resp.indexOf("\r\n\r\n");
     if (header_end < 0) {
         message = "Invalid HTTP response";
@@ -194,7 +182,6 @@ void NetworkManager::signup(const QJsonObject &payload)
         emit signupResult(false, message);
         return;
     }
-
     auto obj = QJsonDocument::fromJson(resp).object();
     if (obj["status"].toString() == "ok") {
         emit signupResult(true, obj["status"].toString());
@@ -219,20 +206,18 @@ void NetworkManager::login(const QString &username)
         emit loginResult(false, message);
         return;
     }
-
     auto obj = QJsonDocument::fromJson(resp).object();
     if (obj["status"].toString() == "challenge") {
-        QByteArray nonce = QByteArray::fromBase64(obj["nonce"].toString().toUtf8());
-        QByteArray salt = QByteArray::fromBase64(obj["salt"].toString().toUtf8());
-        QByteArray encryptedPrivKey = QByteArray::fromBase64(obj["encrypted_privkey"].toString().toUtf8());
-        QByteArray privKeyNonce   = QByteArray::fromBase64(obj["privkey_nonce"].toString().toUtf8());
-        QByteArray encryptedKek    = QByteArray::fromBase64(obj["encrypted_kek"].toString().toUtf8());
-        QByteArray kekNonce        = QByteArray::fromBase64(obj["kek_nonce"].toString().toUtf8());
-        int opslimit = obj["argon2_opslimit"].toInt();
-        int memlimit = obj["argon2_memlimit"].toInt();
-        emit loginChallenge(nonce, salt, opslimit, memlimit,
-                            encryptedPrivKey, privKeyNonce,
-                            encryptedKek, kekNonce);
+        emit loginChallenge(
+            QByteArray::fromBase64(obj["nonce"].toString().toUtf8()),
+            QByteArray::fromBase64(obj["salt"].toString().toUtf8()),
+            obj["argon2_opslimit"].toInt(),
+            obj["argon2_memlimit"].toInt(),
+            QByteArray::fromBase64(obj["encrypted_privkey"].toString().toUtf8()),
+            QByteArray::fromBase64(obj["privkey_nonce"].toString().toUtf8()),
+            QByteArray::fromBase64(obj["encrypted_kek"].toString().toUtf8()),
+            QByteArray::fromBase64(obj["kek_nonce"].toString().toUtf8())
+            );
     } else {
         emit loginResult(false, obj["detail"].toString());
     }
@@ -241,10 +226,7 @@ void NetworkManager::login(const QString &username)
 void NetworkManager::requestChallenge(const QString &username,
                                       const QString &operation)
 {
-    QJsonObject req{
-        {"username", username},
-        {"operation", operation}
-    };
+    QJsonObject req{{"username", username}, {"operation", operation}};
     Logger::log(QString("Requesting challenge for '%1' op='%2'")
                     .arg(username).arg(operation));
     Logger::log("Challenge request payload: " +
@@ -259,11 +241,12 @@ void NetworkManager::requestChallenge(const QString &username,
         emit networkError(message);
         return;
     }
-
     auto obj = QJsonDocument::fromJson(resp).object();
     if (obj["status"].toString() == "challenge") {
-        QByteArray nonce = QByteArray::fromBase64(obj["nonce"].toString().toUtf8());
-        emit challengeResult(nonce, operation);
+        emit challengeResult(
+            QByteArray::fromBase64(obj["nonce"].toString().toUtf8()),
+            operation
+            );
     } else {
         emit networkError(obj["detail"].toString());
     }
@@ -291,7 +274,6 @@ void NetworkManager::authenticate(const QString &username,
         emit loginResult(false, message);
         return;
     }
-
     auto obj = QJsonDocument::fromJson(resp).object();
     if (obj["status"].toString() == "ok") {
         emit loginResult(true, obj["message"].toString());
@@ -304,6 +286,7 @@ void NetworkManager::changeUsername(const QJsonObject &payload)
 {
     Logger::log("Sending changeUsername request: " +
                 QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+
     bool ok = false;
     QString message;
     QByteArray resp = postJson("gobbler.info", 3210, "/change_username", payload, ok, message);
@@ -324,6 +307,7 @@ void NetworkManager::changePassword(const QJsonObject &payload)
 {
     Logger::log("Sending changePassword request: " +
                 QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+
     bool ok = false;
     QString message;
     QByteArray resp = postJson("gobbler.info", 3210, "/change_password", payload, ok, message);
@@ -342,8 +326,6 @@ void NetworkManager::changePassword(const QJsonObject &payload)
 
 void NetworkManager::uploadFile(const QJsonObject &payload)
 {
-    // Logger::log("Sending uploadFile request: " +
-    //             QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
     bool ok = false;
     QString message;
     QByteArray resp = postJson("gobbler.info", 3210, "/upload_file", payload, ok, message);
@@ -375,9 +357,7 @@ void NetworkManager::listFiles(const QJsonObject &payload)
     auto obj = QJsonDocument::fromJson(resp).object();
     if (obj["status"].toString() == "ok") {
         QStringList files;
-        for (const QJsonValue &val : obj["files"].toArray()) {
-            files.append(val.toString());
-        }
+        for (const QJsonValue &val : obj["files"].toArray()) files.append(val.toString());
         emit listFilesResult(true, files, QString());
     } else {
         emit listFilesResult(false, QStringList(), obj["detail"].toString());
@@ -386,23 +366,23 @@ void NetworkManager::listFiles(const QJsonObject &payload)
 
 void NetworkManager::downloadFile(const QJsonObject &payload)
 {
-    // Logger::log("Sending downloadFile request: " +
-    //             QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
     bool ok = false;
     QString message;
     QByteArray resp = postJson("gobbler.info", 3210, "/download_file", payload, ok, message);
-    // Logger::log("Received downloadFile response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit downloadFileResult(false, QString(), QString(), QString(), QString(), message);
         return;
     }
     auto obj = QJsonDocument::fromJson(resp).object();
     if (obj["status"].toString() == "ok") {
-        QString encryptedFile = obj["encrypted_file"].toString();
-        QString fileNonce = obj["file_nonce"].toString();
-        QString encryptedDek = obj["encrypted_dek"].toString();
-        QString dekNonce = obj["dek_nonce"].toString();
-        emit downloadFileResult(true, encryptedFile, fileNonce, encryptedDek, dekNonce, QString());
+        emit downloadFileResult(
+            true,
+            obj["encrypted_file"].toString(),
+            obj["file_nonce"].toString(),
+            obj["encrypted_dek"].toString(),
+            obj["dek_nonce"].toString(),
+            QString()
+            );
     } else {
         emit downloadFileResult(false, QString(), QString(), QString(), QString(), obj["detail"].toString());
     }
@@ -433,9 +413,7 @@ void NetworkManager::checkConnection()
     int sock = -1;
     QString error;
     SSL *ssl = openSslConnection("gobbler.info", 3210, sock, error);
-    if (!ssl) {
-        return;
-    }
+    if (!ssl) return;
     SSL_shutdown(ssl);
     SSL_free(ssl);
     ::close(sock);
