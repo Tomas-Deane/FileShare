@@ -1,12 +1,8 @@
 #include "passwordstrength.h"
-#include <QFile>
 #include <QNetworkAccessManager>
-#include <QTextStream>
-#include <QRegularExpression>
 #include <QCryptographicHash>
 #include <QNetworkRequest>
 #include <QNetworkReply>
-#include <QObject>
 #include <QEventLoop>
 #include <QUrl>
 

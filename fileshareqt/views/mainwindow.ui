@@ -51,7 +51,7 @@
       <item>
        <widget class="QTabWidget" name="tabWidget">
         <property name="currentIndex">
-         <number>6</number>
+         <number>0</number>
         </property>
         <widget class="QWidget" name="Home">
          <attribute name="title">
@@ -70,7 +70,7 @@
              <string/>
             </property>
             <property name="pixmap">
-             <pixmap resource="build/Qt_6_9_0_for_macOS-Debug/qmake_qmake_immediate.qrc">:/nrmc_image.png</pixmap>
+             <pixmap resource="../resources.qrc">:/nrmc_image.png</pixmap>
             </property>
             <property name="scaledContents">
              <bool>true</bool>
@@ -445,8 +445,8 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>426</width>
-                   <height>249</height>
+                   <width>464</width>
+                   <height>298</height>
                   </rect>
                  </property>
                  <layout class="QVBoxLayout" name="verticalLayout_10">
@@ -523,8 +523,8 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>163</width>
-                   <height>40</height>
+                   <width>171</width>
+                   <height>36</height>
                   </rect>
                  </property>
                  <layout class="QVBoxLayout" name="verticalLayout_12">
@@ -905,13 +905,13 @@
      <x>0</x>
      <y>0</y>
      <width>1037</width>
-     <height>38</height>
+     <height>23</height>
     </rect>
    </property>
   </widget>
  </widget>
  <resources>
-  <include location="build/Qt_6_9_0_for_macOS-Debug/qmake_qmake_immediate.qrc"/>
+  <include location="../resources.qrc"/>
  </resources>
  <connections/>
 </ui>

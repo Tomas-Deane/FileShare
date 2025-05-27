@@ -2,7 +2,6 @@
 #define PASSWORDSTRENGTH_H
 
 #include <QString>
-#include <QSet>
 // forward-declare the class you use a pointer to:
 class QNetworkAccessManager;
 
