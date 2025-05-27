@@ -87,9 +87,66 @@ def init_db():
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
+    # 5) pre_key_bundle
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS pre_key_bundle (
+        id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id             BIGINT              NOT NULL,
+        IK_pub              BLOB                NOT NULL,
+        SPK_pub             BLOB                NOT NULL,
+        SPK_signature       BLOB                NOT NULL,
+        created_at          DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_pre_key_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """)
+
+    # 6) opks (One-Time Pre-Keys)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS opks (
+        id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id             BIGINT              NOT NULL,
+        pre_key             BLOB                NOT NULL,
+        consumed            BOOLEAN             NOT NULL DEFAULT FALSE,
+        created_at          DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_opks_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+        INDEX idx_user_consumed (user_id, consumed)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """)
+
+# 7) shared_files
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS shared_files (
+        share_id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+        file_id              BIGINT              NOT NULL,
+        recipient_id         BIGINT              NOT NULL,
+        EK_pub               BLOB                NOT NULL,
+        IK_pub               BLOB                NOT NULL,
+        shared_at            DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_shared_file
+        FOREIGN KEY (file_id)
+        REFERENCES files(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+        CONSTRAINT fk_shared_recipient
+        FOREIGN KEY (recipient_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+        INDEX idx_file_recipient (file_id, recipient_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """)
     conn.commit()
     cursor.close()
     conn.close()
+
 
 class UserDB:
     """
@@ -339,5 +396,116 @@ class UserDB:
             LIMIT 1
         """
         self.cursor.execute(sql, (user_id, filename))
+        self.conn.commit()
+
+    def add_pre_key_bundle(self, user_id, IK_pub, SPK_pub, SPK_signature):
+        self.ensure_connection()
+        sql = """
+            INSERT INTO pre_key_bundle
+                (user_id, IK_pub, SPK_pub, SPK_signature)
+            VALUES (%s, %s, %s, %s)
+        """
+        self.cursor.execute(sql, (user_id, IK_pub, SPK_pub, SPK_signature))
+        self.conn.commit()
+
+    def get_pre_key_bundle(self, user_id):
+        self.ensure_connection()
+        sql = """
+            SELECT IK_pub, SPK_pub, SPK_signature
+            FROM pre_key_bundle
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (user_id,))
+        return self.cursor.fetchone()
+
+    def add_opks(self, user_id, pre_keys):
+        self.ensure_connection()
+        sql = """
+            INSERT INTO opks
+                (user_id, pre_key)
+            VALUES (%s, %s)
+        """
+        for pre_key in pre_keys:
+            self.cursor.execute(sql, (user_id, pre_key))
+        self.conn.commit()
+
+    def get_unused_opk(self, user_id):
+        self.ensure_connection()
+        sql = """
+            SELECT id, pre_key
+            FROM opks
+            WHERE user_id = %s AND consumed = FALSE
+            ORDER BY created_at ASC
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (user_id,))
+        return self.cursor.fetchone()
+
+    def mark_opk_consumed(self, opk_id):
+        self.ensure_connection()
+        sql = """
+            UPDATE opks
+            SET consumed = TRUE
+            WHERE id = %s
+        """
+        self.cursor.execute(sql, (opk_id,))
+        self.conn.commit()
+
+    def share_file(self, file_id, recipient_id, EK_pub, IK_pub):
+        self.ensure_connection()
+        sql = """
+            INSERT INTO shared_files
+                (file_id, recipient_id, EK_pub, IK_pub)
+            VALUES (%s, %s, %s, %s)
+        """
+        self.cursor.execute(sql, (file_id, recipient_id, EK_pub, IK_pub))
+        self.conn.commit()
+
+    def get_shared_files(self, recipient_id):
+        self.ensure_connection()
+        sql = """
+            SELECT 
+                sf.share_id,
+                sf.file_id,
+                sf.EK_pub,
+                sf.IK_pub,
+                sf.shared_at,
+                f.filename
+            FROM shared_files sf
+            JOIN files f ON sf.file_id = f.id
+            WHERE sf.recipient_id = %s
+            ORDER BY sf.shared_at DESC
+        """
+        self.cursor.execute(sql, (recipient_id,))
+        return self.cursor.fetchall()
+
+    def get_shared_file_details(self, share_id):
+        self.ensure_connection()
+        sql = """
+            SELECT 
+                sf.share_id,
+                sf.file_id,
+                sf.recipient_id,
+                sf.EK_pub,
+                sf.IK_pub,
+                sf.shared_at,
+                f.filename
+            FROM shared_files sf
+            JOIN files f ON sf.file_id = f.id
+            WHERE sf.share_id = %s
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (share_id,))
+        return self.cursor.fetchone()
+
+    def remove_shared_file(self, share_id):
+        self.ensure_connection()
+        sql = """
+            DELETE FROM shared_files
+            WHERE share_id = %s
+        """
+        self.cursor.execute(sql, (share_id,))
         self.conn.commit()
 
