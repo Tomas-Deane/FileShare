@@ -10,7 +10,6 @@
 #include <QProgressBar>
 #include <QLabel>
 #include "passwordstrength.h"
-#include "icryptoservice.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -83,7 +82,6 @@ private:
     AuthController        *authController;
     ProfileController     *profileController;
     FileController        *fileController;
-    ICryptoService        *cryptoService;
     PasswordStrength       pwEvaluator;
 
     QString                currentUploadPath;

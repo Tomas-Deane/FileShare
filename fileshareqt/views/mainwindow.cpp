@@ -5,8 +5,6 @@
 #include "profilecontroller.h"
 #include "filecontroller.h"
 #include "logger.h"
-#include "cryptoservice.h"
-#include "networkmanager.h"
 
 #include <sodium.h>
 #include <QPixmap>
@@ -28,10 +26,6 @@
         , pendingDeleteItem(nullptr)
 {
     ui->setupUi(this);
-
-    this->authController    = authCtrl;
-    this->profileController = profileCtrl;
-    this->fileController    = fileCtrl;
 
     // FileController signals
     connect(fileController, &FileController::uploadFileResult,
@@ -105,7 +99,6 @@ MainWindow::~MainWindow()
 {
     Logger::log("Application exiting");
     delete ui;
-    delete cryptoService;
 }
 
 void MainWindow::on_signupButton_clicked()
