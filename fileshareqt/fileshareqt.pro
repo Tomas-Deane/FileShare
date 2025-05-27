@@ -21,7 +21,6 @@ INCLUDEPATH += \
     $$PWD/utils       \
     $$PWD/views
 
-
 HEADERS += \
     controllers/authcontroller.h \
     controllers/filecontroller.h \
@@ -29,9 +28,12 @@ HEADERS += \
     models/crypto_utils.h \
     models/networkmanager.h \
     models/passwordstrength.h \
+    utils/cryptoservice.h \
+    utils/icryptoservice.h \
     utils/logger.h \
+    utils/icryptoservice.h \
+    utils/cryptoservice.h \
     views/mainwindow.h
-
 
 SOURCES += \
     controllers/authcontroller.cpp \
@@ -41,6 +43,7 @@ SOURCES += \
     models/crypto_utils.cpp \
     models/networkmanager.cpp \
     models/passwordstrength.cpp \
+    utils/cryptoservice.cpp \
     utils/logger.cpp \
     views/mainwindow.cpp
 
