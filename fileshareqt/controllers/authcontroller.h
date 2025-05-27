@@ -17,11 +17,11 @@ public:
     explicit AuthController(ICryptoService *cryptoService,
                             QObject *parent = nullptr);
 
-    Q_INVOKABLE void signup(const QString &username, const QString &password);
-    Q_INVOKABLE void login(const QString &username, const QString &password);
-    Q_INVOKABLE void logout();
+     void signup(const QString &username, const QString &password);
+     void login(const QString &username, const QString &password);
+     void logout();
 
-    Q_INVOKABLE void checkConnection();
+     void checkConnection();
 
     QString getSessionUsername() const;
     QByteArray getSessionSecretKey() const;
@@ -62,11 +62,6 @@ private:
     QByteArray sessionPdk;
     QByteArray sessionKek;
 
-    // file‐operation stubs deleted as before
-    void processUploadFile(const QByteArray &nonce) = delete;
-    void processListFiles(const QByteArray &nonce) = delete;
-    void processDownloadFile(const QByteArray &nonce) = delete;
-    void processDeleteFile(const QByteArray &nonce) = delete;
 };
 
 #endif // AUTHCONTROLLER_H

@@ -22,10 +22,10 @@ public:
                             ICryptoService *cryptoService,
                             QObject *parent = nullptr);
 
-    Q_INVOKABLE void uploadFile(const QString &filename, const QByteArray &base64Contents);
-    Q_INVOKABLE void listFiles();
-    Q_INVOKABLE void downloadFile(const QString &filename);
-    Q_INVOKABLE void deleteFile(const QString &filename);
+     void uploadFile(const QString &filename, const QByteArray &base64Contents);
+     void listFiles();
+     void downloadFile(const QString &filename);
+     void deleteFile(const QString &filename);
 
     const QMap<QString, QByteArray>& downloadCache() const { return m_downloadCache; }
 

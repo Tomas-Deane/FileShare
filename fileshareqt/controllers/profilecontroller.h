@@ -18,8 +18,8 @@ public:
                                ICryptoService *cryptoService,
                                QObject *parent = nullptr);
 
-    Q_INVOKABLE void changeUsername(const QString &newUsername);
-    Q_INVOKABLE void changePassword(const QString &newPassword);
+     void changeUsername(const QString &newUsername);
+     void changePassword(const QString &newPassword);
 
 signals:
     void changeUsernameResult(bool success, const QString &message);
