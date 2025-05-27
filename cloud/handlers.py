@@ -72,7 +72,8 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
         logging.warning(f"User '{req.username}' already exists")
         raise HTTPException(status_code=400, detail="User already exists")
 
-    db.add_user(
+    # Add the user first
+    user_id = db.add_user(
         req.username,
         base64.b64decode(req.salt),
         req.argon2_opslimit,
@@ -84,7 +85,18 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
         base64.b64decode(req.kek_nonce)
     )
 
-    logging.info(f"Signup successful for '{req.username}'")
+    # Add the pre-key bundle
+    db.add_pre_key_bundle(user_id,
+        base64.b64decode(req.IK_pub),
+        base64.b64decode(req.SPK_pub), 
+        base64.b64decode(req.SPK_signature)
+    )
+
+    # Add the one-time pre-keys
+    pre_keys = [base64.b64decode(pk) for pk in req.pre_keys]
+    db.add_opks(user_id, pre_keys)
+
+    logging.info(f"Signup successful for '{req.username}' with {len(pre_keys)} OPKs")
     return {"status": "ok"}
 
 # --- AUTHENTICATE (LOGIN COMPLETE) --------------------------------------

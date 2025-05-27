@@ -91,6 +91,9 @@ class PreKeyBundleRequest(BaseModel):
     username: str
     nonce: str
     signature: str
+    IK_pub: str
+    SPK_pub: str
+    SPK_signature: str
 
 
 class PreKeyBundleResponse(BaseModel):
