@@ -6,25 +6,25 @@
 #include <sodium.h>
 #include "logger.h"
 
-FileController::FileController(NetworkManager *networkManager,
-                               AuthController *authController,
-                               ICryptoService *cryptoService,
-                               QObject *parent)
+FileController::FileController(INetworkManager *netMgr,
+                               AuthController    *authController,
+                               ICryptoService    *cryptoService,
+                               QObject           *parent)
     : QObject(parent)
-    , m_networkManager(networkManager)
+    , m_networkManager(netMgr)
     , m_authController(authController)
     , m_cryptoService(cryptoService)
 {
-    connect(m_networkManager, &NetworkManager::challengeResult,
+    connect(m_networkManager, &INetworkManager::challengeResult,
             this, &FileController::onChallenge);
 
-    connect(m_networkManager, &NetworkManager::uploadFileResult,
+    connect(m_networkManager, &INetworkManager::uploadFileResult,
             this, &FileController::onUploadNetwork);
-    connect(m_networkManager, &NetworkManager::listFilesResult,
+    connect(m_networkManager, &INetworkManager::listFilesResult,
             this, &FileController::onListNetwork);
-    connect(m_networkManager, &NetworkManager::downloadFileResult,
+    connect(m_networkManager, &INetworkManager::downloadFileResult,
             this, &FileController::onDownloadNetwork);
-    connect(m_networkManager, &NetworkManager::deleteFileResult,
+    connect(m_networkManager, &INetworkManager::deleteFileResult,
             this, &FileController::onDeleteNetwork);
 }
 

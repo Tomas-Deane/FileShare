@@ -24,11 +24,12 @@ int main(int argc, char *argv[])
 
     // ——— manual DI ———
     // note: parent ownership set to 'w' so Qt will delete them
-    NetworkManager*   net  = new NetworkManager(nullptr);
-    CryptoService*    cs   = new CryptoService();
-    AuthController*   ac   = new AuthController(cs, nullptr);
-    ProfileController* pc  = new ProfileController(ac, cs, nullptr);
-    FileController*   fc   = new FileController(net, ac, cs, nullptr);
+    INetworkManager  *net = new NetworkManager(nullptr);
+    ICryptoService   *cs  = new CryptoService();
+
+    AuthController    *ac = new AuthController(net, cs, nullptr);
+    ProfileController *pc = new ProfileController(net, ac, cs, nullptr);
+    FileController    *fc = new FileController(net, ac, cs, nullptr);
 
     MainWindow w(ac, fc, pc);
     w.show();

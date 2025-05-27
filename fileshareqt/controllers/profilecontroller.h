@@ -5,18 +5,18 @@
 #include <QString>
 #include <QByteArray>
 #include "icryptoservice.h"
+#include "inetworkmanager.h"
 
 class AuthController;
 class NetworkManager;
 
-class ProfileController : public QObject
-{
+class ProfileController : public QObject {
     Q_OBJECT
-
 public:
-    explicit ProfileController(AuthController *authController,
-                               ICryptoService *cryptoService,
-                               QObject *parent = nullptr);
+    explicit ProfileController(INetworkManager    *networkManager,
+                               AuthController     *authController,
+                               ICryptoService     *cryptoService,
+                               QObject            *parent = nullptr);
 
      void changeUsername(const QString &newUsername);
      void changePassword(const QString &newPassword);
@@ -32,7 +32,7 @@ private slots:
 
 private:
     AuthController *m_authController;
-    NetworkManager  *m_networkManager;
+    INetworkManager  *m_networkManager;
     ICryptoService  *m_cryptoService;
 
     // For change username

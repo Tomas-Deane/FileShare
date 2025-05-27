@@ -8,6 +8,7 @@
 #include <QByteArray>
 #include <QJsonObject>
 #include "icryptoservice.h"
+#include "inetworkmanager.h"
 
 class NetworkManager;
 class AuthController;
@@ -15,12 +16,11 @@ class AuthController;
 class FileController : public QObject
 {
     Q_OBJECT
-
 public:
-    explicit FileController(NetworkManager *networkManager,
-                            AuthController *authController,
-                            ICryptoService *cryptoService,
-                            QObject *parent = nullptr);
+    explicit FileController(INetworkManager *networkManager,
+                            AuthController    *authController,
+                            ICryptoService    *cryptoService,
+                            QObject           *parent = nullptr);
 
      void uploadFile(const QString &filename, const QByteArray &base64Contents);
      void listFiles();
@@ -48,7 +48,7 @@ private slots:
     void onDeleteNetwork(bool success, const QString &message);
 
 private:
-    NetworkManager   *m_networkManager;
+    INetworkManager   *m_networkManager;
     AuthController   *m_authController;
     ICryptoService   *m_cryptoService;
     QString            m_pendingFileName;

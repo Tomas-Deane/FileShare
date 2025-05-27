@@ -5,16 +5,16 @@
 #include <QString>
 #include <QByteArray>
 #include "icryptoservice.h"
+#include "inetworkmanager.h"
 
 class NetworkManager;
 
-class AuthController : public QObject
-{
+class AuthController : public QObject {
     Q_OBJECT
 
 public:
-    // Now takes an ICryptoService to handle all crypto.
-    explicit AuthController(ICryptoService *cryptoService,
+    explicit AuthController(INetworkManager *networkManager,
+                            ICryptoService *cryptoService,
                             QObject *parent = nullptr);
 
      void signup(const QString &username, const QString &password);
@@ -52,7 +52,7 @@ private slots:
     void onConnectionStatusChanged(bool online);
 
 private:
-    NetworkManager *networkManager;
+    INetworkManager *networkManager;
     ICryptoService *cryptoService;
 
     QString pendingUsername;
