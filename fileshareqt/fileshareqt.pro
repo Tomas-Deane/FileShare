@@ -24,6 +24,7 @@ INCLUDEPATH += \
 
 HEADERS += \
     controllers/authcontroller.h \
+    controllers/filecontroller.h \
     controllers/profilecontroller.h \
     models/crypto_utils.h \
     models/networkmanager.h \
@@ -34,6 +35,7 @@ HEADERS += \
 
 SOURCES += \
     controllers/authcontroller.cpp \
+    controllers/filecontroller.cpp \
     controllers/profilecontroller.cpp \
     main.cpp \
     models/crypto_utils.cpp \
