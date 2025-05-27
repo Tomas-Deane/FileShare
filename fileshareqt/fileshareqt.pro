@@ -30,6 +30,7 @@ HEADERS += \
     models/passwordstrength.h \
     utils/cryptoservice.h \
     utils/icryptoservice.h \
+    utils/inetworkmanager.h \
     utils/logger.h \
     views/mainwindow.h
 
