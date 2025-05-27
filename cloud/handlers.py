@@ -87,13 +87,13 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
 
     # Add the pre-key bundle
     db.add_pre_key_bundle(user_id,
-        base64.b64decode(req.IK_pub),
-        base64.b64decode(req.SPK_pub), 
-        base64.b64decode(req.SPK_signature)
+        base64.b64decode(req.identity_key),
+        base64.b64decode(req.signed_pre_key), 
+        base64.b64decode(req.signed_pre_key_sig)
     )
 
     # Add the one-time pre-keys
-    pre_keys = [base64.b64decode(pk) for pk in req.pre_keys]
+    pre_keys = [base64.b64decode(pk) for pk in req.one_time_pre_keys]
     db.add_opks(user_id, pre_keys)
 
     logging.info(f"Signup successful for '{req.username}' with {len(pre_keys)} OPKs")
