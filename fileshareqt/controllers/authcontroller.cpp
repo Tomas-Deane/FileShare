@@ -23,13 +23,8 @@ AuthController::AuthController(QObject *parent)
     connect(networkManager, &NetworkManager::challengeResult,
             this, &AuthController::onChallengeReceived);
 
-    connect(networkManager, &NetworkManager::changeUsernameResult,
-            this, &AuthController::onChangeUsernameNetwork);
-    connect(networkManager, &NetworkManager::changePasswordResult,
-            this, &AuthController::onChangePasswordNetwork);
     connect(networkManager, &NetworkManager::uploadFileResult,
             this, &AuthController::onUploadFileNetwork);
-
     connect(networkManager, &NetworkManager::listFilesResult,
             this, &AuthController::onListFilesNetwork);
     connect(networkManager, &NetworkManager::downloadFileResult,
@@ -42,6 +37,24 @@ AuthController::AuthController(QObject *parent)
 
     connect(networkManager, &NetworkManager::connectionStatusChanged,
             this, &AuthController::onConnectionStatusChanged);
+}
+
+QString AuthController::getSessionUsername() const {
+    return sessionUsername;
+}
+
+QByteArray AuthController::getSessionSecretKey() const {
+    return sessionSecretKey;
+}
+
+QByteArray AuthController::getSessionKek() const {
+    return sessionKek;
+}
+
+void AuthController::updateSessionUsername(const QString &newUsername)
+{
+    sessionUsername = newUsername;
+    emit loggedIn(sessionUsername);
 }
 
 void AuthController::signup(const QString &username, const QString &password)
@@ -122,7 +135,6 @@ void AuthController::onSignupResult(bool success, const QString &message) {
         // immediately trigger the usual login flow
         Logger::log("Auto-logging in after signup …");
         login(pendingUsername, pendingPassword);
-        // (you can clear pendingUsername/password in onLoginResult)
     }
 
     emit signupResult(success, message);
@@ -163,84 +175,10 @@ void AuthController::onLoginResult(bool success, const QString &message)
     emit loginResult(success, message);
 }
 
-void AuthController::changeUsername(const QString &newUsername)
-{
-    if (sessionUsername.isEmpty()) {
-        emit changeUsernameResult(false, "Not logged in");
-        return;
-    }
-    pendingNewUsername = newUsername;
-    networkManager->requestChallenge(sessionUsername, "change_username");
-}
-
-void AuthController::changePassword(const QString &newPassword)
-{
-    if (sessionUsername.isEmpty()) {
-        emit changePasswordResult(false, "Not logged in");
-        return;
-    }
-    // generate new salt
-    pendingSalt = QByteArray(16, 0);
-    randombytes_buf(reinterpret_cast<unsigned char*>(pendingSalt.data()), pendingSalt.size());
-    pendingOpsLimit = crypto_pwhash_OPSLIMIT_MODERATE;
-    pendingMemLimit = crypto_pwhash_MEMLIMIT_MODERATE;
-
-    // derive new PDK & re-encrypt keys
-    QByteArray newPdk = CryptoUtils::derivePDK(newPassword, pendingSalt, pendingOpsLimit, pendingMemLimit);
-    pendingEncryptedSK = CryptoUtils::encryptSecretKey(sessionSecretKey, newPdk, pendingPrivKeyNonce);
-    pendingEncryptedKek = CryptoUtils::encryptSecretKey(sessionKek, newPdk, pendingKekNonce);
-
-    networkManager->requestChallenge(sessionUsername, "change_password");
-}
-
-void AuthController::uploadFile(const QString &filename, const QString &fileContents)
-{
-    if (sessionUsername.isEmpty()) {
-        emit uploadFileResult(false, "Not logged in");
-        return;
-    }
-    pendingFileName = filename;
-    pendingFileContents = fileContents;
-    networkManager->requestChallenge(sessionUsername, "upload_file");
-}
-
-void AuthController::listFiles()
-{
-    if (sessionUsername.isEmpty()) {
-        emit listFilesResult(false, {}, "Not logged in");
-        return;
-    }
-    networkManager->requestChallenge(sessionUsername, "list_files");
-}
-
-void AuthController::downloadFile(const QString &filename)
-{
-    if (sessionUsername.isEmpty()) {
-        emit downloadFileResult(false, filename, {}, "Not logged in");
-        return;
-    }
-    selectedFilename = filename;
-    networkManager->requestChallenge(sessionUsername, "download_file");
-}
-
-void AuthController::deleteFile(const QString &filename)
-{
-    if (sessionUsername.isEmpty()) {
-        emit deleteFileResult(false, "Not logged in");
-        return;
-    }
-    selectedFilename = filename;
-    networkManager->requestChallenge(sessionUsername, "delete_file");
-}
-
 void AuthController::onChallengeReceived(const QByteArray &nonce,
                                          const QString &operation)
 {
-    if (operation == "change_username") {
-        processChangeUsername(nonce);
-    } else if (operation == "change_password") {
-        processChangePassword(nonce);
-    } else if (operation == "upload_file") {
+    if (operation == "upload_file") {
         processUploadFile(nonce);
     } else if (operation == "list_files") {
         processListFiles(nonce);
@@ -251,36 +189,6 @@ void AuthController::onChallengeReceived(const QByteArray &nonce,
     } else {
         Logger::log("Unknown operation: " + operation);
     }
-}
-
-void AuthController::processChangeUsername(const QByteArray &nonce)
-{
-    QByteArray sig = CryptoUtils::signMessage(pendingNewUsername.toUtf8(), sessionSecretKey);
-    QJsonObject req{
-        { "username", sessionUsername },
-        { "new_username", pendingNewUsername },
-        { "nonce", QString::fromUtf8(nonce.toBase64()) },
-        { "signature", QString::fromUtf8(sig.toBase64()) }
-    };
-    networkManager->changeUsername(req);
-}
-
-void AuthController::processChangePassword(const QByteArray &nonce)
-{
-    QByteArray sig = CryptoUtils::signMessage(pendingEncryptedSK, sessionSecretKey);
-    QJsonObject req{
-        { "username", sessionUsername },
-        { "salt", QString::fromUtf8(pendingSalt.toBase64()) },
-        { "argon2_opslimit", int(pendingOpsLimit) },
-        { "argon2_memlimit", int(pendingMemLimit) },
-        { "encrypted_privkey", QString::fromUtf8(pendingEncryptedSK.toBase64()) },
-        { "privkey_nonce", QString::fromUtf8(pendingPrivKeyNonce.toBase64()) },
-        { "encrypted_kek", QString::fromUtf8(pendingEncryptedKek.toBase64()) },
-        { "kek_nonce", QString::fromUtf8(pendingKekNonce.toBase64()) },
-        { "nonce", QString::fromUtf8(nonce.toBase64()) },
-        { "signature", QString::fromUtf8(sig.toBase64()) }
-    };
-    networkManager->changePassword(req);
 }
 
 void AuthController::processUploadFile(const QByteArray &nonce)
@@ -352,18 +260,6 @@ void AuthController::processDeleteFile(const QByteArray &nonce)
     networkManager->deleteFile(req);
 }
 
-void AuthController::onChangeUsernameNetwork(bool success, const QString &message)
-{
-    if (success) sessionUsername = pendingNewUsername;
-    pendingNewUsername.clear();
-    emit changeUsernameResult(success, message);
-}
-
-void AuthController::onChangePasswordNetwork(bool success, const QString &message)
-{
-    emit changePasswordResult(success, message);
-}
-
 void AuthController::onUploadFileNetwork(bool success, const QString &message)
 {
     pendingFileContents.clear();
@@ -411,4 +307,24 @@ void AuthController::onConnectionStatusChanged(bool online)
 void AuthController::checkConnection()
 {
     networkManager->checkConnection();
+}
+
+void AuthController::uploadFile(const QString &filename, const QString &fileContents) {
+    pendingFileName     = filename;
+    pendingFileContents = fileContents.toUtf8();   // or store as QString if you prefer
+    networkManager->requestChallenge(sessionUsername, "upload_file");
+}
+
+void AuthController::listFiles() {
+    networkManager->requestChallenge(sessionUsername, "list_files");
+}
+
+void AuthController::downloadFile(const QString &filename) {
+    selectedFilename = filename;
+    networkManager->requestChallenge(sessionUsername, "download_file");
+}
+
+void AuthController::deleteFile(const QString &filename) {
+    selectedFilename = filename;
+    networkManager->requestChallenge(sessionUsername, "delete_file");
 }
