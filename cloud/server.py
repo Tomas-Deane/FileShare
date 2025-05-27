@@ -23,6 +23,7 @@ from schemas import (
     DownloadFileRequest,
     DeleteFileRequest,
     GetOPKRequest,
+    AddOPKsRequest,
     RemoveSharedFileRequest,
     ListSharedFilesRequest,
     ShareFileRequest,
