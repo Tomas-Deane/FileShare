@@ -10,11 +10,13 @@
 #include <QProgressBar>
 #include <QLabel>
 #include "passwordstrength.h"
+#include "icryptoservice.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
+class CryptoService;
 class AuthController;
 class ProfileController;
 class FileController;
@@ -25,17 +27,22 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    explicit MainWindow(QWidget *parent = nullptr);
+// Injected dependencies:
+    MainWindow(AuthController* authCtrl,
+                FileController* fileCtrl,
+                ProfileController* profileCtrl,
+                QWidget *parent = nullptr);
+
     ~MainWindow();
 
     enum TabIndex {
-        Home    = 0,
-        Signup  = 1,
-        Login   = 2,
-        Upload  = 3,
-        Download= 4,
-        Share   = 5,
-        Profile = 6
+        Home     = 0,
+        Signup   = 1,
+        Login    = 2,
+        Upload   = 3,
+        Download = 4,
+        Share    = 5,
+        Profile  = 6
     };
 
 private slots:
@@ -76,6 +83,7 @@ private:
     AuthController        *authController;
     ProfileController     *profileController;
     FileController        *fileController;
+    ICryptoService        *cryptoService;
     PasswordStrength       pwEvaluator;
 
     QString                currentUploadPath;
