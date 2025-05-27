@@ -1,28 +1,28 @@
 #include "authcontroller.h"
-#include "networkmanager.h"
 #include "logger.h"
 
 #include <sodium.h>
 #include <QJsonObject>
 #include <QJsonDocument>
 
-AuthController::AuthController(ICryptoService *cryptoService,
+AuthController::AuthController(INetworkManager *netMgr,
+                               ICryptoService *cryptoSvc,
                                QObject *parent)
     : QObject(parent)
-    , cryptoService(cryptoService)
-    , networkManager(new NetworkManager(this))
+    , cryptoService(cryptoSvc)
+    , networkManager(netMgr)
 {
-    connect(networkManager, &NetworkManager::signupResult,
+    connect(networkManager, &INetworkManager::signupResult,
             this, &AuthController::onSignupResult);
-    connect(networkManager, &NetworkManager::loginChallenge,
+    connect(networkManager, &INetworkManager::loginChallenge,
             this, &AuthController::onLoginChallenge);
-    connect(networkManager, &NetworkManager::loginResult,
+    connect(networkManager, &INetworkManager::loginResult,
             this, &AuthController::onLoginResult);
-    connect(networkManager, &NetworkManager::challengeResult,
+    connect(networkManager, &INetworkManager::challengeResult,
             this, &AuthController::onChallengeReceived);
-    connect(networkManager, &NetworkManager::connectionStatusChanged,
+    connect(networkManager, &INetworkManager::connectionStatusChanged,
             this, &AuthController::onConnectionStatusChanged);
-    connect(networkManager, &NetworkManager::networkError,
+    connect(networkManager, &INetworkManager::networkError,
             this, [=](const QString &e){ Logger::log("Network error: " + e); });
 }
 

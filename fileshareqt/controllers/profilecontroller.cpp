@@ -1,23 +1,22 @@
 #include "profilecontroller.h"
 #include "authcontroller.h"
-#include "networkmanager.h"
 #include <sodium.h>
 #include "logger.h"
 
-ProfileController::ProfileController(AuthController *authController,
-                                     ICryptoService *cryptoService,
-                                     QObject *parent)
+ProfileController::ProfileController(INetworkManager *netMgr,
+                                     AuthController  *authController,
+                                     ICryptoService  *cryptoService,
+                                     QObject         *parent)
     : QObject(parent)
+    , m_networkManager(netMgr)
     , m_authController(authController)
     , m_cryptoService(cryptoService)
 {
-    m_networkManager = new NetworkManager(this);
-
-    connect(m_networkManager, &NetworkManager::challengeResult,
+    connect(m_networkManager, &INetworkManager::challengeResult,
             this, &ProfileController::onChallengeReceived);
-    connect(m_networkManager, &NetworkManager::changeUsernameResult,
+    connect(m_networkManager, &INetworkManager::changeUsernameResult,
             this, &ProfileController::onChangeUsernameNetwork);
-    connect(m_networkManager, &NetworkManager::changePasswordResult,
+    connect(m_networkManager, &INetworkManager::changePasswordResult,
             this, &ProfileController::onChangePasswordNetwork);
 }
 
