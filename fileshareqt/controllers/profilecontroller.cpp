@@ -1,13 +1,15 @@
 #include "profilecontroller.h"
 #include "authcontroller.h"
 #include "networkmanager.h"
-#include "crypto_utils.h"
 #include <sodium.h>
-#include <QJsonObject>
+#include "logger.h"
 
-ProfileController::ProfileController(AuthController *authController, QObject *parent)
+ProfileController::ProfileController(AuthController *authController,
+                                     ICryptoService *cryptoService,
+                                     QObject *parent)
     : QObject(parent)
     , m_authController(authController)
+    , m_cryptoService(cryptoService)
 {
     m_networkManager = new NetworkManager(this);
 
@@ -46,15 +48,15 @@ void ProfileController::changePassword(const QString &newPassword)
     m_pendingOpsLimit = crypto_pwhash_OPSLIMIT_MODERATE;
     m_pendingMemLimit = crypto_pwhash_MEMLIMIT_MODERATE;
 
-    QByteArray newPdk = CryptoUtils::derivePDK(newPassword,
-                                               m_pendingSalt,
-                                               m_pendingOpsLimit,
-                                               m_pendingMemLimit);
-    m_pendingEncryptedSK = CryptoUtils::encryptSecretKey(
+    QByteArray newPdk = m_cryptoService->deriveKey(newPassword,
+                                                   m_pendingSalt,
+                                                   m_pendingOpsLimit,
+                                                   m_pendingMemLimit);
+    m_pendingEncryptedSK = m_cryptoService->encrypt(
         m_authController->getSessionSecretKey(),
         newPdk,
         m_pendingPrivKeyNonce);
-    m_pendingEncryptedKek = CryptoUtils::encryptSecretKey(
+    m_pendingEncryptedKek = m_cryptoService->encrypt(
         m_authController->getSessionKek(),
         newPdk,
         m_pendingKekNonce);
@@ -77,36 +79,36 @@ void ProfileController::onChallengeReceived(const QByteArray &nonce,
 
 void ProfileController::processChangeUsername(const QByteArray &nonce)
 {
-    QByteArray sig = CryptoUtils::signMessage(
+    QByteArray sig = m_cryptoService->sign(
         m_pendingNewUsername.toUtf8(),
         m_authController->getSessionSecretKey()
         );
     QJsonObject req{
-        { "username", m_authController->getSessionUsername() },
-        { "new_username", m_pendingNewUsername },
-        { "nonce", QString::fromUtf8(nonce.toBase64()) },
-        { "signature", QString::fromUtf8(sig.toBase64()) }
+        { "username",      m_authController->getSessionUsername() },
+        { "new_username",  m_pendingNewUsername },
+        { "nonce",         QString::fromUtf8(nonce.toBase64()) },
+        { "signature",     QString::fromUtf8(sig.toBase64()) }
     };
     m_networkManager->changeUsername(req);
 }
 
 void ProfileController::processChangePassword(const QByteArray &nonce)
 {
-    QByteArray sig = CryptoUtils::signMessage(
+    QByteArray sig = m_cryptoService->sign(
         m_pendingEncryptedSK,
         m_authController->getSessionSecretKey()
         );
     QJsonObject req{
-        { "username", m_authController->getSessionUsername() },
-        { "salt", QString::fromUtf8(m_pendingSalt.toBase64()) },
-        { "argon2_opslimit", int(m_pendingOpsLimit) },
-        { "argon2_memlimit", int(m_pendingMemLimit) },
+        { "username",          m_authController->getSessionUsername() },
+        { "salt",              QString::fromUtf8(m_pendingSalt.toBase64()) },
+        { "argon2_opslimit",   int(m_pendingOpsLimit) },
+        { "argon2_memlimit",   int(m_pendingMemLimit) },
         { "encrypted_privkey", QString::fromUtf8(m_pendingEncryptedSK.toBase64()) },
-        { "privkey_nonce", QString::fromUtf8(m_pendingPrivKeyNonce.toBase64()) },
-        { "encrypted_kek", QString::fromUtf8(m_pendingEncryptedKek.toBase64()) },
-        { "kek_nonce", QString::fromUtf8(m_pendingKekNonce.toBase64()) },
-        { "nonce", QString::fromUtf8(nonce.toBase64()) },
-        { "signature", QString::fromUtf8(sig.toBase64()) }
+        { "privkey_nonce",     QString::fromUtf8(m_pendingPrivKeyNonce.toBase64()) },
+        { "encrypted_kek",     QString::fromUtf8(m_pendingEncryptedKek.toBase64()) },
+        { "kek_nonce",         QString::fromUtf8(m_pendingKekNonce.toBase64()) },
+        { "nonce",             QString::fromUtf8(nonce.toBase64()) },
+        { "signature",         QString::fromUtf8(sig.toBase64()) }
     };
     m_networkManager->changePassword(req);
 }
