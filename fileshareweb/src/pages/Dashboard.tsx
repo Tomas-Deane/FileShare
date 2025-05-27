@@ -192,6 +192,7 @@ const Dashboard: React.FC = () => {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
 
   // Add a ref to track if we've already fetched files
   const isMounted = React.useRef(false);
@@ -738,6 +739,27 @@ const Dashboard: React.FC = () => {
     return await decryptKEK(dek, kek, dekNonce);
   };
 
+  // Drag and drop handlers
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      await handleFileUpload(file);
+    }
+  };
+
   return (
     <>
       <MatrixBackground />
@@ -1189,14 +1211,27 @@ const Dashboard: React.FC = () => {
         <DialogTitle sx={{ color: '#00ffff', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
           Upload File
         </DialogTitle>
-        <DialogContent sx={{ mt: 2 }}>
+        <DialogContent sx={{ mt: 2, p: 0 }}>
           <Box
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
             sx={{
+              width: 320,
+              height: 200,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
               border: '2px dashed rgba(0, 255, 0, 0.3)',
               borderRadius: 2,
-              p: 3,
               textAlign: 'center',
               cursor: 'pointer',
+              backgroundColor: dragActive ? 'rgba(0, 255, 0, 0.1)' : 'transparent',
+              transition: 'background 0.2s',
+              mx: 'auto',
+              my: 2,
               '&:hover': {
                 border: '2px dashed rgba(0, 255, 0, 0.5)',
                 backgroundColor: 'rgba(0, 255, 0, 0.05)',
