@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "authcontroller.h"
+#include "profilecontroller.h"
 #include "logger.h"
 
 #include <sodium.h>
@@ -18,6 +19,8 @@ MainWindow::MainWindow(QWidget *parent)
     , pendingDeleteItem(nullptr)
 {
     ui->setupUi(this);
+
+    profileController = new ProfileController(authController, this);
 
     // Only refresh list when entering the Download tab, clear previews on leave
     connect(ui->tabWidget, &QTabWidget::currentChanged,
@@ -44,10 +47,12 @@ MainWindow::MainWindow(QWidget *parent)
             this, &MainWindow::handleLoggedIn);
     connect(authController, &AuthController::loggedOut,
             this, &MainWindow::handleLoggedOut);
-    connect(authController, &AuthController::changeUsernameResult,
+
+    connect(profileController, &ProfileController::changeUsernameResult,
             this, &MainWindow::onChangeUsernameResult);
-    connect(authController, &AuthController::changePasswordResult,
+    connect(profileController, &ProfileController::changePasswordResult,
             this, &MainWindow::onChangePasswordResult);
+
     connect(authController, &AuthController::uploadFileResult,
             this, &MainWindow::onUploadFileResult);
     connect(authController, &AuthController::listFilesResult,
@@ -62,16 +67,12 @@ MainWindow::MainWindow(QWidget *parent)
         authController->checkConnection();
     });
 
+    // Signup PW‐strength bar
     ui->passwordStrengthBar->setRange(0,100);
-    // start empty
     ui->passwordStrengthBar->setValue(0);
     ui->passwordStrengthLabel->setText("Too weak");
-
     ui->passwordStrengthBar->setFixedHeight(20);
-    // Hide the built-in percentage/text
     ui->passwordStrengthBar->setTextVisible(false);
-
-    // Apply the same base stylesheet up-front
     ui->passwordStrengthBar->setStyleSheet(R"(
         QProgressBar {
             border: 1px solid #555;
@@ -79,11 +80,12 @@ MainWindow::MainWindow(QWidget *parent)
             background: #333;
         }
         QProgressBar::chunk {
-            background-color: #39ff14;  /* default to green */
+            background-color: #39ff14;
             width: 10px;
         }
     )");
 
+    // Profile tab PW‐strength bar
     ui->passwordStrengthBar_2->setRange(0,100);
     ui->passwordStrengthBar_2->setValue(0);
     ui->passwordStrengthLabel_2->setText("Too weak");
@@ -101,7 +103,7 @@ MainWindow::MainWindow(QWidget *parent)
         }
     )");
 
-    // Wire the Profile‐tab QLineEdit → strength slot
+    // Wire the Profile‐tab password‐strength update
     connect(ui->changePasswordLineEdit, &QLineEdit::textChanged,
             this, &MainWindow::on_changePasswordLineEdit_textChanged);
 }
@@ -115,13 +117,11 @@ MainWindow::~MainWindow()
 void MainWindow::on_signupButton_clicked()
 {
     QString pwd = ui->signupPasswordLineEdit->text();
-    // Enforce OWASP minimum length (8 chars); abort on too weak
     QString reason;
     if (!pwEvaluator.isAcceptable(pwd, &reason)) {
         Logger::log("Signup aborted: " + reason);
         return;
     }
-    // Otherwise proceed
     authController->signup(
         ui->signupUsernameLineEdit->text(),
         pwd
@@ -159,12 +159,12 @@ void MainWindow::handleLoggedOut()
 
 void MainWindow::on_changeUsernameButton_clicked()
 {
-    authController->changeUsername(ui->changeUsernameLineEdit->text());
+    profileController->changeUsername(ui->changeUsernameLineEdit->text());
 }
 
 void MainWindow::on_changePasswordButton_clicked()
 {
-    authController->changePassword(ui->changePasswordLineEdit->text());
+    profileController->changePassword(ui->changePasswordLineEdit->text());
 }
 
 void MainWindow::onChangeUsernameResult(bool success, const QString &message)
@@ -185,7 +185,6 @@ void MainWindow::onUploadFileResult(bool success, const QString &message)
 {
     if (success) {
         Logger::log("File uploaded successfully");
-        // don't auto-refresh list here anymore
     } else {
         Logger::log("File upload failed: " + message);
     }
@@ -271,11 +270,7 @@ void MainWindow::on_downloadFileList_itemSelectionChanged()
 {
     auto item = ui->downloadFileList->currentItem();
     bool hasOne = (item != nullptr);
-
-    // ← Enable/disable the Delete button
     ui->deleteButton->setEnabled(hasOne);
-
-    // ← If nothing’s selected, *clear* everything and bail
     if (!item) {
         ui->downloadFileNameLabel->setText("No file selected");
         ui->downloadFileTypeLabel->setText("-");
@@ -285,8 +280,6 @@ void MainWindow::on_downloadFileList_itemSelectionChanged()
         ui->downloadPreviewStack->setCurrentIndex(0);
         return;
     }
-
-    // ← Otherwise update labels *before* fetching
     const QString name = item->text();
     ui->downloadFileNameLabel->setText(name);
     ui->downloadFileTypeLabel->setText(QFileInfo(name).suffix());
@@ -296,8 +289,6 @@ void MainWindow::on_downloadFileList_itemSelectionChanged()
         authController->downloadFile(name);
         return;
     }
-
-    // We have the data — show it
     QMimeDatabase db;
     auto mime = db.mimeTypeForFile(name);
     if (mime.name().startsWith("text/")) {
@@ -320,7 +311,6 @@ void MainWindow::on_downloadFileList_itemSelectionChanged()
     }
 }
 
-
 void MainWindow::onDownloadFileResult(bool success,
                                       const QString &filename,
                                       const QByteArray &data,
@@ -332,7 +322,6 @@ void MainWindow::onDownloadFileResult(bool success,
     }
 
     downloadCache.insert(filename, data);
-
     auto item = ui->downloadFileList->currentItem();
     if (item && item->text() == filename) {
         on_downloadFileList_itemSelectionChanged();
@@ -353,7 +342,6 @@ void MainWindow::on_downloadFileButton_clicked()
         return;
     }
 
-    // Ask the user where to save
     QString path = QFileDialog::getSaveFileName(this,
                                                 tr("Save File As"), filename);
     if (path.isEmpty()) return;
@@ -370,7 +358,6 @@ void MainWindow::on_downloadFileButton_clicked()
 
 void MainWindow::on_deleteButton_clicked()
 {
-    // capture the exact item the user clicked on
     QListWidgetItem *item = ui->downloadFileList->currentItem();
     if (!item) return;
     pendingDeleteItem = item;
@@ -379,38 +366,27 @@ void MainWindow::on_deleteButton_clicked()
 
 void MainWindow::onDeleteFileResult(bool success, const QString &message)
 {
-    // ← bail out *immediately* on failure
     if (!success) {
         Logger::log("Failed to delete file: " + message);
         return;
     }
-
     if (pendingDeleteItem) {
         int row = ui->downloadFileList->row(pendingDeleteItem);
-
-        // ← block signals so we don’t re-enter selectionChanged
         ui->downloadFileList->blockSignals(true);
         delete ui->downloadFileList->takeItem(row);
         ui->downloadFileList->blockSignals(false);
-
         pendingDeleteItem = nullptr;
     }
-
-    // ← clear the selection and disable the Delete button
     ui->downloadFileList->setCurrentItem(nullptr);
     ui->deleteButton->setEnabled(false);
-
-    // ← reset labels/previews
     ui->downloadFileNameLabel->setText("No file selected");
     ui->downloadFileTypeLabel->setText("-");
     ui->downloadPreviewStack->setCurrentIndex(0);
-
     Logger::log("File deleted successfully");
 }
 
 void MainWindow::on_tabWidget_currentChanged(int index)
 {
-    // Updated Upload and Download indices
     constexpr int uploadIndex   = MainWindow::Upload;
     constexpr int downloadIndex = MainWindow::Download;
 
@@ -430,10 +406,8 @@ void MainWindow::on_tabWidget_currentChanged(int index)
         ui->downloadImagePreview->clear();
         ui->downloadImagePreview->setText(tr("No Image File Selected"));
         ui->downloadPreviewStack->setCurrentIndex(0);
-
         authController->listFiles();
     }
-
     else {
         ui->downloadTextPreview->clear();
         ui->downloadImagePreview->clear();

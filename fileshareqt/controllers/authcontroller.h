@@ -19,9 +19,6 @@ public:
     Q_INVOKABLE void login(const QString &username, const QString &password);
     Q_INVOKABLE void logout();
 
-    // New operations
-    Q_INVOKABLE void changeUsername(const QString &newUsername);
-    Q_INVOKABLE void changePassword(const QString &newPassword);
     Q_INVOKABLE void uploadFile(const QString &filename, const QString &fileContents);
     Q_INVOKABLE void listFiles();
     Q_INVOKABLE void downloadFile(const QString &filename);
@@ -30,22 +27,23 @@ public:
     // Expose ping/check
     Q_INVOKABLE void checkConnection();
 
+    // Accessors for session data (used by ProfileController)
+    QString getSessionUsername() const;
+    QByteArray getSessionSecretKey() const;
+    QByteArray getSessionKek() const;
+
+public slots:
+    void updateSessionUsername(const QString &newUsername);
+
 signals:
     void signupResult(bool success, const QString &message);
     void loginResult(bool success, const QString &message);
     void loggedIn(const QString &username);
     void loggedOut();
 
-    // Results for change operations
-    void changeUsernameResult(bool success, const QString &message);
-    void changePasswordResult(bool success, const QString &message);
     void uploadFileResult(bool success, const QString &message);
-
-    // Results for new download/list operations
     void listFilesResult(bool success, const QStringList &files, const QString &message);
     void downloadFileResult(bool success, const QString &filename, const QByteArray &data, const QString &message);
-
-    // Delete result
     void deleteFileResult(bool success, const QString &message);
 
     // Forwarded connection status
@@ -66,17 +64,11 @@ private slots:
         );
     void onLoginResult(bool success, const QString &message);
 
-    // Handle server‐side generic challenge
     void onChallengeReceived(const QByteArray &nonce, const QString &operation);
 
     void onConnectionStatusChanged(bool online);
 
-    // After sending change requests
-    void onChangeUsernameNetwork(bool success, const QString &message);
-    void onChangePasswordNetwork(bool success, const QString &message);
     void onUploadFileNetwork(bool success, const QString &message);
-
-    // New network callbacks
     void onListFilesNetwork(bool success, const QStringList &files, const QString &message);
     void onDownloadFileNetwork(bool success,
                                const QString &encryptedFileB64,
@@ -103,24 +95,10 @@ private:
     QByteArray sessionPdk;
     QByteArray sessionKek;
 
-    // For change‐username
-    QString pendingNewUsername;
-
-    // For change‐password
-    QByteArray pendingSalt;
-    quint64   pendingOpsLimit;
-    quint64   pendingMemLimit;
-    QByteArray pendingEncryptedSK;
-    QByteArray pendingPrivKeyNonce;
-    QByteArray pendingEncryptedKek;
-    QByteArray pendingKekNonce;
-
     // For download/delete
     QString selectedFilename;
 
-    // Challenge processors
-    void processChangeUsername(const QByteArray &nonce);
-    void processChangePassword(const QByteArray &nonce);
+    // Challenge processors for other operations
     void processUploadFile(const QByteArray &nonce);
     void processListFiles(const QByteArray &nonce);
     void processDownloadFile(const QByteArray &nonce);
