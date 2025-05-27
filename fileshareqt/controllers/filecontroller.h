@@ -7,18 +7,19 @@
 #include <QMap>
 #include <QByteArray>
 #include <QJsonObject>
+#include "icryptoservice.h"
 
-#include "networkmanager.h"
-#include "authcontroller.h"
+class NetworkManager;
+class AuthController;
 
 class FileController : public QObject
 {
     Q_OBJECT
 
 public:
-    // Now also take an AuthController* so we can get the real username
     explicit FileController(NetworkManager *networkManager,
                             AuthController *authController,
+                            ICryptoService *cryptoService,
                             QObject *parent = nullptr);
 
     Q_INVOKABLE void uploadFile(const QString &filename, const QByteArray &base64Contents);
@@ -26,7 +27,6 @@ public:
     Q_INVOKABLE void downloadFile(const QString &filename);
     Q_INVOKABLE void deleteFile(const QString &filename);
 
-    // Access to client‐side cache if needed
     const QMap<QString, QByteArray>& downloadCache() const { return m_downloadCache; }
 
 signals:
@@ -50,8 +50,9 @@ private slots:
 private:
     NetworkManager   *m_networkManager;
     AuthController   *m_authController;
+    ICryptoService   *m_cryptoService;
     QString            m_pendingFileName;
-    QByteArray         m_pendingFileContents; // already base64‐encoded
+    QByteArray         m_pendingFileContents;
     QString            m_selectedDownload;
     QMap<QString, QByteArray> m_downloadCache;
 
@@ -60,8 +61,7 @@ private:
     void processDownload(const QByteArray &nonce);
     void processDelete(const QByteArray &nonce);
 
-    // helper to get current username
-    QString currentUsername() const { return m_authController->getSessionUsername(); }
+    QString currentUsername() const;
 };
 
 #endif // FILECONTROLLER_H
