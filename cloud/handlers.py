@@ -15,12 +15,7 @@ from schemas import (
     ListFilesRequest,
     DownloadFileRequest,
     DeleteFileRequest,
-    PreKeyBundleRequest,
-    GetOPKRequest,
-    ShareFileRequest,
-    RemoveSharedFileRequest,
-    ListSharedFilesRequest,
-    AddOPKsRequest,
+    BackupTOFURequest,
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
@@ -72,8 +67,7 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
         logging.warning(f"User '{req.username}' already exists")
         raise HTTPException(status_code=400, detail="User already exists")
 
-    # Add the user first
-    user_id = db.add_user(
+    db.add_user(
         req.username,
         base64.b64decode(req.salt),
         req.argon2_opslimit,
@@ -85,18 +79,7 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
         base64.b64decode(req.kek_nonce)
     )
 
-    # Add the pre-key bundle
-    db.add_pre_key_bundle(user_id,
-        base64.b64decode(req.identity_key),
-        base64.b64decode(req.signed_pre_key), 
-        base64.b64decode(req.signed_pre_key_sig)
-    )
-
-    # Add the one-time pre-keys
-    pre_keys = [base64.b64decode(pk) for pk in req.one_time_pre_keys]
-    db.add_opks(user_id, pre_keys)
-
-    logging.info(f"Signup successful for '{req.username}' with {len(pre_keys)} OPKs")
+    logging.info(f"Signup successful for '{req.username}'")
     return {"status": "ok"}
 
 # --- AUTHENTICATE (LOGIN COMPLETE) --------------------------------------
@@ -321,19 +304,17 @@ def delete_file_handler(req: DeleteFileRequest, db: models.UserDB):
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
-# --- PREKEY BUNDLE ------------------------------------------------------
-def prekey_bundle_handler(req: PreKeyBundleRequest, db: models.UserDB):
-    logging.debug(f"PreKeyBundle: {req.model_dump_json()}")
+# --- BACKUP TOFU KEYS ------------------------------------------------------
+def backup_tofu_keys_handler(req: BackupTOFURequest, db: models.UserDB):
+    logging.debug(f"BackupTOFU: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
-        logging.warning(f"Unknown user '{req.username}' at prekey_bundle")
         raise HTTPException(status_code=404, detail="Unknown user")
 
     user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(user_id, "prekey_bundle")
+    stored = db.get_pending_challenge(user_id, "backup_tofu")
     if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (prekey_bundle)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
 
     signature = base64.b64decode(req.signature)
@@ -341,243 +322,18 @@ def prekey_bundle_handler(req: PreKeyBundleRequest, db: models.UserDB):
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, provided)
         
-        bundle = db.get_pre_key_bundle(user_id)
-        if not bundle:
-            raise HTTPException(status_code=404, detail="No prekey bundle found")
-            
-        db.delete_challenge(user_id)
-        return {
-            "status": "ok",
-            "IK_pub": base64.b64encode(bundle["IK_pub"]).decode(),
-            "SPK_pub": base64.b64encode(bundle["SPK_pub"]).decode(),
-            "SPK_signature": base64.b64encode(bundle["SPK_signature"]).decode()
-        }
-    except InvalidSignature:
-        logging.warning(f"Bad signature for prekey_bundle of user_id={user_id}")
-        db.delete_challenge(user_id)
-        raise HTTPException(status_code=401, detail="Bad signature")
-
-# --- ADD PREKEY BUNDLE -------------------------------------------------- 
-def add_prekey_bundle_handler(req: PreKeyBundleRequest, db: models.UserDB):
-    logging.debug(f"Add PreKeyBundle: {req.model_dump_json()}")
-    user = db.get_user(req.username)
-    if not user:
-        logging.warning(f"Unknown user '{req.username}' at add_prekey_bundle")
-        raise HTTPException(status_code=404, detail="Unknown user")
-
-    user_id = user["user_id"]
-    provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(user_id, "add_prekey_bundle")
-    if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (add_prekey_bundle)")
-        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
-
-    signature = base64.b64decode(req.signature)
-    try:
-        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
-            .verify(signature, provided)
-
-        db.add_pre_key_bundle(user_id, 
-            base64.b64decode(req.IK_pub),
-            base64.b64decode(req.SPK_pub),
-            base64.b64decode(req.SPK_signature))
-            
-        db.delete_challenge(user_id)
-        return {
-            "status": "ok",
-            "message": "PreKey bundle added successfully"
-        }
-    except InvalidSignature:
-        logging.warning(f"Bad signature for add_prekey_bundle of user_id={user_id}")
-        db.delete_challenge(user_id)
-        raise HTTPException(status_code=401, detail="Bad signature")
-
-# --- GET OPK ------------------------------------------------------
-def opk_handler(req: GetOPKRequest, db: models.UserDB):
-    logging.debug(f"GetOPK: {req.model_dump_json()}")
-    user = db.get_user(req.username)
-    if not user:
-        logging.warning(f"Unknown user '{req.username}' at get_opk")
-        raise HTTPException(status_code=404, detail="Unknown user")
-
-    user_id = user["user_id"]
-    provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(user_id, "get_opk")
-    if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (get_opk)")
-        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
-
-    signature = base64.b64decode(req.signature)
-    try:
-        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
-            .verify(signature, provided)
-        
-        opk = db.get_unused_opk(user_id)
-        if not opk:
-            raise HTTPException(status_code=404, detail="No unused OPKs available")
-            
-        db.mark_opk_consumed(opk["id"])
-        db.delete_challenge(user_id)
-        return {
-            "status": "ok",
-            "opk_id": opk["id"],
-            "pre_key": base64.b64encode(opk["pre_key"]).decode()
-        }
-    except InvalidSignature:
-        logging.warning(f"Bad signature for get_opk of user_id={user_id}")
-        db.delete_challenge(user_id)
-        raise HTTPException(status_code=401, detail="Bad signature")
-    
-# --- ADD OPKS ------------------------------------------------------
-def add_opks_handler(req: AddOPKsRequest, db: models.UserDB):
-    logging.debug(f"AddOPKs: {req.model_dump_json()}")
-    user = db.get_user(req.username)
-    if not user:
-        logging.warning(f"Unknown user '{req.username}' at add_opks")
-        raise HTTPException(status_code=404, detail="Unknown user")
-
-    user_id = user["user_id"]
-    provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(user_id, "add_opks")
-    if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (add_opks)")
-        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
-
-    signature = base64.b64decode(req.signature)
-    try:
-        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
-            .verify(signature, provided)
-        
-        # Decode all pre-keys from base64
-        pre_keys = [base64.b64decode(pk) for pk in req.pre_keys]
-        
-        # Add the pre-keys to the database
-        db.add_opks(user_id, pre_keys)
-        
-        db.delete_challenge(user_id)
-        return {"status": "ok", "message": f"Added {len(pre_keys)} OPKs"}
-    except InvalidSignature:
-        logging.warning(f"Bad signature for add_opks of user_id={user_id}")
-        db.delete_challenge(user_id)
-        raise HTTPException(status_code=401, detail="Bad signature")
-    
-# --- SHARE FILE ------------------------------------------------------
-def share_file_handler(req: ShareFileRequest, db: models.UserDB):
-    logging.debug(f"ShareFile: {req.model_dump_json()}")
-    user = db.get_user(req.username)
-    if not user:
-        logging.warning(f"Unknown user '{req.username}' at share_file")
-        raise HTTPException(status_code=404, detail="Unknown user")
-
-    recipient = db.get_user(req.recipient_username)
-    if not recipient:
-        logging.warning(f"Unknown recipient '{req.recipient_username}' at share_file")
-        raise HTTPException(status_code=404, detail="Unknown recipient")
-
-    user_id = user["user_id"]
-    provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(user_id, "share_file")
-    if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (share_file)")
-        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
-
-    signature = base64.b64decode(req.signature)
-    try:
-        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
-            .verify(signature, req.filename.encode())
-        
-        # Get file_id for the file being shared
-        file_record = db.get_file(req.username, req.filename)
-        if not file_record:
-            raise HTTPException(status_code=404, detail="File not found")
-            
-        db.share_file(
-            file_record["id"],
-            recipient["user_id"],
-            base64.b64decode(req.EK_pub),
-            base64.b64decode(req.IK_pub)
+        # Store the encrypted backup
+        db.add_tofu_backup(
+            user_id,
+            "own_keys",
+            None,  # No target username for own keys
+            base64.b64decode(req.encrypted_backup),
+            base64.b64decode(req.backup_nonce)
         )
         
         db.delete_challenge(user_id)
-        return {"status": "ok", "message": "file shared"}
+        return {"status": "ok", "message": "TOFU backup stored"}
     except InvalidSignature:
-        logging.warning(f"Bad signature for share_file of user_id={user_id}")
-        db.delete_challenge(user_id)
-        raise HTTPException(status_code=401, detail="Bad signature")
-
-# --- REMOVE SHARED FILE ------------------------------------------------------
-def remove_shared_file_handler(req: RemoveSharedFileRequest, db: models.UserDB):
-    logging.debug(f"RemoveSharedFile: {req.model_dump_json()}")
-    user = db.get_user(req.username)
-    if not user:
-        logging.warning(f"Unknown user '{req.username}' at remove_shared_file")
-        raise HTTPException(status_code=404, detail="Unknown user")
-
-    user_id = user["user_id"]
-    provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(user_id, "remove_shared_file")
-    if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (remove_shared_file)")
-        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
-
-    signature = base64.b64decode(req.signature)
-    try:
-        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
-            .verify(signature, str(req.share_id).encode())
-        
-        # Verify the user has permission to remove this share
-        share = db.get_shared_file_details(req.share_id)
-        if not share:
-            raise HTTPException(status_code=404, detail="Share not found")
-            
-        # Only the file owner can remove shares
-        file_record = db.get_file(req.username, share["filename"])
-        if not file_record:
-            raise HTTPException(status_code=403, detail="Not authorized to remove this share")
-            
-        db.remove_shared_file(req.share_id)
-        db.delete_challenge(user_id)
-        return {"status": "ok", "message": "share removed"}
-    except InvalidSignature:
-        logging.warning(f"Bad signature for remove_shared_file of user_id={user_id}")
-        db.delete_challenge(user_id)
-        raise HTTPException(status_code=401, detail="Bad signature")
-
-# --- LIST SHARED FILES ------------------------------------------------------
-def list_shared_files_handler(req: ListSharedFilesRequest, db: models.UserDB):
-    logging.debug(f"ListSharedFiles: {req.model_dump_json()}")
-    user = db.get_user(req.username)
-    if not user:
-        logging.warning(f"Unknown user '{req.username}' at list_shared_files")
-        raise HTTPException(status_code=404, detail="Unknown user")
-
-    user_id = user["user_id"]
-    provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(user_id, "list_shared_files")
-    if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (list_shared_files)")
-        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
-
-    signature = base64.b64decode(req.signature)
-    try:
-        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
-            .verify(signature, provided)
-        
-        shared_files = db.get_shared_files(user_id)
-        db.delete_challenge(user_id)
-        return {
-            "status": "ok",
-            "files": [{
-                "share_id": f["share_id"],
-                "file_id": f["file_id"],
-                "filename": f["filename"],
-                "EK_pub": base64.b64encode(f["EK_pub"]).decode(),
-                "IK_pub": base64.b64encode(f["IK_pub"]).decode(),
-                "shared_at": f["shared_at"].isoformat()
-            } for f in shared_files]
-        }
-    except InvalidSignature:
-        logging.warning(f"Bad signature for list_shared_files of user_id={user_id}")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
