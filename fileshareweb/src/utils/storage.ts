@@ -12,6 +12,9 @@ interface KeyBundle {
     SPK_pub: string;
     SPK_signature: string;
     OPKs: string[];
+    IK_priv?: string;
+    SPK_priv?: string;
+    OPKs_priv?: string[];
     verified: boolean;  // TOFU verification status
     lastVerified: string; // ISO timestamp of last verification
 }
