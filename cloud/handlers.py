@@ -16,6 +16,7 @@ from schemas import (
     DownloadFileRequest,
     DeleteFileRequest,
     BackupTOFURequest,
+    GetBackupTOFURequest,
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
@@ -333,6 +334,37 @@ def backup_tofu_keys_handler(req: BackupTOFURequest, db: models.UserDB):
         
         db.delete_challenge(user_id)
         return {"status": "ok", "message": "TOFU backup stored"}
+    except InvalidSignature:
+        db.delete_challenge(user_id)
+        raise HTTPException(status_code=401, detail="Bad signature")
+
+# --- GET BACKUP TOFU KEYS ------------------------------------------------------
+def get_backup_tofu_keys_handler(req: GetBackupTOFURequest, db: models.UserDB):
+    logging.debug(f"GetBackupTOFU: {req.model_dump_json()}")
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="Unknown user")
+
+    user_id = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(user_id, "get_backup_tofu")
+    if stored is None or provided != stored:
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+
+    signature = base64.b64decode(req.signature)
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(signature, provided)
+        
+        backup = db.get_tofu_backup(user_id, "own_keys")
+        if not backup:
+            raise HTTPException(status_code=404, detail="No TOFU backup found")
+        
+        return {
+            "status": "ok",
+            "encrypted_backup": base64.b64encode(backup["encrypted_data"]).decode(),
+            "backup_nonce": base64.b64encode(backup["backup_nonce"]).decode()
+        }
     except InvalidSignature:
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
