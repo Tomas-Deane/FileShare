@@ -18,6 +18,9 @@ import { MatrixBackground } from '../components';
 import { apiClient } from '../utils/apiClient';
 import { signChallenge, decryptPrivateKey, derivePDK, decryptKEK, CryptoError } from '../utils/crypto';
 import { useAuth } from '../contexts/AuthContext';
+import { sodium } from '../utils/sodium';
+import { base64 } from '../utils/base64';
+import { storage } from '../utils/storage';
 
 interface LoginChallenge {
   status: string;
@@ -35,6 +38,19 @@ interface LoginChallenge {
 interface LoginResponse {
   status: string;
   message?: string;
+  detail?: string;
+}
+
+interface ChallengeResponse {
+  status: string;
+  nonce: string;
+  detail?: string;
+}
+
+interface GetBackupTOFUResponse {
+  status: string;
+  encrypted_backup: string;
+  backup_nonce: string;
   detail?: string;
 }
 
@@ -121,11 +137,63 @@ const Login: React.FC = () => {
       const nonce = Uint8Array.from(atob(challengeResponse.privkey_nonce), c => c.charCodeAt(0));
       const privateKey = await decryptPrivateKey(encryptedPrivateKey, pdk, nonce);
 
-      console.log('Signing challenge...');
-      const challenge = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+      // Step 3: Get challenge for TOFU backup
+      console.log('Requesting TOFU backup challenge...');
+      const tofuChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username: trimmedUsername,
+        operation: 'get_backup_tofu'
+      });
+
+      // Step 4: Sign and request TOFU backup
+      console.log('Signing TOFU challenge...');
+      const tofuSignature = sodium.crypto_sign_detached(
+        base64.toByteArray(tofuChallengeResponse.nonce),
+        privateKey
+      );
+
+      console.log('Retrieving TOFU backup...');
+      const tofuBackupResponse = await apiClient.post<GetBackupTOFUResponse>('/get_backup_tofu_keys', {
+        username: trimmedUsername,
+        nonce: tofuChallengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(tofuSignature)))
+      });
+
+      // Step 5: Decrypt TOFU backup
+      console.log('Decrypting TOFU backup...');
+      const backupKey = await derivePDK(formData.password, salt, 3, 67108864);
+      const encryptedBackup = Uint8Array.from(atob(tofuBackupResponse.encrypted_backup), c => c.charCodeAt(0));
+      const backupNonce = Uint8Array.from(atob(tofuBackupResponse.backup_nonce), c => c.charCodeAt(0));
+      
+      const decryptedBackup = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
+        null,
+        encryptedBackup,
+        null,
+        backupNonce,
+        backupKey
+      );
+
+      const backupData = JSON.parse(new TextDecoder().decode(decryptedBackup));
+
+      // Step 6: Verify and save TOFU keys
+      console.log('Verifying TOFU keys...');
+      const tofuKeys = {
+        username: trimmedUsername,
+        IK_pub: backupData.identityKey,
+        SPK_pub: backupData.signedPreKey,
+        SPK_signature: backupData.signedPreKeySig,
+        OPKs: backupData.oneTimePreKeys,
+        verified: true,
+        lastVerified: new Date().toISOString()
+      };
+
+      // Save verified TOFU keys
+      storage.saveKeyBundle(tofuKeys);
+      storage.setCurrentUser(trimmedUsername);
+
+      // Step 7: Complete authentication
+      console.log('Signing login challenge...');
       const signature = await signChallenge(challenge, privateKey);
 
-      // Step 3: Authenticate with signed challenge
       console.log('Authenticating...');
       const authResponse = await apiClient.post<LoginResponse>('/authenticate', {
         username: trimmedUsername,

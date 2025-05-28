@@ -29,6 +29,7 @@ from schemas import (
     ShareFileRequest,
     PreKeyBundleRequest,
     BackupTOFURequest,
+    GetBackupTOFURequest,
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -232,6 +233,13 @@ async def backup_tofu_keys(req: BackupTOFURequest, db: models.UserDB = Depends(g
     logger.debug(f"BackupTOFURequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.backup_tofu_keys_handler, req, db)
     logger.debug(f"BackupTOFU response: {resp}")
+    return resp
+
+@app.post("/get_backup_tofu_keys")
+async def get_backup_tofu_keys(req: GetBackupTOFURequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"GetBackupTOFURequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.get_backup_tofu_keys_handler, req, db)
+    logger.debug(f"GetBackupTOFU response: {resp}")
     return resp
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
