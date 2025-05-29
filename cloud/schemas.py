@@ -15,6 +15,10 @@ class SignupRequest(BaseModel):
     privkey_nonce: str
     encrypted_kek: str
     kek_nonce: str
+    identity_key: str  # X3DH IK_pub (base64)
+    signed_pre_key: str  # X3DH SPK_pub (base64)
+    signed_pre_key_sig: str  # X3DH SPK_signature (base64)
+    one_time_pre_keys: list[str]  # X3DH OPKs_pub (base64 list)
 
 
 class LoginRequest(BaseModel):
@@ -81,3 +85,94 @@ class DeleteFileRequest(BaseModel):
     filename: str
     nonce: str
     signature: str
+
+
+class PreKeyBundleRequest(BaseModel):
+    username: str
+    nonce: str
+    signature: str
+    IK_pub: str
+    SPK_pub: str
+    SPK_signature: str
+
+
+class PreKeyBundleResponse(BaseModel):
+    IK_pub: str
+    SPK_pub: str
+    SPK_signature: str
+
+
+class AddOPKsRequest(BaseModel):
+    username: str
+    pre_keys: list[str]  # List of base64 encoded pre-keys
+    nonce: str
+    signature: str
+
+
+class GetOPKRequest(BaseModel):
+    username: str
+    nonce: str
+    signature: str
+
+
+class OPKResponse(BaseModel):
+    opk_id: int
+    pre_key: str
+
+
+class ShareFileRequest(BaseModel):
+    username: str
+    filename: str
+    recipient_username: str
+    EK_pub: str
+    IK_pub: str
+    nonce: str
+    signature: str
+
+
+class ListSharedFilesRequest(BaseModel):
+    username: str
+    nonce: str
+    signature: str
+
+
+class SharedFileResponse(BaseModel):
+    share_id: int
+    file_id: int
+    filename: str
+    EK_pub: str
+    IK_pub: str
+    shared_at: str
+
+
+class RemoveSharedFileRequest(BaseModel):
+    username: str
+    share_id: int
+    nonce: str
+    signature: str
+    
+class AddOPKsRequest(BaseModel):    
+    username: str
+    pre_keys: list[str]
+    nonce: str
+    signature: str
+
+
+class BackupTOFURequest(BaseModel):
+    username: str
+    encrypted_backup: str
+    backup_nonce: str
+    nonce: str
+    signature: str
+
+
+class GetBackupTOFURequest(BaseModel):
+    username: str
+    nonce: str
+    signature: str
+
+
+class GetBackupTOFUResponse(BaseModel):
+    status: str
+    encrypted_backup: str
+    backup_nonce: str
