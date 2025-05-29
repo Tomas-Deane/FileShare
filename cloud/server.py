@@ -31,6 +31,7 @@ from schemas import (
     AddPreKeyBundleRequest,
     BackupTOFURequest,
     GetBackupTOFURequest,
+    ListUsersRequest,
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -241,6 +242,13 @@ async def get_backup_tofu_keys(req: GetBackupTOFURequest, db: models.UserDB = De
     logger.debug(f"GetBackupTOFURequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.get_backup_tofu_keys_handler, req, db)
     logger.debug(f"GetBackupTOFU response: {resp}")
+    return resp
+
+@app.post("/list_users")
+async def list_users(req: ListUsersRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListUsersRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.list_users_handler, req, db)
+    logger.debug(f"ListUsers response: {resp}")
     return resp
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────

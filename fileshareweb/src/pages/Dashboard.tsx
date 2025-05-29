@@ -98,14 +98,11 @@ const mockSharedFiles = [
   { id: 8, name: 'meeting_minutes.txt', type: 'text', size: '0.6 MB', sharedBy: 'user5', date: new Date('2024-03-11T14:00:00') },
 ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
-const mockUsers = [
-  { id: 1, email: 'user1@example.com', verified: true },
-  { id: 2, email: 'user2@example.com', verified: true },
-  { id: 3, email: 'user3@example.com', verified: true },
-  { id: 4, email: 'user4@example.com', verified: true },
-  { id: 5, email: 'user5@example.com', verified: true },
-  { id: 6, email: 'user6@example.com', verified: true },
-];
+// Add interface for user data
+interface UserData {
+  id: number;
+  username: string;
+}
 
 // Update the ProfileData interface
 interface ProfileData {
@@ -193,6 +190,9 @@ const Dashboard: React.FC = () => {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [users, setUsers] = useState<UserData[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [userError, setUserError] = useState<string | null>(null);
 
   // Add a ref to track if we've already fetched files
   const isMounted = React.useRef(false);
@@ -202,11 +202,6 @@ const Dashboard: React.FC = () => {
   // Filter files based on search query
   const filteredFiles = mockFiles.filter(file => 
     file.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  // Filter users based on search query
-  const filteredUsers = mockUsers.filter(user =>
-    user.email.toLowerCase().includes(userSearchQuery.toLowerCase())
   );
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: 'home'|'files'|'users'|'profile') => setActiveTab(newValue);
@@ -760,6 +755,52 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // Add function to fetch users
+  const fetchUsers = async () => {
+    try {
+      setLoadingUsers(true);
+      setUserError(null);
+
+      // Step 1: Request challenge
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'list_users'
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+
+      // Step 2: Sign the nonce
+      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonce, secretKey!);
+
+      // Step 3: Get user list
+      const listResponse = await apiClient.post<{ status: string; users: UserData[] }>('/list_users', {
+        username,
+        nonce: challengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+      });
+
+      if (listResponse.status === 'ok') {
+        setUsers(listResponse.users);
+      } else {
+        throw new Error('Failed to list users');
+      }
+    } catch (err: any) {
+      setUserError(err.message || 'Failed to fetch users');
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  // Update useEffect to fetch users when needed
+  useEffect(() => {
+    if (activeTab === 'users' && username && secretKey) {
+      fetchUsers();
+    }
+  }, [activeTab, username, secretKey]);
+
   return (
     <>
       <MatrixBackground />
@@ -862,14 +903,13 @@ const Dashboard: React.FC = () => {
                 {/* Verified Users Section */}
                 <DashboardCard sx={{ mb: 3 }}>
                   <Typography variant="h6" sx={{ color: '#00ffff', mb: 2 }}>
-                    Verified Users
+                    Users
                   </Typography>
                   <Grid container spacing={2}>
-                    {mockUsers
-                      .filter((u) => u.verified)
+                    {users
                       .slice(0, 6)
-                      .map((u) => (
-                        <Grid item xs={4} sm={2} key={u.id}>
+                      .map((user) => (
+                        <Grid item xs={4} sm={2} key={user.id}>
                           <Paper
                             sx={{
                               p: 2,
@@ -877,11 +917,11 @@ const Dashboard: React.FC = () => {
                               background: 'rgba(0,0,0,0.6)',
                             }}
                           >
-                            <VerifiedUserIcon sx={{ fontSize: 32, color: '#00ff00' }} />
+                            <PersonIcon sx={{ fontSize: 32, color: '#00ff00' }} />
                             <Typography
                               sx={{ mt: 1, color: '#00ffff', fontSize: '0.875rem' }}
                             >
-                              {u.email}
+                              {user.username}
                             </Typography>
                           </Paper>
                         </Grid>
@@ -1032,7 +1072,7 @@ const Dashboard: React.FC = () => {
                       mb: 2,
                     }}
                   >
-                    User Verification
+                    Users
                   </Typography>
                   <SearchField
                     fullWidth
@@ -1048,50 +1088,48 @@ const Dashboard: React.FC = () => {
                     }}
                   />
                 </Box>
-                <List>
-                  {filteredUsers.map((user) => (
-                    <ListItem
-                      key={user.id}
-                      sx={{
-                        border: '1px solid rgba(0, 255, 0, 0.2)',
-                        borderRadius: 1,
-                        mb: 1,
-                        '&:hover': {
-                          border: '1px solid rgba(0, 255, 0, 0.4)',
-                          backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                        },
-                      }}
-                    >
-                      <ListItemIcon>
-                        {user.verified ? (
-                          <VerifiedUserIcon sx={{ color: '#00ff00' }} />
-                        ) : (
-                          <PersonIcon sx={{ color: 'rgba(0, 255, 0, 0.5)' }} />
-                        )}
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={user.email}
-                        secondary={user.verified ? 'Verified' : 'Not Verified'}
-                        primaryTypographyProps={{
-                          sx: { color: '#00ffff', fontWeight: 'bold' },
-                        }}
-                        secondaryTypographyProps={{
-                          sx: { color: user.verified ? '#00ff00' : 'rgba(0, 255, 0, 0.5)' },
-                        }}
-                      />
-                      {!user.verified && (
-                        <CyberButton
-                          size="small"
-                          startIcon={<VerifiedUserIcon />}
-                          onClick={() => handleVerifyClick(user)}
-                          sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+                {loadingUsers ? (
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography sx={{ color: '#00ff00' }}>Loading users...</Typography>
+                  </Box>
+                ) : userError ? (
+                  <Alert severity="error" sx={{ bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
+                    {userError}
+                  </Alert>
+                ) : users.length === 0 ? (
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography sx={{ color: '#00ff00' }}>No users found.</Typography>
+                  </Box>
+                ) : (
+                  <List>
+                    {users
+                      .filter(user => user.username.toLowerCase().includes(userSearchQuery.toLowerCase()))
+                      .map((user) => (
+                        <ListItem
+                          key={user.id}
+                          sx={{
+                            border: '1px solid rgba(0, 255, 0, 0.2)',
+                            borderRadius: 1,
+                            mb: 1,
+                            '&:hover': {
+                              border: '1px solid rgba(0, 255, 0, 0.4)',
+                              backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                            },
+                          }}
                         >
-                          Verify
-                        </CyberButton>
-                      )}
-                    </ListItem>
-                  ))}
-                </List>
+                          <ListItemIcon>
+                            <PersonIcon sx={{ color: '#00ff00' }} />
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={user.username}
+                            primaryTypographyProps={{
+                              sx: { color: '#00ffff', fontWeight: 'bold' },
+                            }}
+                          />
+                        </ListItem>
+                      ))}
+                  </List>
+                )}
               </DashboardCard>
             ) : (
               <DashboardCard>

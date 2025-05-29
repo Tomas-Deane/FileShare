@@ -19,11 +19,27 @@ from schemas import (
     GetBackupTOFURequest,
     GetPreKeyBundleRequest,
     AddPreKeyBundleRequest,
+    ListUsersRequest,
+    ListUsersResponse,
+    UserData,
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
 
 import models
+
+def verify_signature(username: str, nonce: str, signature: str) -> bool:
+    """Verify a signature for a given username and nonce."""
+    user = models.UserDB().get_user(username)
+    if not user:
+        return False
+    
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(base64.b64decode(signature), base64.b64decode(nonce))
+        return True
+    except InvalidSignature:
+        return False
 
 # --- CHALLENGE HANDLER --------------------------------------------
 def challenge_handler(req: ChallengeRequest, db: models.UserDB):
@@ -426,4 +442,25 @@ def add_prekey_bundle_handler(req: AddPreKeyBundleRequest, db: models.UserDB):
     except InvalidSignature:
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
+
+def list_users_handler(req: ListUsersRequest, db: models.UserDB) -> ListUsersResponse:
+    """List all users in the system."""
+    # Verify signature
+    if not verify_signature(req.username, req.nonce, req.signature):
+        return ListUsersResponse(status="error", users=[])
+
+    # Get all users
+    users = db.get_all_users()
+    
+    # Return user list
+    return {
+        "status": "ok",
+        "users": [
+            {
+                "id": user["id"],
+                "username": user["username"]
+            }
+            for user in users
+        ]
+    }
 

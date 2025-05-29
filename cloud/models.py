@@ -603,3 +603,15 @@ class UserDB:
             self.cursor.execute(sql, (user_id,))
         return self.cursor.fetchall()
 
+    def get_all_users(self) -> list:
+        """Get all users in the system."""
+        self.ensure_connection()
+        sql = """
+            SELECT u.id, m.username
+            FROM users u
+            JOIN username_map m ON u.id = m.user_id
+            ORDER BY u.id
+        """
+        self.cursor.execute(sql)
+        return self.cursor.fetchall()
+

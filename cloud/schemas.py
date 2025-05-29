@@ -185,3 +185,17 @@ class GetBackupTOFUResponse(BaseModel):
     status: str
     encrypted_backup: str
     backup_nonce: str
+
+
+class ListUsersRequest(BaseModel):
+    username: str
+    nonce: str
+    signature: str
+
+class UserData(BaseModel):
+    id: int
+    username: str
+
+class ListUsersResponse(BaseModel):
+    status: str
+    users: list[UserData]
