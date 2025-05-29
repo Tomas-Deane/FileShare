@@ -136,32 +136,22 @@ const Login: React.FC = () => {
       let myKeyBundle = null;
       
       // Check sessionStorage for key bundle
-      console.log('Attempting to retrieve key bundle from sessionStorage...');
       console.log('All sessionStorage keys:', Object.keys(sessionStorage));
-      const sessionKeyBundle = sessionStorage.getItem('priv_key_bundle');
-      console.log('Raw sessionStorage data:', sessionKeyBundle ? 'Found data' : 'No data found');
+      const sessionKeyBundle = storage.getKeyBundle(trimmedUsername);
+      console.log('Key bundle found:', sessionKeyBundle ? 'Yes' : 'No');
+
       if (sessionKeyBundle) {
-        console.log('Session storage data length:', sessionKeyBundle.length);
-        console.log('First 100 characters of data:', sessionKeyBundle.substring(0, 100));
-      }
-      
-      if (sessionKeyBundle) {
-        try {
-          myKeyBundle = JSON.parse(sessionKeyBundle);
-          console.log('Successfully parsed key bundle:', {
-            username: myKeyBundle.username,
-            hasIK_pub: !!myKeyBundle.IK_pub,
-            hasSPK_pub: !!myKeyBundle.SPK_pub,
-            hasSPK_signature: !!myKeyBundle.SPK_signature,
-            hasOPKs: Array.isArray(myKeyBundle.OPKs),
-            hasIK_priv: !!myKeyBundle.IK_priv,
-            hasSPK_priv: !!myKeyBundle.SPK_priv,
-            hasOPKs_priv: Array.isArray(myKeyBundle.OPKs_priv)
-          });
-        } catch (e) {
-          console.error('Error parsing sessionStorage key bundle:', e);
-          console.error('Raw data that failed to parse:', sessionKeyBundle);
-        }
+        console.log('Key bundle details:', {
+          username: sessionKeyBundle.username,
+          hasIK_pub: !!sessionKeyBundle.IK_pub,
+          hasSPK_pub: !!sessionKeyBundle.SPK_pub,
+          hasSPK_signature: !!sessionKeyBundle.SPK_signature,
+          hasOPKs: Array.isArray(sessionKeyBundle.OPKs),
+          hasIK_priv: !!sessionKeyBundle.IK_priv,
+          hasSPK_priv: !!sessionKeyBundle.SPK_priv,
+          hasOPKs_priv: Array.isArray(sessionKeyBundle.OPKs_priv)
+        });
+        myKeyBundle = sessionKeyBundle;
       }
 
       if (!myKeyBundle) {
@@ -228,11 +218,10 @@ const Login: React.FC = () => {
         };
         console.log('Key bundle reconstructed from backup');
 
-        // Save to both sessionStorage and cookies
-        sessionStorage.setItem('priv_key_bundle', JSON.stringify(myKeyBundle));
+        // Save using the new storage functions
         storage.saveKeyBundle(myKeyBundle);
         storage.setCurrentUser(trimmedUsername);
-        console.log('Key bundle saved to both sessionStorage and cookies');
+        console.log('Key bundle saved for user:', trimmedUsername);
       }
 
       // 5. TOFU check: compare server and local public key bundles
@@ -248,6 +237,7 @@ const Login: React.FC = () => {
         '/get_pre_key_bundle',
         {
           username: trimmedUsername,
+          target_username: trimmedUsername,
           nonce: prekeyChallengeResponse.nonce,
           signature: btoa(String.fromCharCode.apply(null, Array.from(prekeySignature)))
         }

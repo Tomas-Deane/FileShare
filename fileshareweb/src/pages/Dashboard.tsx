@@ -191,17 +191,12 @@ const Dashboard: React.FC = () => {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
 
-  // Get auth data from sessionStorage
+  // Get current user and their key bundle
+  const currentUsername = storage.getCurrentUser();
   const keyBundle = React.useMemo(() => {
-    const bundleStr = sessionStorage.getItem('priv_key_bundle');
-    if (!bundleStr) return null;
-    try {
-      return JSON.parse(bundleStr);
-    } catch (e) {
-      console.error('Error parsing key bundle from sessionStorage:', e);
-      return null;
-    }
-  }, []);
+    if (!currentUsername) return null;
+    return storage.getKeyBundle(currentUsername);
+  }, [currentUsername]);
 
   const username = keyBundle?.username;
   const secretKey = keyBundle?.secretKey ? Uint8Array.from(atob(keyBundle.secretKey), c => c.charCodeAt(0)) : null;
@@ -361,15 +356,15 @@ const Dashboard: React.FC = () => {
   };
   const handleVerifyClick = async (user: { id: number; username: string }) => {
     try {
-      // 1. Get your own username and key bundle from sessionStorage
-      const myUsername = username;
+      // Get your own username and key bundle
+      const myUsername = storage.getCurrentUser();
       if (!myUsername) {
         setUserError('No current user found in session storage.');
         return;
       }
 
-      // 2. Get your own key bundle from sessionStorage
-      if (!keyBundle || !keyBundle.IK_pub) {
+      const myKeyBundle = storage.getKeyBundle(myUsername);
+      if (!myKeyBundle || !myKeyBundle.IK_pub) {
         setUserError('Could not retrieve your identity key for verification.');
         return;
       }
@@ -401,7 +396,7 @@ const Dashboard: React.FC = () => {
       const remoteIK = prekeyResponse.prekey_bundle.IK_pub;
 
       // 6. Generate the OOB verification code
-      const code = await generateOOBVerificationCode(keyBundle.IK_pub, remoteIK);
+      const code = await generateOOBVerificationCode(myKeyBundle.IK_pub, remoteIK);
       setVerificationCode(code);
       setSelectedUser(user);
       setOpenVerify(true);

@@ -150,7 +150,7 @@ const Signup: React.FC = () => {
       
       if (response.status === 'ok') {        
         // Also save critical keys to sessionStorage for quick access during session
-        sessionStorage.setItem('priv_key_bundle', JSON.stringify({
+        const keyBundle = {
             username: trimmedUsername,
             // Private keys
             IK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
@@ -168,28 +168,36 @@ const Signup: React.FC = () => {
             // Additional keys
             secretKey: btoa(String.fromCharCode.apply(null, Array.from(privateKey))),
             pdk: btoa(String.fromCharCode.apply(null, Array.from(pdk))),
-            kek: btoa(String.fromCharCode.apply(null, Array.from(kek)))
-        }));
-        
+            kek: btoa(String.fromCharCode.apply(null, Array.from(kek))),
+            verified: true,
+            lastVerified: new Date().toISOString()
+        };
+
+        storage.saveKeyBundle(keyBundle);
+        storage.setCurrentUser(trimmedUsername);
+
         // 2. Create encrypted backup for server
         const backupData = {
+            username: trimmedUsername,
             // Private keys
-            privateKey: btoa(String.fromCharCode.apply(null, Array.from(privateKey))),
-            identityKeyPrivate: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
-            signedPreKeyPrivate: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_private))),
-            oneTimePreKeysPrivate: x3dhKeys.one_time_pre_keys_private.map(key => 
+            IK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
+            SPK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_private))),
+            OPKs_priv: x3dhKeys.one_time_pre_keys_private.map(key =>
                 btoa(String.fromCharCode.apply(null, Array.from(key)))
             ),
             // Public keys
-            identityKey: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
-            signedPreKey: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
-            signedPreKeySig: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
-            oneTimePreKeys: x3dhKeys.one_time_pre_keys.map(key => 
+            IK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
+            SPK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
+            SPK_signature: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
+            OPKs: x3dhKeys.one_time_pre_keys.map(key =>
                 btoa(String.fromCharCode.apply(null, Array.from(key)))
             ),
             // Additional keys
+            secretKey: btoa(String.fromCharCode.apply(null, Array.from(privateKey))),
             pdk: btoa(String.fromCharCode.apply(null, Array.from(pdk))),
-            kek: btoa(String.fromCharCode.apply(null, Array.from(kek)))
+            kek: btoa(String.fromCharCode.apply(null, Array.from(kek))),
+            verified: true,
+            lastVerified: new Date().toISOString()
         };
 
         // Encrypt backup with password-derived key
@@ -206,9 +214,9 @@ const Signup: React.FC = () => {
         // After creating backupData
         console.log('Creating TOFU backup with data:', {
             username: trimmedUsername,
-            hasIdentityKey: !!backupData.identityKey,
-            hasSignedPreKey: !!backupData.signedPreKey,
-            hasOneTimePreKeys: backupData.oneTimePreKeys.length
+            hasIdentityKey: !!backupData.IK_pub,
+            hasSignedPreKey: !!backupData.SPK_pub,
+            hasOneTimePreKeys: backupData.OPKs.length
         });
 
         // After encrypting backup
@@ -239,9 +247,6 @@ const Signup: React.FC = () => {
 
         // After sending to server
         console.log('TOFU backup sent to server');
-
-        // Set as current user
-        storage.setCurrentUser(trimmedUsername);
 
         // 1. Get challenge for prekey bundle
         const prekeyChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {

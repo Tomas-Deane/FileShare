@@ -22,67 +22,42 @@ interface KeyBundle {
     lastVerified: string; // ISO timestamp of last verification
 }
 
+// Helper to get the session storage key for a specific user
+const getUserKeyBundleKey = (username: string) => `key_bundle_${username}`;
+
 export const storage = {
-    // Save a new key bundle or update existing one
+    // Save a key bundle for a specific user
     saveKeyBundle: (keyBundle: KeyBundle) => {
-        // Get existing bundles
-        const existingBundlesStr = Cookies.get(STORAGE_KEYS.KEY_BUNDLES);
-        let bundles: { [username: string]: KeyBundle } = {};
+        const key = getUserKeyBundleKey(keyBundle.username);
+        sessionStorage.setItem(key, JSON.stringify(keyBundle));
         
-        if (existingBundlesStr) {
-            try {
-                bundles = JSON.parse(existingBundlesStr);
-            } catch (e) {
-                console.error('Error parsing existing key bundles:', e);
-            }
-        }
-
-        // Add or update the bundle
-        bundles[keyBundle.username] = {
-            ...keyBundle,
-            lastVerified: keyBundle.lastVerified || new Date().toISOString()
-        };
-
-        // Store in secure cookie
-        Cookies.set(STORAGE_KEYS.KEY_BUNDLES, JSON.stringify(bundles), {
-            secure: true,
-            sameSite: 'strict',
-            expires: 30 // Expires in 30 days
-        });
-
-        // Store current user separately for quick access
-        if (keyBundle.username === Cookies.get(STORAGE_KEYS.CURRENT_USER)) {
-            Cookies.set(STORAGE_KEYS.CURRENT_USER, keyBundle.username, {
-                secure: true,
-                sameSite: 'strict',
-                expires: 30
-            });
-        }
+        // Also save to cookies for persistence
+        const allBundles = storage.getAllKeyBundles();
+        allBundles[keyBundle.username] = keyBundle;
+        Cookies.set(STORAGE_KEYS.KEY_BUNDLES, JSON.stringify(allBundles));
     },
 
-    // Get key bundle for a specific user
+    // Get a key bundle for a specific user
     getKeyBundle: (username: string): KeyBundle | null => {
-        const bundlesStr = Cookies.get(STORAGE_KEYS.KEY_BUNDLES);
-        if (!bundlesStr) return null;
-
+        const key = getUserKeyBundleKey(username);
+        const bundleStr = sessionStorage.getItem(key);
+        if (!bundleStr) return null;
         try {
-            const bundles = JSON.parse(bundlesStr);
-            return bundles[username] || null;
+            return JSON.parse(bundleStr);
         } catch (e) {
-            console.error('Error parsing key bundles:', e);
+            console.error('Error parsing key bundle:', e);
             return null;
         }
     },
 
-    // Get all key bundles
-    getAllKeyBundles: (): { [username: string]: KeyBundle } => {
+    // Get all key bundles from cookies
+    getAllKeyBundles: (): Record<string, KeyBundle> => {
         const bundlesStr = Cookies.get(STORAGE_KEYS.KEY_BUNDLES);
         if (!bundlesStr) return {};
-
         try {
             return JSON.parse(bundlesStr);
         } catch (e) {
-            console.error('Error parsing key bundles:', e);
+            console.error('Error parsing all key bundles:', e);
             return {};
         }
     },
@@ -113,22 +88,22 @@ export const storage = {
 
     // Set current user
     setCurrentUser: (username: string) => {
-        Cookies.set(STORAGE_KEYS.CURRENT_USER, username, {
-            secure: true,
-            sameSite: 'strict',
-            expires: 30
-        });
+        sessionStorage.setItem(STORAGE_KEYS.CURRENT_USER, username);
     },
 
     // Get current user
     getCurrentUser: (): string | null => {
-        return Cookies.get(STORAGE_KEYS.CURRENT_USER) || null;
+        return sessionStorage.getItem(STORAGE_KEYS.CURRENT_USER);
     },
 
-    // Clear all stored data
-    clearStorage: () => {
-        Cookies.remove(STORAGE_KEYS.KEY_BUNDLES);
-        Cookies.remove(STORAGE_KEYS.CURRENT_USER);
-        Cookies.remove(STORAGE_KEYS.AUTH_TOKEN);
+    // Clear all session data
+    clearSession: () => {
+        // Clear all key bundles from sessionStorage
+        Object.keys(sessionStorage).forEach(key => {
+            if (key.startsWith('key_bundle_')) {
+                sessionStorage.removeItem(key);
+            }
+        });
+        sessionStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
     }
 };
