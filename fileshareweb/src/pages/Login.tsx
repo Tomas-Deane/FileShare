@@ -151,44 +151,46 @@ const Login: React.FC = () => {
         privateKey
       );
 
-      // console.log('Retrieving TOFU backup...');
-      // const tofuBackupResponse = await apiClient.post<GetBackupTOFUResponse>('/get_backup_tofu_keys', {
-      //   username: trimmedUsername,
-      //   nonce: tofuChallengeResponse.nonce,
-      //   signature: btoa(String.fromCharCode.apply(null, Array.from(tofuSignature)))
-      // });
+      console.log('Retrieving TOFU backup...');
+      const tofuBackupResponse = await apiClient.post<GetBackupTOFUResponse>('/get_backup_tofu_keys', {
+        username: trimmedUsername,
+        nonce: tofuChallengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(tofuSignature)))
+      });
 
-      // // Step 5: Decrypt TOFU backup
-      // console.log('Decrypting TOFU backup...');
-      // const backupKey = await derivePDK(formData.password, salt, 3, 67108864);
-      // const encryptedBackup = Uint8Array.from(atob(tofuBackupResponse.encrypted_backup), c => c.charCodeAt(0));
-      // const backupNonce = Uint8Array.from(atob(tofuBackupResponse.backup_nonce), c => c.charCodeAt(0));
+      // Step 5: Decrypt TOFU backup
+      console.log('Decrypting TOFU backup...');
+      const backupKey = await derivePDK(formData.password, salt, 3, 67108864);
+      const encryptedBackup = Uint8Array.from(atob(tofuBackupResponse.encrypted_backup), c => c.charCodeAt(0));
+      const backupNonce = Uint8Array.from(atob(tofuBackupResponse.backup_nonce), c => c.charCodeAt(0));
       
-      // const decryptedBackup = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
-      //   null,
-      //   encryptedBackup,
-      //   null,
-      //   backupNonce,
-      //   backupKey
-      // );
+      const decryptedBackup = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
+        null,
+        encryptedBackup,
+        null,
+        backupNonce,
+        backupKey
+      );
 
-      // const backupData = JSON.parse(new TextDecoder().decode(decryptedBackup));
+      const backupData = JSON.parse(new TextDecoder().decode(decryptedBackup));
 
-      // // Step 6: Verify and save TOFU keys
-      // console.log('Verifying TOFU keys...');
-      // const tofuKeys = {
-      //   username: trimmedUsername,
-      //   IK_pub: backupData.identityKey,
-      //   SPK_pub: backupData.signedPreKey,
-      //   SPK_signature: backupData.signedPreKeySig,
-      //   OPKs: backupData.oneTimePreKeys,
-      //   verified: true,
-      //   lastVerified: new Date().toISOString()
-      // };
+      // Step 6: Verify and save TOFU keys
+      console.log('Verifying TOFU keys...');
+      const tofuKeys = {
+        username: trimmedUsername,
+        IK_pub: backupData.identityKey,
+        SPK_pub: backupData.signedPreKey,
+        SPK_signature: backupData.signedPreKeySig,
+        OPKs: backupData.oneTimePreKeys,
+        verified: true,
+        lastVerified: new Date().toISOString()
+      };
 
-      // // Save verified TOFU keys
-      // storage.saveKeyBundle(tofuKeys);
-      // storage.setCurrentUser(trimmedUsername);
+      // Save verified TOFU keys
+      storage.saveKeyBundle(tofuKeys);
+      storage.setCurrentUser(trimmedUsername);
+
+
 
       // Step 7: Complete authentication
       console.log('Signing login challenge...');

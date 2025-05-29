@@ -223,13 +223,13 @@ const Signup: React.FC = () => {
             privateKey
         );
 
-        // await apiClient.post('/backup_tofu_keys', {
-        //     username: trimmedUsername,
-        //     encrypted_backup: btoa(String.fromCharCode.apply(null, Array.from(encryptedBackup))),
-        //     backup_nonce: btoa(String.fromCharCode.apply(null, Array.from(backupNonce))),
-        //     nonce: challengeResponse.nonce,
-        //     signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
-        // });
+        await apiClient.post('/backup_tofu_keys', {
+            username: trimmedUsername,
+            encrypted_backup: btoa(String.fromCharCode.apply(null, Array.from(encryptedBackup))),
+            backup_nonce: btoa(String.fromCharCode.apply(null, Array.from(backupNonce))),
+            nonce: challengeResponse.nonce,
+            signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        });
 
         // Set as current user
         storage.setCurrentUser(trimmedUsername);
