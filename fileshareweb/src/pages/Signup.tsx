@@ -18,10 +18,16 @@ import { MatrixBackground } from '../components';
 import { apiClient } from '../utils/apiClient';
 import { generateKeyPair, encryptPrivateKey, generateSalt, derivePDK, generateKEK, encryptKEK, CryptoError, generateX3DHKeys } from '../utils/crypto';
 import sodium from 'libsodium-wrappers-sumo';
+import { storage } from '../utils/storage';
+import base64 from 'base64-js';
 
 interface SignupResponse {
   status: string;
   detail?: string;
+}
+
+interface ChallengeResponse {
+  nonce: string;
 }
 
 const Signup: React.FC = () => {
@@ -143,6 +149,91 @@ const Signup: React.FC = () => {
       const response = await apiClient.post<SignupResponse>('/signup', payload);
       
       if (response.status === 'ok') {
+        // Save key bundle to IndexedDB for persistence and security
+        storage.saveKeyBundle({
+            username: trimmedUsername,
+            // Public keys
+            IK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
+            SPK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
+            SPK_signature: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
+            OPKs: x3dhKeys.one_time_pre_keys.map(key => 
+                btoa(String.fromCharCode.apply(null, Array.from(key)))
+            ),
+            // Private keys
+            IK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
+            SPK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_private))),
+            OPKs_priv: x3dhKeys.one_time_pre_keys_private.map(key =>
+                btoa(String.fromCharCode.apply(null, Array.from(key)))
+            ),
+            verified: false,
+            lastVerified: new Date().toISOString()
+        });
+
+        // Also save critical keys to sessionStorage for quick access during session
+        sessionStorage.setItem('priv_key_bundle', JSON.stringify({
+            username: trimmedUsername,
+            // Private keys
+            IK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
+            SPK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_private))),
+            OPKs_priv: x3dhKeys.one_time_pre_keys_private.map(key =>
+                btoa(String.fromCharCode.apply(null, Array.from(key)))
+            )
+            //public keys
+            ,IK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
+            SPK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
+            SPK_signature: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
+            OPKs: x3dhKeys.one_time_pre_keys.map(key =>
+                btoa(String.fromCharCode.apply(null, Array.from(key)))
+            )
+        }));
+        
+        // 2. Create encrypted backup for server
+        const backupData = {
+            privateKey: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
+            //public keys
+            identityKey: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
+            signedPreKey: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
+            signedPreKeySig: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
+            oneTimePreKeys: x3dhKeys.one_time_pre_keys.map(key => 
+                btoa(String.fromCharCode.apply(null, Array.from(key)))
+            )
+          
+        };
+
+        // Encrypt backup with password-derived key
+        const backupNonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+        const backupKey = await derivePDK(formData.password, salt, 3, 67108864);
+        const encryptedBackup = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+            JSON.stringify(backupData),
+            null,
+            null,
+            backupNonce,
+            backupKey
+        );
+
+        // 3. Get challenge for backup
+        const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+            username: trimmedUsername,
+            operation: 'backup_tofu'
+        });
+
+        // 4. Sign and send backup
+        const signature = sodium.crypto_sign_detached(
+            base64.toByteArray(challengeResponse.nonce),
+            privateKey
+        );
+
+        // await apiClient.post('/backup_tofu_keys', {
+        //     username: trimmedUsername,
+        //     encrypted_backup: btoa(String.fromCharCode.apply(null, Array.from(encryptedBackup))),
+        //     backup_nonce: btoa(String.fromCharCode.apply(null, Array.from(backupNonce))),
+        //     nonce: challengeResponse.nonce,
+        //     signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        // });
+
+        // Set as current user
+        storage.setCurrentUser(trimmedUsername);
+
         console.log('Signup successful, redirecting to login...');
         navigate('/login');
       } else {

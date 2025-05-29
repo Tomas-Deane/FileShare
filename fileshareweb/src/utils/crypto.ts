@@ -244,16 +244,21 @@ export const generateX3DHKeys = async () => {
 
   // Generate One-Time Pre-Keys (OPKs)
   const OPKs = [];
+  const OPKs_priv = [];
   const numOPKs = 100; // Generate 100 one-time pre-keys
   for (let i = 0; i < numOPKs; i++) {
     const opkPair = sodium.crypto_sign_keypair();
     OPKs.push(opkPair.publicKey);
+    OPKs_priv.push(opkPair.privateKey);
   }
 
   return {
     identity_key: IK_pub,
+    identity_key_private: IK_priv,
     signed_pre_key: SPK_pub,
+    signed_pre_key_private: SPK_priv,
     signed_pre_key_sig: SPK_signature,
-    one_time_pre_keys: OPKs
+    one_time_pre_keys: OPKs,
+    one_time_pre_keys_private: OPKs_priv
   };
 };
