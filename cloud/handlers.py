@@ -405,7 +405,7 @@ def get_prekey_bundle_handler(req: GetPreKeyBundleRequest, db: models.UserDB):
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, provided)
         
-        bundle = db.get_prekey_bundle(user_id)
+        bundle = db.get_pre_key_bundle(user_id)
         if not bundle:
             raise HTTPException(status_code=404, detail="No prekey bundle found")
         
