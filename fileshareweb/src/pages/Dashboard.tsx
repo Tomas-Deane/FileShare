@@ -392,7 +392,8 @@ const Dashboard: React.FC = () => {
       const prekeyResponse = await apiClient.post<{ prekey_bundle: { IK_pub: string } }>(
         '/get_pre_key_bundle',
         {
-          username: user.username, // the user you want to verify
+          username: myUsername,  // Your username (for challenge verification)
+          target_username: user.username,  // The target user's username
           nonce: challengeResponse.nonce,
           signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
         }

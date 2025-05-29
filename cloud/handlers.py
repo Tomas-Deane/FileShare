@@ -390,33 +390,41 @@ def get_backup_tofu_keys_handler(req: GetBackupTOFURequest, db: models.UserDB):
         raise HTTPException(status_code=401, detail="Bad signature")
 
 # --- PREKEY BUNDLE ------------------------------------------------------
-#get prekey bundle
 def get_prekey_bundle_handler(req: GetPreKeyBundleRequest, db: models.UserDB):
     logging.debug(f"GetPreKeyBundle: {req.model_dump_json()}")
-    user = db.get_user(req.username)
-    if not user:
-        logging.warning(f"Unknown user '{req.username}' at get_pre_key_bundle")
-        raise HTTPException(status_code=404, detail="Unknown user")
     
-    user_id = user["user_id"]
+    # First verify the requesting user and their challenge
+    requester = db.get_user(req.username)
+    if not requester:
+        logging.warning(f"Unknown requester '{req.username}' at get_pre_key_bundle")
+        raise HTTPException(status_code=404, detail="Unknown requester")
+    
+    requester_id = requester["user_id"]
     provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(user_id, "get_pre_key_bundle")
-    logging.debug(f"Challenge verification - User ID: {user_id}, Operation: get_pre_key_bundle")
+    stored = db.get_pending_challenge(requester_id, "get_pre_key_bundle")
+    logging.debug(f"Challenge verification - Requester ID: {requester_id}, Operation: get_pre_key_bundle")
     logging.debug(f"Provided nonce: {base64.b64encode(provided).decode()}")
     logging.debug(f"Stored challenge: {base64.b64encode(stored).decode() if stored else 'None'}")
     
     if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (get_pre_key_bundle)")
+        logging.warning(f"No valid pending challenge for requester_id={requester_id} (get_pre_key_bundle)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
     
     signature = base64.b64decode(req.signature)
     try:
-        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+        Ed25519PublicKey.from_public_bytes(requester["public_key"]) \
             .verify(signature, provided)
         
-        bundle = db.get_pre_key_bundle(user_id)
+        # Now get the target user's prekey bundle
+        target = db.get_user(req.target_username)
+        if not target:
+            logging.warning(f"Unknown target user '{req.target_username}' at get_pre_key_bundle")
+            raise HTTPException(status_code=404, detail="Target user not found")
+        
+        target_id = target["user_id"]
+        bundle = db.get_pre_key_bundle(target_id)
         if not bundle:
-            raise HTTPException(status_code=404, detail="No prekey bundle found")
+            raise HTTPException(status_code=404, detail="No prekey bundle found for target user")
         
         # Convert binary data to base64 for response
         return {
@@ -428,7 +436,7 @@ def get_prekey_bundle_handler(req: GetPreKeyBundleRequest, db: models.UserDB):
             }
         }
     except InvalidSignature:
-        db.delete_challenge(user_id)
+        db.delete_challenge(requester_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
 #add prekey bundle

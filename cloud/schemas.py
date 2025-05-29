@@ -88,7 +88,8 @@ class DeleteFileRequest(BaseModel):
 
 
 class GetPreKeyBundleRequest(BaseModel):
-    username: str
+    username: str  # The requesting user's username (for challenge verification)
+    target_username: str  # The username whose prekey bundle we want to get
     nonce: str
     signature: str
 
