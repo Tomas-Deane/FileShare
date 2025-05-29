@@ -2,6 +2,29 @@
 #include "logger.h"
 #include <sodium.h>
 
+void CryptoUtils::initializeLibrary()
+{
+    static bool initialized = false;
+    if (!initialized) {
+        if (sodium_init() < 0) {
+            qWarning() << "libsodium initialization failed";
+        }
+        initialized = true;
+    }
+}
+
+QByteArray CryptoUtils::randomBytes(int length)
+{
+    QByteArray buf(length, 0);
+    randombytes_buf(reinterpret_cast<unsigned char*>(buf.data()), buf.size());
+    return buf;
+}
+
+// used to generate our 256 byte keys (KEKs, DEKs)
+QByteArray CryptoUtils::generateAeadKey() {
+    return randomBytes(crypto_aead_xchacha20poly1305_ietf_KEYBYTES);
+}
+
 QByteArray CryptoUtils::derivePDK(const QString &password,
                                   const QByteArray &salt,
                                   quint64 opslimit,
@@ -36,8 +59,7 @@ QByteArray CryptoUtils::encryptSecretKey(const QByteArray &secretKey,
                                          const QByteArray &pdk,
                                          QByteArray &nonce)
 {
-    nonce.resize(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
-    randombytes_buf(reinterpret_cast<unsigned char*>(nonce.data()), nonce.size());
+    nonce = randomBytes(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
     Logger::log("Generated nonce for encryption");
 
     QByteArray out(secretKey.size() + crypto_aead_xchacha20poly1305_ietf_ABYTES, 0);
