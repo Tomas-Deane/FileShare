@@ -151,20 +151,16 @@ def init_db():
     CREATE TABLE IF NOT EXISTS tofu_backups (
         id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
         user_id             BIGINT              NOT NULL,
-        backup_type         VARCHAR(32)         NOT NULL,  -- 'own_keys' or 'other_user'
-        target_username     VARCHAR(255),                  -- NULL for own_keys, username for other_user
         encrypted_data      LONGBLOB            NOT NULL,  -- Encrypted backup data
         backup_nonce        BLOB                NOT NULL,  -- Nonce for encrypted_data
         created_at          DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
         last_verified       DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        verified            BOOLEAN             NOT NULL DEFAULT FALSE,
         CONSTRAINT fk_tofu_user
           FOREIGN KEY (user_id)
           REFERENCES users(id)
           ON DELETE CASCADE
           ON UPDATE CASCADE,
-        INDEX idx_user_type (user_id, backup_type),
-        INDEX idx_target_user (target_username)
+        INDEX idx_user (user_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
     conn.commit()
@@ -538,70 +534,31 @@ class UserDB:
         self.cursor.execute(sql, (share_id,))
         self.conn.commit()
 
-    def add_tofu_backup(self, user_id: int, backup_type: str, target_username: str | None,
-                       encrypted_data: bytes, backup_nonce: bytes):
+    def add_tofu_backup(self, user_id: int, encrypted_data: bytes, backup_nonce: bytes):
         self.ensure_connection()
         sql = """
             INSERT INTO tofu_backups
-                (user_id, backup_type, target_username, encrypted_data, backup_nonce)
-            VALUES (%s, %s, %s, %s, %s)
+                (user_id, encrypted_data, backup_nonce)
+            VALUES (%s, %s, %s)
         """
         self.cursor.execute(sql, (
             user_id,
-            backup_type,
-            target_username,
             encrypted_data,
             backup_nonce
         ))
         self.conn.commit()
 
-    def get_tofu_backup(self, user_id: int, backup_type: str, target_username: str | None = None):
+    def get_tofu_backup(self, user_id: int):
         self.ensure_connection()
         sql = """
-            SELECT encrypted_data, backup_nonce, created_at, last_verified, verified
+            SELECT encrypted_data, backup_nonce, created_at, last_verified
             FROM tofu_backups
             WHERE user_id = %s
-              AND backup_type = %s
-              AND (target_username = %s OR (target_username IS NULL AND %s IS NULL))
             ORDER BY created_at DESC
             LIMIT 1
         """
-        self.cursor.execute(sql, (user_id, backup_type, target_username, target_username))
+        self.cursor.execute(sql, (user_id,))
         return self.cursor.fetchone()
-
-    def update_tofu_verification(self, user_id: int, backup_type: str, 
-                               target_username: str | None, verified: bool):
-        self.ensure_connection()
-        sql = """
-            UPDATE tofu_backups
-            SET verified = %s,
-                last_verified = UTC_TIMESTAMP()
-            WHERE user_id = %s
-              AND backup_type = %s
-              AND (target_username = %s OR (target_username IS NULL AND %s IS NULL))
-        """
-        self.cursor.execute(sql, (verified, user_id, backup_type, target_username, target_username))
-        self.conn.commit()
-
-    def list_tofu_backups(self, user_id: int, backup_type: str | None = None):
-        self.ensure_connection()
-        if backup_type:
-            sql = """
-                SELECT backup_type, target_username, created_at, last_verified, verified
-                FROM tofu_backups
-                WHERE user_id = %s AND backup_type = %s
-                ORDER BY created_at DESC
-            """
-            self.cursor.execute(sql, (user_id, backup_type))
-        else:
-            sql = """
-                SELECT backup_type, target_username, created_at, last_verified, verified
-                FROM tofu_backups
-                WHERE user_id = %s
-                ORDER BY created_at DESC
-            """
-            self.cursor.execute(sql, (user_id,))
-        return self.cursor.fetchall()
 
     def get_all_users(self) -> list:
         """Get all users in the system."""

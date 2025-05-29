@@ -344,8 +344,6 @@ def backup_tofu_keys_handler(req: BackupTOFURequest, db: models.UserDB):
         # Store the encrypted backup
         db.add_tofu_backup(
             user_id,
-            "own_keys",
-            None,  # No target username for own keys
             base64.b64decode(req.encrypted_backup),
             base64.b64decode(req.backup_nonce)
         )
@@ -374,7 +372,7 @@ def get_backup_tofu_keys_handler(req: GetBackupTOFURequest, db: models.UserDB):
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, provided)
         
-        backup = db.get_tofu_backup(user_id, "own_keys")
+        backup = db.get_tofu_backup(user_id)
         if not backup:
             raise HTTPException(status_code=404, detail="No TOFU backup found")
         
