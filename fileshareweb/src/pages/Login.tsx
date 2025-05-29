@@ -197,14 +197,14 @@ const Login: React.FC = () => {
       // 5. TOFU check: compare server and local public key bundles
       const prekeyChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username: trimmedUsername,
-        operation: 'get_pre_key_bundle'
+        operation: 'get_prekey_bundle'
       });
       const prekeySignature = sodium.crypto_sign_detached(
         base64.toByteArray(prekeyChallengeResponse.nonce),
         privateKey
       );
       const prekeyResponse = await apiClient.post<{ prekey_bundle: { IK_pub: string } }>(
-        '/get_pre_key_bundle',
+        '/get_prekey_bundle',
         {
           username: trimmedUsername,
           nonce: prekeyChallengeResponse.nonce,
