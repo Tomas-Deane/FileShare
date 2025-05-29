@@ -180,14 +180,14 @@ async def delete_file(req: DeleteFileRequest, db: models.UserDB = Depends(get_db
     logger.debug(f"DeleteFile response: {resp}")
     return resp
 
-@app.post("/get_prekey_bundle")
+@app.post("/get_pre_key_bundle")
 async def get_prekey_bundle(req: GetPreKeyBundleRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"GetPreKeyBundleRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.get_prekey_bundle_handler, req, db)
     logger.debug(f"PreKeyBundle response: {resp}")
     return resp
 
-@app.post("/add_prekey_bundle")
+@app.post("/add_pre_key_bundle")
 async def add_prekey_bundle(req: AddPreKeyBundleRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"AddPreKeyBundleRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.add_prekey_bundle_handler, req, db)
