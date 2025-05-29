@@ -159,12 +159,6 @@ class RemoveSharedFileRequest(BaseModel):
     share_id: int
     nonce: str
     signature: str
-    
-class AddOPKsRequest(BaseModel):    
-    username: str
-    pre_keys: list[str]
-    nonce: str
-    signature: str
 
 
 class BackupTOFURequest(BaseModel):
