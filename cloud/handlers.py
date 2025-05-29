@@ -435,7 +435,12 @@ def add_prekey_bundle_handler(req: AddPreKeyBundleRequest, db: models.UserDB):
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, provided)
         
-        db.add_prekey_bundle(user_id, req.IK_pub, req.SPK_pub, req.SPK_signature)
+        # Decode base64 data before passing to database
+        IK_pub = base64.b64decode(req.IK_pub)
+        SPK_pub = base64.b64decode(req.SPK_pub)
+        SPK_signature = base64.b64decode(req.SPK_signature)
+        
+        db.add_prekey_bundle(user_id, IK_pub, SPK_pub, SPK_signature)
         db.delete_challenge(user_id)
         return {"status": "ok", "message": "Prekey bundle added"}
     except InvalidSignature:

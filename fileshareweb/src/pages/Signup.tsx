@@ -148,25 +148,7 @@ const Signup: React.FC = () => {
       console.log('Sending signup request...');
       const response = await apiClient.post<SignupResponse>('/signup', payload);
       
-      if (response.status === 'ok') {
-        // Save key bundle to IndexedDB for persistence and security
-        storage.saveKeyBundle({
-            username: trimmedUsername,
-            IK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
-            SPK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
-            SPK_signature: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
-            OPKs: x3dhKeys.one_time_pre_keys.map(key => 
-              btoa(String.fromCharCode.apply(null, Array.from(key)))
-            ),
-            IK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
-            SPK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_private))),
-            OPKs_priv: x3dhKeys.one_time_pre_keys_private.map(key =>
-              btoa(String.fromCharCode.apply(null, Array.from(key)))
-            ),
-            verified: false,
-            lastVerified: new Date().toISOString()
-        });
-
+      if (response.status === 'ok') {        
         // Also save critical keys to sessionStorage for quick access during session
         sessionStorage.setItem('priv_key_bundle', JSON.stringify({
             username: trimmedUsername,
@@ -248,6 +230,48 @@ const Signup: React.FC = () => {
 
         // Set as current user
         storage.setCurrentUser(trimmedUsername);
+
+        // 1. Get challenge for prekey bundle
+        const prekeyChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+            username: trimmedUsername,
+            operation: 'add_prekey_bundle'
+        });
+
+        // Sign the challenge
+        const prekeySignature = sodium.crypto_sign_detached(
+            base64.toByteArray(prekeyChallengeResponse.nonce),
+            privateKey
+        );
+
+        // Upload prekey bundle with challenge
+        await apiClient.post('/add_prekey_bundle', {
+            username: trimmedUsername,
+            IK_pub: payload.identity_key,
+            SPK_pub: payload.signed_pre_key,
+            SPK_signature: payload.signed_pre_key_sig,
+            nonce: prekeyChallengeResponse.nonce,
+            signature: btoa(String.fromCharCode.apply(null, Array.from(prekeySignature)))
+        });
+
+        // 2. Get challenge for OPKs
+        const opksChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+            username: trimmedUsername,
+            operation: 'add_opks'
+        });
+
+        // Sign the challenge
+        const opksSignature = sodium.crypto_sign_detached(
+            base64.toByteArray(opksChallengeResponse.nonce),
+            privateKey
+        );
+
+        // Upload OPKs with challenge
+        await apiClient.post('/add_opks', {
+            username: trimmedUsername,
+            opks: payload.one_time_pre_keys,
+            nonce: opksChallengeResponse.nonce,
+            signature: btoa(String.fromCharCode.apply(null, Array.from(opksSignature)))
+        });
 
         console.log('Signup successful, redirecting to login...');
         navigate('/login');
