@@ -87,9 +87,88 @@ def init_db():
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
+    # 5) pre_key_bundle
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS pre_key_bundle (
+        id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id             BIGINT              NOT NULL,
+        IK_pub              BLOB                NOT NULL,
+        SPK_pub             BLOB                NOT NULL,
+        SPK_signature       BLOB                NOT NULL,
+        created_at          DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_pre_key_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """)
+
+    # 6) opks (One-Time Pre-Keys)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS opks (
+        id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id             BIGINT              NOT NULL,
+        pre_key             BLOB                NOT NULL,
+        consumed            BOOLEAN             NOT NULL DEFAULT FALSE,
+        created_at          DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_opks_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+        INDEX idx_user_consumed (user_id, consumed)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """)
+
+# 7) shared_files
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS shared_files (
+        share_id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+        file_id              BIGINT              NOT NULL,
+        recipient_id         BIGINT              NOT NULL,
+        EK_pub               BLOB                NOT NULL,
+        IK_pub               BLOB                NOT NULL,
+        shared_at            DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_shared_file
+        FOREIGN KEY (file_id)
+        REFERENCES files(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+        CONSTRAINT fk_shared_recipient
+        FOREIGN KEY (recipient_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+        INDEX idx_file_recipient (file_id, recipient_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """)
+
+    # 8) tofu_backups
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS tofu_backups (
+        id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id             BIGINT              NOT NULL,
+        backup_type         VARCHAR(32)         NOT NULL,  -- 'own_keys' or 'other_user'
+        target_username     VARCHAR(255),                  -- NULL for own_keys, username for other_user
+        encrypted_data      LONGBLOB            NOT NULL,  -- Encrypted backup data
+        backup_nonce        BLOB                NOT NULL,  -- Nonce for encrypted_data
+        created_at          DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_verified       DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        verified            BOOLEAN             NOT NULL DEFAULT FALSE,
+        CONSTRAINT fk_tofu_user
+          FOREIGN KEY (user_id)
+          REFERENCES users(id)
+          ON DELETE CASCADE
+          ON UPDATE CASCADE,
+        INDEX idx_user_type (user_id, backup_type),
+        INDEX idx_target_user (target_username)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """)
     conn.commit()
     cursor.close()
     conn.close()
+
 
 class UserDB:
     """
@@ -156,6 +235,7 @@ class UserDB:
         sql_map = "INSERT INTO username_map (username, user_id) VALUES (%s, %s)"
         self.cursor.execute(sql_map, (username, user_id))
         self.conn.commit()
+        return user_id
 
     def get_user(self, username):
         self.ensure_connection()
@@ -340,4 +420,180 @@ class UserDB:
         """
         self.cursor.execute(sql, (user_id, filename))
         self.conn.commit()
+
+    def add_pre_key_bundle(self, user_id, IK_pub, SPK_pub, SPK_signature):
+        self.ensure_connection()
+        sql = """
+            INSERT INTO pre_key_bundle
+                (user_id, IK_pub, SPK_pub, SPK_signature)
+            VALUES (%s, %s, %s, %s)
+        """
+        self.cursor.execute(sql, (user_id, IK_pub, SPK_pub, SPK_signature))
+        self.conn.commit()
+
+    def get_pre_key_bundle(self, user_id):
+        self.ensure_connection()
+        sql = """
+            SELECT IK_pub, SPK_pub, SPK_signature
+            FROM pre_key_bundle
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (user_id,))
+        return self.cursor.fetchone()
+
+    def add_opks(self, user_id, pre_keys):
+        self.ensure_connection()
+        sql = """
+            INSERT INTO opks
+                (user_id, pre_key)
+            VALUES (%s, %s)
+        """
+        for pre_key in pre_keys:
+            self.cursor.execute(sql, (user_id, pre_key))
+        self.conn.commit()
+
+    def get_unused_opk(self, user_id):
+        self.ensure_connection()
+        sql = """
+            SELECT id, pre_key
+            FROM opks
+            WHERE user_id = %s AND consumed = FALSE
+            ORDER BY created_at ASC
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (user_id,))
+        return self.cursor.fetchone()
+
+    def mark_opk_consumed(self, opk_id):
+        self.ensure_connection()
+        sql = """
+            UPDATE opks
+            SET consumed = TRUE
+            WHERE id = %s
+        """
+        self.cursor.execute(sql, (opk_id,))
+        self.conn.commit()
+
+    def share_file(self, file_id, recipient_id, EK_pub, IK_pub):
+        self.ensure_connection()
+        sql = """
+            INSERT INTO shared_files
+                (file_id, recipient_id, EK_pub, IK_pub)
+            VALUES (%s, %s, %s, %s)
+        """
+        self.cursor.execute(sql, (file_id, recipient_id, EK_pub, IK_pub))
+        self.conn.commit()
+
+    def get_shared_files(self, recipient_id):
+        self.ensure_connection()
+        sql = """
+            SELECT 
+                sf.share_id,
+                sf.file_id,
+                sf.EK_pub,
+                sf.IK_pub,
+                sf.shared_at,
+                f.filename
+            FROM shared_files sf
+            JOIN files f ON sf.file_id = f.id
+            WHERE sf.recipient_id = %s
+            ORDER BY sf.shared_at DESC
+        """
+        self.cursor.execute(sql, (recipient_id,))
+        return self.cursor.fetchall()
+
+    def get_shared_file_details(self, share_id):
+        self.ensure_connection()
+        sql = """
+            SELECT 
+                sf.share_id,
+                sf.file_id,
+                sf.recipient_id,
+                sf.EK_pub,
+                sf.IK_pub,
+                sf.shared_at,
+                f.filename
+            FROM shared_files sf
+            JOIN files f ON sf.file_id = f.id
+            WHERE sf.share_id = %s
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (share_id,))
+        return self.cursor.fetchone()
+
+    def remove_shared_file(self, share_id):
+        self.ensure_connection()
+        sql = """
+            DELETE FROM shared_files
+            WHERE share_id = %s
+        """
+        self.cursor.execute(sql, (share_id,))
+        self.conn.commit()
+
+    def add_tofu_backup(self, user_id: int, backup_type: str, target_username: str | None,
+                       encrypted_data: bytes, backup_nonce: bytes):
+        self.ensure_connection()
+        sql = """
+            INSERT INTO tofu_backups
+                (user_id, backup_type, target_username, encrypted_data, backup_nonce)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        self.cursor.execute(sql, (
+            user_id,
+            backup_type,
+            target_username,
+            encrypted_data,
+            backup_nonce
+        ))
+        self.conn.commit()
+
+    def get_tofu_backup(self, user_id: int, backup_type: str, target_username: str | None = None):
+        self.ensure_connection()
+        sql = """
+            SELECT encrypted_data, backup_nonce, created_at, last_verified, verified
+            FROM tofu_backups
+            WHERE user_id = %s
+              AND backup_type = %s
+              AND (target_username = %s OR (target_username IS NULL AND %s IS NULL))
+            ORDER BY created_at DESC
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (user_id, backup_type, target_username, target_username))
+        return self.cursor.fetchone()
+
+    def update_tofu_verification(self, user_id: int, backup_type: str, 
+                               target_username: str | None, verified: bool):
+        self.ensure_connection()
+        sql = """
+            UPDATE tofu_backups
+            SET verified = %s,
+                last_verified = UTC_TIMESTAMP()
+            WHERE user_id = %s
+              AND backup_type = %s
+              AND (target_username = %s OR (target_username IS NULL AND %s IS NULL))
+        """
+        self.cursor.execute(sql, (verified, user_id, backup_type, target_username, target_username))
+        self.conn.commit()
+
+    def list_tofu_backups(self, user_id: int, backup_type: str | None = None):
+        self.ensure_connection()
+        if backup_type:
+            sql = """
+                SELECT backup_type, target_username, created_at, last_verified, verified
+                FROM tofu_backups
+                WHERE user_id = %s AND backup_type = %s
+                ORDER BY created_at DESC
+            """
+            self.cursor.execute(sql, (user_id, backup_type))
+        else:
+            sql = """
+                SELECT backup_type, target_username, created_at, last_verified, verified
+                FROM tofu_backups
+                WHERE user_id = %s
+                ORDER BY created_at DESC
+            """
+            self.cursor.execute(sql, (user_id,))
+        return self.cursor.fetchall()
 

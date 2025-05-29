@@ -22,6 +22,14 @@ from schemas import (
     ListFilesRequest,
     DownloadFileRequest,
     DeleteFileRequest,
+    GetOPKRequest,
+    AddOPKsRequest,
+    RemoveSharedFileRequest,
+    ListSharedFilesRequest,
+    ShareFileRequest,
+    PreKeyBundleRequest,
+    BackupTOFURequest,
+    GetBackupTOFURequest,
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -168,6 +176,70 @@ async def delete_file(req: DeleteFileRequest, db: models.UserDB = Depends(get_db
     logger.debug(f"DeleteFileRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.delete_file_handler, req, db)
     logger.debug(f"DeleteFile response: {resp}")
+    return resp
+
+@app.get("/prekey_bundle")
+async def prekey_bundle(req: PreKeyBundleRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"PreKeyBundleRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.prekey_bundle_handler, req, db)
+    logger.debug(f"PreKeyBundle response: {resp}")
+    return resp
+
+@app.post("/add_prekey_bundle")
+async def add_prekey_bundle(req: PreKeyBundleRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"AddPreKeyBundleRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.add_prekey_bundle_handler, req, db)
+    logger.debug(f"AddPreKeyBundle response: {resp}")
+    return resp
+
+
+@app.get("/opk")
+async def opk(req: GetOPKRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"GetOPKRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.opk_handler, req, db)
+    logger.debug(f"OPK response: {resp}")
+    return resp
+
+@app.post("/add_opks")
+async def add_opks(req: AddOPKsRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"AddOPKsRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.add_opks_handler, req, db)
+    logger.debug(f"AddOPKs response: {resp}")
+    return resp
+
+@app.post("/share_file")
+async def share_file(req: ShareFileRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ShareFileRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.share_file_handler, req, db)
+    logger.debug(f"ShareFile response: {resp}")
+    return resp
+
+@app.post("/remove_share")
+async def remove_share(req: RemoveSharedFileRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"RemoveSharedFileRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.remove_shared_file_handler, req, db)
+    logger.debug(f"RemoveSharedFile response: {resp}")
+    return resp
+
+@app.post("/list_shared_files")
+async def list_shared_files(req: ListSharedFilesRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListSharedFilesRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.list_shared_files_handler, req, db)
+    logger.debug(f"ListSharedFiles response: {resp}")
+    return resp
+
+@app.post("/backup_tofu_keys")
+async def backup_tofu_keys(req: BackupTOFURequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"BackupTOFURequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.backup_tofu_keys_handler, req, db)
+    logger.debug(f"BackupTOFU response: {resp}")
+    return resp
+
+@app.post("/get_backup_tofu_keys")
+async def get_backup_tofu_keys(req: GetBackupTOFURequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"GetBackupTOFURequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.get_backup_tofu_keys_handler, req, db)
+    logger.debug(f"GetBackupTOFU response: {resp}")
     return resp
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────

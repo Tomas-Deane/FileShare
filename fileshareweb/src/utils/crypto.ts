@@ -222,3 +222,43 @@ export async function decryptFile(
     key
   );
 }
+
+export const generateX3DHKeys = async () => {
+  await sodium.ready;
+  
+  // Generate Identity Key (IK)
+  const identityKeyPair = sodium.crypto_sign_keypair();
+  const IK_pub = identityKeyPair.publicKey;
+  const IK_priv = identityKeyPair.privateKey;
+
+  // Generate Signed Pre-Key (SPK)
+  const signedPreKeyPair = sodium.crypto_sign_keypair();
+  const SPK_pub = signedPreKeyPair.publicKey;
+  const SPK_priv = signedPreKeyPair.privateKey;
+
+  // Sign the SPK with IK
+  const SPK_signature = sodium.crypto_sign_detached(
+    SPK_pub,
+    IK_priv
+  );
+
+  // Generate One-Time Pre-Keys (OPKs)
+  const OPKs = [];
+  const OPKs_priv = [];
+  const numOPKs = 100; // Generate 100 one-time pre-keys
+  for (let i = 0; i < numOPKs; i++) {
+    const opkPair = sodium.crypto_sign_keypair();
+    OPKs.push(opkPair.publicKey);
+    OPKs_priv.push(opkPair.privateKey);
+  }
+
+  return {
+    identity_key: IK_pub,
+    identity_key_private: IK_priv,
+    signed_pre_key: SPK_pub,
+    signed_pre_key_private: SPK_priv,
+    signed_pre_key_sig: SPK_signature,
+    one_time_pre_keys: OPKs,
+    one_time_pre_keys_private: OPKs_priv
+  };
+};
