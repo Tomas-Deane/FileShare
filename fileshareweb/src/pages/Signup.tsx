@@ -234,7 +234,7 @@ const Signup: React.FC = () => {
         // 1. Get challenge for prekey bundle
         const prekeyChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
             username: trimmedUsername,
-            operation: 'add_prekey_bundle'
+            operation: 'add_pre_key_bundle'
         });
 
         // Sign the challenge
@@ -244,7 +244,7 @@ const Signup: React.FC = () => {
         );
 
         // Upload prekey bundle with challenge
-        await apiClient.post('/add_prekey_bundle', {
+        await apiClient.post('/add_pre_key_bundle', {
             username: trimmedUsername,
             IK_pub: payload.identity_key,
             SPK_pub: payload.signed_pre_key,

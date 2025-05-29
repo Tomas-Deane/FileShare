@@ -410,9 +410,14 @@ def get_prekey_bundle_handler(req: GetPreKeyBundleRequest, db: models.UserDB):
         if not bundle:
             raise HTTPException(status_code=404, detail="No prekey bundle found")
         
+        # Convert binary data to base64 for response
         return {
             "status": "ok",
-            "prekey_bundle": bundle
+            "prekey_bundle": {
+                "IK_pub": base64.b64encode(bundle["IK_pub"]).decode(),
+                "SPK_pub": base64.b64encode(bundle["SPK_pub"]).decode(),
+                "SPK_signature": base64.b64encode(bundle["SPK_signature"]).decode()
+            }
         }
     except InvalidSignature:
         db.delete_challenge(user_id)
