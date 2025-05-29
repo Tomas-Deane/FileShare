@@ -129,6 +129,8 @@ def init_db():
         recipient_id         BIGINT              NOT NULL,
         EK_pub               BLOB                NOT NULL,
         IK_pub               BLOB                NOT NULL,
+        encrypted_file_key   BLOB                NOT NULL,
+        OPK_id              BIGINT              NOT NULL,
         shared_at            DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT fk_shared_file
         FOREIGN KEY (file_id)
@@ -476,14 +478,14 @@ class UserDB:
         self.cursor.execute(sql, (opk_id,))
         self.conn.commit()
 
-    def share_file(self, file_id, recipient_id, EK_pub, IK_pub):
+    def share_file(self, file_id, recipient_id, EK_pub, IK_pub, encrypted_file_key, OPK_id):
         self.ensure_connection()
         sql = """
             INSERT INTO shared_files
-                (file_id, recipient_id, EK_pub, IK_pub)
-            VALUES (%s, %s, %s, %s)
+                (file_id, recipient_id, EK_pub, IK_pub, encrypted_file_key, OPK_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """
-        self.cursor.execute(sql, (file_id, recipient_id, EK_pub, IK_pub))
+        self.cursor.execute(sql, (file_id, recipient_id, EK_pub, IK_pub, encrypted_file_key, OPK_id))
         self.conn.commit()
 
     def get_shared_files(self, recipient_id):
@@ -494,6 +496,8 @@ class UserDB:
                 sf.file_id,
                 sf.EK_pub,
                 sf.IK_pub,
+                sf.encrypted_file_key,
+                sf.OPK_id,
                 sf.shared_at,
                 f.filename
             FROM shared_files sf
@@ -513,6 +517,8 @@ class UserDB:
                 sf.recipient_id,
                 sf.EK_pub,
                 sf.IK_pub,
+                sf.encrypted_file_key,
+                sf.OPK_id,
                 sf.shared_at,
                 f.filename
             FROM shared_files sf

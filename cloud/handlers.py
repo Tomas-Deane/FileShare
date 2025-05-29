@@ -17,6 +17,8 @@ from schemas import (
     DeleteFileRequest,
     BackupTOFURequest,
     GetBackupTOFURequest,
+    GetPreKeyBundleRequest,
+    AddPreKeyBundleRequest,
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
@@ -365,6 +367,62 @@ def get_backup_tofu_keys_handler(req: GetBackupTOFURequest, db: models.UserDB):
             "encrypted_backup": base64.b64encode(backup["encrypted_data"]).decode(),
             "backup_nonce": base64.b64encode(backup["backup_nonce"]).decode()
         }
+    except InvalidSignature:
+        db.delete_challenge(user_id)
+        raise HTTPException(status_code=401, detail="Bad signature")
+
+# --- PREKEY BUNDLE ------------------------------------------------------
+#get prekey bundle
+def get_prekey_bundle_handler(req: GetPreKeyBundleRequest, db: models.UserDB):
+    logging.debug(f"GetPreKeyBundle: {req.model_dump_json()}")
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="Unknown user")
+    
+    user_id = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(user_id, "get_prekey_bundle")
+    if stored is None or provided != stored:
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+    
+    signature = base64.b64decode(req.signature)
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(signature, provided)
+        
+        bundle = db.get_prekey_bundle(user_id)
+        if not bundle:
+            raise HTTPException(status_code=404, detail="No prekey bundle found")
+        
+        return {
+            "status": "ok",
+            "prekey_bundle": bundle
+        }
+    except InvalidSignature:
+        db.delete_challenge(user_id)
+        raise HTTPException(status_code=401, detail="Bad signature")
+    
+#add prekey bundle
+def add_prekey_bundle_handler(req: AddPreKeyBundleRequest, db: models.UserDB):
+    logging.debug(f"AddPreKeyBundle: {req.model_dump_json()}")
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="Unknown user")
+    
+    user_id = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(user_id, "add_prekey_bundle")
+    if stored is None or provided != stored:
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+    
+    signature = base64.b64decode(req.signature)
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(signature, provided)
+        
+        db.add_prekey_bundle(user_id, req.IK_pub, req.SPK_pub, req.SPK_signature)
+        db.delete_challenge(user_id)
+        return {"status": "ok", "message": "Prekey bundle added"}
     except InvalidSignature:
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")

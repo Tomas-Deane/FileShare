@@ -87,7 +87,12 @@ class DeleteFileRequest(BaseModel):
     signature: str
 
 
-class PreKeyBundleRequest(BaseModel):
+class GetPreKeyBundleRequest(BaseModel):
+    username: str
+    nonce: str
+    signature: str
+
+class AddPreKeyBundleRequest(BaseModel):
     username: str
     nonce: str
     signature: str
@@ -95,11 +100,14 @@ class PreKeyBundleRequest(BaseModel):
     SPK_pub: str
     SPK_signature: str
 
-
 class PreKeyBundleResponse(BaseModel):
     IK_pub: str
     SPK_pub: str
     SPK_signature: str
+
+class AddPreKeyBundleResponse(BaseModel):
+    status: str
+    message: str
 
 
 class AddOPKsRequest(BaseModel):
@@ -124,6 +132,7 @@ class ShareFileRequest(BaseModel):
     username: str
     filename: str
     recipient_username: str
+    encrypted_key: str
     EK_pub: str
     IK_pub: str
     nonce: str
@@ -159,11 +168,11 @@ class AddOPKsRequest(BaseModel):
 
 
 class BackupTOFURequest(BaseModel):
-    username: str
+    username: str 
+
+class BackupTOFUResponse(BaseModel):
+    status: str
     encrypted_backup: str
-    backup_nonce: str
-    nonce: str
-    signature: str
 
 
 class GetBackupTOFURequest(BaseModel):

@@ -28,6 +28,8 @@ from schemas import (
     ListSharedFilesRequest,
     ShareFileRequest,
     PreKeyBundleRequest,
+    GetPreKeyBundleRequest,
+    AddPreKeyBundleRequest,
     BackupTOFURequest,
     GetBackupTOFURequest,
 )
@@ -178,15 +180,15 @@ async def delete_file(req: DeleteFileRequest, db: models.UserDB = Depends(get_db
     logger.debug(f"DeleteFile response: {resp}")
     return resp
 
-@app.get("/prekey_bundle")
-async def prekey_bundle(req: PreKeyBundleRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"PreKeyBundleRequest body: {req.model_dump_json()}")
-    resp = await run_in_threadpool(handlers.prekey_bundle_handler, req, db)
+@app.get("/get_prekey_bundle")
+async def get_prekey_bundle(req: GetPreKeyBundleRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"GetPreKeyBundleRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.get_prekey_bundle_handler, req, db)
     logger.debug(f"PreKeyBundle response: {resp}")
     return resp
 
 @app.post("/add_prekey_bundle")
-async def add_prekey_bundle(req: PreKeyBundleRequest, db: models.UserDB = Depends(get_db)):
+async def add_prekey_bundle(req: AddPreKeyBundleRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"AddPreKeyBundleRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.add_prekey_bundle_handler, req, db)
     logger.debug(f"AddPreKeyBundle response: {resp}")
