@@ -17,7 +17,7 @@ import { CyberButton, MatrixBackground } from '../components';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../utils/apiClient';
-import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK } from '../utils/crypto';
+import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -176,10 +176,7 @@ const Dashboard: React.FC = () => {
   const [profileData, setProfileData] = useState<ProfileData>(mockUserProfile);
   const [editMode, setEditMode] = useState(false);
   const [editedProfile, setEditedProfile] = useState<ProfileData>(mockUserProfile);
-  const [verificationCode] = useState(() => {
-    // Generate a random 60-digit integer
-    return Array.from({ length: 60 }, () => Math.floor(Math.random() * 10)).join('');
-  });
+  const [verificationCode, setVerificationCode] = useState<string>('');
   const [files, setFiles] = useState<FileData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -345,10 +342,23 @@ const Dashboard: React.FC = () => {
     logDebug('Revoke initiated', { fileId });
     // TODO: Implement revoke
   };
-  const handleVerifyClick = (user: { id: number; email: string }) => {
-    logDebug('Verification initiated', { userId: user.id, email: user.email });
-    setSelectedUser(user);
-    setOpenVerify(true);
+  const handleVerifyClick = async (user: { id: number; email: string }) => {
+    try {
+      const response = await apiClient.post<{ prekey_bundle: { IK_pub: string } }>('/get_prekey_bundle', { username: user.email });
+      const remoteIK = response.prekey_bundle.IK_pub;
+      const myKeyBundle = JSON.parse(localStorage.getItem('priv_key_bundle') || '{}');
+      const myIK = myKeyBundle.IK_pub;
+      if (!myIK || !remoteIK) {
+        setUserError('Could not retrieve identity keys for verification.');
+        return;
+      }
+      const code = await generateOOBVerificationCode(myIK, remoteIK);
+      setVerificationCode(code);
+      setSelectedUser(user);
+      setOpenVerify(true);
+    } catch (err: any) {
+      setUserError('Failed to fetch user key bundle or generate verification code.');
+    }
   };
 
   const debugSection = (
@@ -1111,6 +1121,8 @@ const Dashboard: React.FC = () => {
                             border: '1px solid rgba(0, 255, 0, 0.2)',
                             borderRadius: 1,
                             mb: 1,
+                            display: 'flex',
+                            alignItems: 'center',
                             '&:hover': {
                               border: '1px solid rgba(0, 255, 0, 0.4)',
                               backgroundColor: 'rgba(0, 255, 0, 0.05)',
@@ -1126,6 +1138,17 @@ const Dashboard: React.FC = () => {
                               sx: { color: '#00ffff', fontWeight: 'bold' },
                             }}
                           />
+                          <Box sx={{ ml: 'auto' }}>
+                            <Button
+                              variant="contained"
+                              color="primary"
+                              onClick={() => handleVerifyClick({ id: user.id, email: user.username })}
+                              size="small"
+                              sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+                            >
+                              Verify
+                            </Button>
+                          </Box>
                         </ListItem>
                       ))}
                   </List>

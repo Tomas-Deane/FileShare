@@ -79,7 +79,7 @@ async def add_security_headers(request: Request, call_next):
 # ─── CORS ───────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],           # TODO: lock down for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -180,7 +180,7 @@ async def delete_file(req: DeleteFileRequest, db: models.UserDB = Depends(get_db
     logger.debug(f"DeleteFile response: {resp}")
     return resp
 
-@app.get("/get_prekey_bundle")
+@app.post("/get_prekey_bundle")
 async def get_prekey_bundle(req: GetPreKeyBundleRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"GetPreKeyBundleRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.get_prekey_bundle_handler, req, db)
