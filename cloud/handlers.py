@@ -469,13 +469,13 @@ def list_users_handler(req: ListUsersRequest, db: models.UserDB) -> ListUsersRes
         # Delete the challenge after successful verification
         db.delete_challenge(user_id)
         
-        # Return user list
+        # Return user list - handle both tuple and dict results
         return ListUsersResponse(
             status="ok",
             users=[
                 UserData(
-                    id=user["id"],
-                    username=user["username"]
+                    id=user[0] if isinstance(user, tuple) else user["id"],
+                    username=user[1] if isinstance(user, tuple) else user["username"]
                 )
                 for user in users
             ]

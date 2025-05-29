@@ -613,11 +613,5 @@ class UserDB:
             ORDER BY u.id
         """
         self.cursor.execute(sql)
-        rows = self.cursor.fetchall()
-        if not rows:
-            return []
-        if isinstance(rows[0], dict):
-            return rows
-        columns = [col[0] for col in self.cursor.description]
-        return [dict(zip(columns, row)) for row in rows]
+        return self.cursor.fetchall()
 
