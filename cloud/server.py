@@ -27,7 +27,6 @@ from schemas import (
     RemoveSharedFileRequest,
     ListSharedFilesRequest,
     ShareFileRequest,
-    PreKeyBundleRequest,
     GetPreKeyBundleRequest,
     AddPreKeyBundleRequest,
     BackupTOFURequest,
