@@ -414,9 +414,9 @@ def get_prekey_bundle_handler(req: GetPreKeyBundleRequest, db: models.UserDB):
         return {
             "status": "ok",
             "prekey_bundle": {
-                "IK_pub": base64.b64encode(bundle["IK_pub"]).decode(),
-                "SPK_pub": base64.b64encode(bundle["SPK_pub"]).decode(),
-                "SPK_signature": base64.b64encode(bundle["SPK_signature"]).decode()
+                "IK_pub": base64.b64encode(bundle[0]).decode(),  # First element is IK_pub
+                "SPK_pub": base64.b64encode(bundle[1]).decode(),  # Second element is SPK_pub
+                "SPK_signature": base64.b64encode(bundle[2]).decode()  # Third element is SPK_signature
             }
         }
     except InvalidSignature:
