@@ -1,7 +1,5 @@
 #include "profilecontroller.h"
 #include "authcontroller.h"
-#include <sodium.h>
-#include "logger.h"
 
 ProfileController::ProfileController(INetworkManager *netMgr,
                                      AuthController  *authController,
@@ -41,24 +39,32 @@ void ProfileController::changePassword(const QString &newPassword)
     }
     m_pendingNewPassword = newPassword;
 
-    m_pendingSalt.resize(16);
-    randombytes_buf(reinterpret_cast<unsigned char *>(m_pendingSalt.data()),
-                    m_pendingSalt.size());
-    m_pendingOpsLimit = crypto_pwhash_OPSLIMIT_MODERATE;
-    m_pendingMemLimit = crypto_pwhash_MEMLIMIT_MODERATE;
+    // generate new salt
+    m_pendingSalt = m_cryptoService->randomBytes(16);
+    m_pendingOpsLimit = ICryptoService::OPSLIMIT_MODERATE;
+    m_pendingMemLimit = ICryptoService::MEMLIMIT_MODERATE;
 
-    QByteArray newPdk = m_cryptoService->deriveKey(newPassword,
-                                                   m_pendingSalt,
-                                                   m_pendingOpsLimit,
-                                                   m_pendingMemLimit);
+    // derive new PDK
+    QByteArray newPdk = m_cryptoService->deriveKey(
+        newPassword,
+        m_pendingSalt,
+        m_pendingOpsLimit,
+        m_pendingMemLimit
+        );
+
+    // encrypt existing secret key with new PDK
     m_pendingEncryptedSK = m_cryptoService->encrypt(
         m_authController->getSessionSecretKey(),
         newPdk,
-        m_pendingPrivKeyNonce);
+        m_pendingPrivKeyNonce
+        );
+
+    // encrypt existing KEK with new PDK
     m_pendingEncryptedKek = m_cryptoService->encrypt(
         m_authController->getSessionKek(),
         newPdk,
-        m_pendingKekNonce);
+        m_pendingKekNonce
+        );
 
     m_networkManager->requestChallenge(
         m_authController->getSessionUsername(),
