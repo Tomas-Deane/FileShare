@@ -420,32 +420,42 @@ def get_prekey_bundle_handler(req: GetPreKeyBundleRequest, db: models.UserDB):
 #add prekey bundle
 def add_prekey_bundle_handler(req: AddPreKeyBundleRequest, db: models.UserDB):
     logging.debug(f"AddPreKeyBundle: {req.model_dump_json()}")
-    user = db.get_user(req.username)
-    if not user:
-        raise HTTPException(status_code=404, detail="Unknown user")
-    
-    user_id = user["user_id"]
-    provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(user_id, "add_prekey_bundle")
-    if stored is None or provided != stored:
-        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
-    
-    signature = base64.b64decode(req.signature)
     try:
-        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
-            .verify(signature, provided)
+        user = db.get_user(req.username)
+        if not user:
+            raise HTTPException(status_code=404, detail="Unknown user")
         
-        # Decode base64 data before passing to database
-        IK_pub = base64.b64decode(req.IK_pub)
-        SPK_pub = base64.b64decode(req.SPK_pub)
-        SPK_signature = base64.b64decode(req.SPK_signature)
+        user_id = user["user_id"]
+        provided = base64.b64decode(req.nonce)
+        stored = db.get_pending_challenge(user_id, "add_prekey_bundle")
+        if stored is None or provided != stored:
+            raise HTTPException(status_code=400, detail="Invalid or expired challenge")
         
-        db.add_prekey_bundle(user_id, IK_pub, SPK_pub, SPK_signature)
-        db.delete_challenge(user_id)
-        return {"status": "ok", "message": "Prekey bundle added"}
-    except InvalidSignature:
-        db.delete_challenge(user_id)
-        raise HTTPException(status_code=401, detail="Bad signature")
+        signature = base64.b64decode(req.signature)
+        try:
+            Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+                .verify(signature, provided)
+            
+            # Decode base64 data before passing to database
+            try:
+                IK_pub = base64.b64decode(req.IK_pub)
+                SPK_pub = base64.b64decode(req.SPK_pub)
+                SPK_signature = base64.b64decode(req.SPK_signature)
+                
+                logging.debug(f"Decoded data lengths - IK_pub: {len(IK_pub)}, SPK_pub: {len(SPK_pub)}, SPK_signature: {len(SPK_signature)}")
+                
+                db.add_pre_key_bundle(user_id, IK_pub, SPK_pub, SPK_signature)
+                db.delete_challenge(user_id)
+                return {"status": "ok", "message": "Prekey bundle added"}
+            except Exception as e:
+                logging.error(f"Error processing prekey bundle data: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Error processing prekey bundle data: {str(e)}")
+        except InvalidSignature:
+            db.delete_challenge(user_id)
+            raise HTTPException(status_code=401, detail="Bad signature")
+    except Exception as e:
+        logging.error(f"Unexpected error in add_prekey_bundle_handler: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 def list_users_handler(req: ListUsersRequest, db: models.UserDB) -> ListUsersResponse:
     """List all users in the system."""
