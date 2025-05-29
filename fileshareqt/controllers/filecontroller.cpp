@@ -81,6 +81,10 @@ void FileController::processUpload(const QByteArray &nonce)
         dekNonce
         );
 
+    // zero out our secrets as soon as we're done with them
+    m_cryptoService->secureZeroMemory(plaintext);
+    m_cryptoService->secureZeroMemory(fileDek);
+
     // sign encrypted DEK
     QByteArray sig = m_cryptoService->sign(
         encryptedDek,
@@ -185,6 +189,9 @@ void FileController::onDownloadNetwork(bool success,
         fileDek,
         fileNonce
         );
+
+    // zero out the raw DEK immediately
+    m_cryptoService->secureZeroMemory(fileDek);
 
     m_downloadCache.insert(m_selectedDownload, data);
     emit downloadFileResult(true, m_selectedDownload, data, {});

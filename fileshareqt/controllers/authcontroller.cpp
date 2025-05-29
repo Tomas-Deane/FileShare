@@ -69,11 +69,17 @@ void AuthController::signup(const QString &username, const QString &password)
     QByteArray skNonce;
     QByteArray encryptedSK = cryptoService->encrypt(secKey, sessionPdk, skNonce);
 
+    // zero out the raw secret-key immediately
+    cryptoService->secureZeroMemory(secKey);
+
     // generate and encrypt KEK
     QByteArray kek = cryptoService->generateAeadKey();
     sessionKek = kek;
     QByteArray kekNonce;
     QByteArray encryptedKek = cryptoService->encrypt(kek, sessionPdk, kekNonce);
+
+    // zero out the raw KEK immediately
+    cryptoService->secureZeroMemory(kek);
 
     QJsonObject req{
         { "username",           username },
@@ -103,14 +109,21 @@ void AuthController::login(const QString &username, const QString &password)
 
 void AuthController::logout()
 {
-    sessionSecretKey.fill(char(0));
-    sessionPdk.fill(char(0));
-    sessionKek.fill(char(0));
-    sessionSecretKey.clear();
-    sessionPdk.clear();
-    sessionKek.clear();
+    // securely wipe all secrets
+    cryptoService->secureZeroMemory(sessionSecretKey);
+    cryptoService->secureZeroMemory(sessionPdk);
+    cryptoService->secureZeroMemory(sessionKek);
+
     sessionUsername.clear();
     emit loggedOut();
+}
+
+void AuthController::updateSessionPdk(const QByteArray &newPdk)
+{
+    // wipe the old PDK
+    cryptoService->secureZeroMemory(sessionPdk);
+    // take ownership of the new PDK
+    sessionPdk = newPdk;
 }
 
 void AuthController::onSignupResult(bool success, const QString &message)

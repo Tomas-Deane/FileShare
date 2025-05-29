@@ -110,3 +110,11 @@ QByteArray CryptoUtils::signMessage(const QByteArray &message,
     Logger::log("Generated signature");
     return sig;
 }
+
+void CryptoUtils::secureZeroMemory(QByteArray &data)
+{
+    if (!data.isEmpty()) {
+        sodium_memzero(data.data(), data.size());
+        data.clear();
+    }
+}

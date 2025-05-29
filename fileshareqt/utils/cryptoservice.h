@@ -23,6 +23,7 @@ public:
     void generateKeyPair(QByteArray &publicKey,
                          QByteArray &secretKey) override;
 
+    // Get a fresh random AEAD key of length 32 bytes
     QByteArray generateAeadKey() override;
 
     // Symmetric encryption (AEAD)
@@ -38,6 +39,9 @@ public:
     // Signature generation
     QByteArray sign(const QByteArray &message,
                     const QByteArray &secretKey) override;
+
+    // Securely zero-out sensitive data
+    void secureZeroMemory(QByteArray &data) override;
 };
 
 #endif // CRYPTOSERVICE_H

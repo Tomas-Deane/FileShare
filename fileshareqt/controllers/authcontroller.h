@@ -21,6 +21,8 @@ public:
      void login(const QString &username, const QString &password);
      void logout();
 
+     void updateSessionPdk(const QByteArray &newPdk);
+
      void checkConnection();
 
     QString getSessionUsername() const;

@@ -39,6 +39,9 @@ public:
     static QByteArray signMessage(const QByteArray &message,
                                   const QByteArray &secretKey);
 
+    // Securely zero and clear memory (uses sodium_memzero)
+    static void secureZeroMemory(QByteArray &data);
 };
+
 
 #endif // CRYPTO_UTILS_H

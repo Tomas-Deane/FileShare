@@ -45,6 +45,9 @@ public:
     virtual QByteArray sign(const QByteArray &message,
                             const QByteArray &secretKey) = 0;
 
+    // Securely zero-out sensitive data
+    virtual void secureZeroMemory(QByteArray &data) = 0;
+
 };
 
 #endif // ICRYPTOSERVICE_H

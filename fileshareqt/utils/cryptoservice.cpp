@@ -50,3 +50,8 @@ QByteArray CryptoService::sign(const QByteArray &message,
 {
     return CryptoUtils::signMessage(message, secretKey);
 }
+
+void CryptoService::secureZeroMemory(QByteArray &data)
+{
+    CryptoUtils::secureZeroMemory(data);
+}
