@@ -26,6 +26,7 @@ from schemas import (
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
+import datetime
 
 import models
 
@@ -53,7 +54,8 @@ def challenge_handler(req: ChallengeRequest, db: models.UserDB):
     user_id = user["user_id"]
     challenge = secrets.token_bytes(32)
     db.add_challenge(user_id, req.operation, challenge)
-    logging.debug(f"Stored challenge for user_id={user_id} op={req.operation}: {challenge.hex()}")
+    logging.debug(f"Stored challenge for user_id={user_id} op={req.operation}: {base64.b64encode(challenge).decode()}")
+    logging.debug(f"Challenge timestamp: {datetime.datetime.utcnow()}")
 
     return {
         "status": "challenge",
@@ -393,12 +395,18 @@ def get_prekey_bundle_handler(req: GetPreKeyBundleRequest, db: models.UserDB):
     logging.debug(f"GetPreKeyBundle: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
+        logging.warning(f"Unknown user '{req.username}' at get_pre_key_bundle")
         raise HTTPException(status_code=404, detail="Unknown user")
     
     user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
     stored = db.get_pending_challenge(user_id, "get_pre_key_bundle")
+    logging.debug(f"Challenge verification - User ID: {user_id}, Operation: get_pre_key_bundle")
+    logging.debug(f"Provided nonce: {base64.b64encode(provided).decode()}")
+    logging.debug(f"Stored challenge: {base64.b64encode(stored).decode() if stored else 'None'}")
+    
     if stored is None or provided != stored:
+        logging.warning(f"No valid pending challenge for user_id={user_id} (get_pre_key_bundle)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
     
     signature = base64.b64decode(req.signature)
@@ -422,7 +430,7 @@ def get_prekey_bundle_handler(req: GetPreKeyBundleRequest, db: models.UserDB):
     except InvalidSignature:
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
-    
+
 #add prekey bundle
 def add_prekey_bundle_handler(req: AddPreKeyBundleRequest, db: models.UserDB):
     logging.debug(f"AddPreKeyBundle: {req.model_dump_json()}")

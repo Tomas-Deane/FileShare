@@ -157,27 +157,39 @@ const Signup: React.FC = () => {
             SPK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_private))),
             OPKs_priv: x3dhKeys.one_time_pre_keys_private.map(key =>
                 btoa(String.fromCharCode.apply(null, Array.from(key)))
-            )
-            //public keys
-            ,IK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
+            ),
+            // Public keys
+            IK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
             SPK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
             SPK_signature: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
             OPKs: x3dhKeys.one_time_pre_keys.map(key =>
                 btoa(String.fromCharCode.apply(null, Array.from(key)))
-            )
+            ),
+            // Additional keys
+            secretKey: btoa(String.fromCharCode.apply(null, Array.from(privateKey))),
+            pdk: btoa(String.fromCharCode.apply(null, Array.from(pdk))),
+            kek: btoa(String.fromCharCode.apply(null, Array.from(kek)))
         }));
         
         // 2. Create encrypted backup for server
         const backupData = {
-            privateKey: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
-            //public keys
+            // Private keys
+            privateKey: btoa(String.fromCharCode.apply(null, Array.from(privateKey))),
+            identityKeyPrivate: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
+            signedPreKeyPrivate: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_private))),
+            oneTimePreKeysPrivate: x3dhKeys.one_time_pre_keys_private.map(key => 
+                btoa(String.fromCharCode.apply(null, Array.from(key)))
+            ),
+            // Public keys
             identityKey: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
             signedPreKey: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
             signedPreKeySig: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
             oneTimePreKeys: x3dhKeys.one_time_pre_keys.map(key => 
                 btoa(String.fromCharCode.apply(null, Array.from(key)))
-            )
-          
+            ),
+            // Additional keys
+            pdk: btoa(String.fromCharCode.apply(null, Array.from(pdk))),
+            kek: btoa(String.fromCharCode.apply(null, Array.from(kek)))
         };
 
         // Encrypt backup with password-derived key

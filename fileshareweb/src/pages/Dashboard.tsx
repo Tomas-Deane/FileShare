@@ -163,7 +163,6 @@ const logDebug = (message: string, data?: any) => {
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { username, secretKey, pdk, kek } = useAuth();
   const [activeTab, setActiveTab] = useState<'home'|'files'|'users'|'profile'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [userSearchQuery, setUserSearchQuery] = useState('');
@@ -191,6 +190,23 @@ const Dashboard: React.FC = () => {
   const [users, setUsers] = useState<UserData[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
+
+  // Get auth data from sessionStorage
+  const keyBundle = React.useMemo(() => {
+    const bundleStr = sessionStorage.getItem('priv_key_bundle');
+    if (!bundleStr) return null;
+    try {
+      return JSON.parse(bundleStr);
+    } catch (e) {
+      console.error('Error parsing key bundle from sessionStorage:', e);
+      return null;
+    }
+  }, []);
+
+  const username = keyBundle?.username;
+  const secretKey = keyBundle?.secretKey ? Uint8Array.from(atob(keyBundle.secretKey), c => c.charCodeAt(0)) : null;
+  const pdk = keyBundle?.pdk ? Uint8Array.from(atob(keyBundle.pdk), c => c.charCodeAt(0)) : null;
+  const kek = keyBundle?.kek ? Uint8Array.from(atob(keyBundle.kek), c => c.charCodeAt(0)) : null;
 
   // Add a ref to track if we've already fetched files
   const isMounted = React.useRef(false);
@@ -345,16 +361,15 @@ const Dashboard: React.FC = () => {
   };
   const handleVerifyClick = async (user: { id: number; username: string }) => {
     try {
-      // 1. Get your own username from storage
-      const myUsername = storage.getCurrentUser();
+      // 1. Get your own username and key bundle from sessionStorage
+      const myUsername = username;
       if (!myUsername) {
-        setUserError('No current user found in storage.');
+        setUserError('No current user found in session storage.');
         return;
       }
 
-      // 2. Get your own key bundle from storage
-      const myKeyBundle = storage.getKeyBundle(myUsername);
-      if (!myKeyBundle || !myKeyBundle.IK_pub) {
+      // 2. Get your own key bundle from sessionStorage
+      if (!keyBundle || !keyBundle.IK_pub) {
         setUserError('Could not retrieve your identity key for verification.');
         return;
       }
@@ -362,7 +377,7 @@ const Dashboard: React.FC = () => {
       // 3. Request challenge for get_prekey_bundle as the logged-in user
       const challengeResponse = await apiClient.post<{ status: string; nonce: string }>('/challenge', {
         username: myUsername,
-        operation: 'get_prekey_bundle'
+        operation: 'get_pre_key_bundle'
       });
       if (challengeResponse.status !== 'challenge') {
         setUserError('Failed to get challenge for verification.');
@@ -375,7 +390,7 @@ const Dashboard: React.FC = () => {
 
       // 5. Request the prekey bundle for the target user
       const prekeyResponse = await apiClient.post<{ prekey_bundle: { IK_pub: string } }>(
-        '/get_prekey_bundle',
+        '/get_pre_key_bundle',
         {
           username: user.username, // the user you want to verify
           nonce: challengeResponse.nonce,
@@ -385,11 +400,12 @@ const Dashboard: React.FC = () => {
       const remoteIK = prekeyResponse.prekey_bundle.IK_pub;
 
       // 6. Generate the OOB verification code
-      const code = await generateOOBVerificationCode(myKeyBundle.IK_pub, remoteIK);
+      const code = await generateOOBVerificationCode(keyBundle.IK_pub, remoteIK);
       setVerificationCode(code);
       setSelectedUser(user);
       setOpenVerify(true);
     } catch (err: any) {
+      console.error('Verification error:', err);
       setUserError('Failed to fetch user key bundle or generate verification code.');
     }
   };
@@ -839,10 +855,17 @@ const Dashboard: React.FC = () => {
 
   // Update useEffect to fetch users when needed
   useEffect(() => {
-    if (activeTab === 'users' && username && secretKey) {
+    if (activeTab === 'users' && username && secretKey && !loadingUsers && !users.length) {
       fetchUsers();
     }
-  }, [activeTab, username, secretKey]);
+  }, [activeTab]); // Only depend on activeTab changes
+
+  // Add a function to manually refresh users
+  const refreshUsers = () => {
+    if (username && secretKey) {
+      fetchUsers();
+    }
+  };
 
   return (
     <>

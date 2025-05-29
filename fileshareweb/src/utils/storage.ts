@@ -15,6 +15,9 @@ interface KeyBundle {
     IK_priv?: string;
     SPK_priv?: string;
     OPKs_priv?: string[];
+    secretKey?: string;  // Added for private key
+    pdk?: string;        // Added for password-derived key
+    kek?: string;        // Added for key encryption key
     verified: boolean;  // TOFU verification status
     lastVerified: string; // ISO timestamp of last verification
 }

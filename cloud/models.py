@@ -2,6 +2,8 @@
 #!/usr/bin/env python3
 import os
 import pymysql as connector
+import logging
+import datetime
 
 # Database connection parameters (will use env variables)
 DB_USER     = os.environ.get('DB_USER',     'nrmc')
@@ -280,7 +282,7 @@ class UserDB:
     def get_pending_challenge(self, user_id, operation, expiry_seconds=300):
         self.ensure_connection()
         sql = """
-            SELECT challenge
+            SELECT challenge, created_at
             FROM pending_challenges
             WHERE user_id = %s
               AND operation = %s
@@ -290,8 +292,16 @@ class UserDB:
         self.cursor.execute(sql, (user_id, operation, expiry_seconds))
         row = self.cursor.fetchone()
         if not row:
+            logging.debug(f"No challenge found for user_id={user_id} operation={operation}")
             return None
-        return row['challenge'] if isinstance(row, dict) else row[0]
+        
+        challenge = row['challenge'] if isinstance(row, dict) else row[0]
+        created_at = row['created_at'] if isinstance(row, dict) else row[1]
+        logging.debug(f"Found challenge for user_id={user_id} operation={operation}")
+        logging.debug(f"Challenge created at: {created_at}")
+        logging.debug(f"Current time: {datetime.datetime.utcnow()}")
+        logging.debug(f"Challenge age: {(datetime.datetime.utcnow() - created_at).total_seconds()} seconds")
+        return challenge
 
     def delete_challenge(self, user_id):
         self.ensure_connection()

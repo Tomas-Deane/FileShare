@@ -96,6 +96,7 @@ const Login: React.FC = () => {
     setIsLoading(true);
 
     try {
+      console.log('Starting login process...');
       // 1. Validate input
       if (!formData.username || !formData.password) {
         throw new Error('Username and password are required');
@@ -108,6 +109,7 @@ const Login: React.FC = () => {
         throw new Error('Your browser is not compatible with the required security features');
       }
 
+      console.log('Requesting login challenge...');
       // 2. Request login challenge
       const challengeResponse = await apiClient.post<LoginChallenge>('/login', {
         username: trimmedUsername
@@ -116,6 +118,7 @@ const Login: React.FC = () => {
         throw new Error(challengeResponse.detail || 'Login failed');
       }
 
+      console.log('Deriving PDK and decrypting private key...');
       // 3. Derive PDK and decrypt private key
       const salt = Uint8Array.from(atob(challengeResponse.salt), c => c.charCodeAt(0));
       const pdk = await derivePDK(
@@ -128,8 +131,38 @@ const Login: React.FC = () => {
       const privNonce = Uint8Array.from(atob(challengeResponse.privkey_nonce), c => c.charCodeAt(0));
       const privateKey = await decryptPrivateKey(encryptedPrivateKey, pdk, privNonce);
 
+      console.log('Checking for local key bundle...');
       // 4. Check for local key bundle
-      let myKeyBundle = storage.getKeyBundle(trimmedUsername);
+      let myKeyBundle = null;
+      
+      // Check sessionStorage for key bundle
+      console.log('Attempting to retrieve key bundle from sessionStorage...');
+      console.log('All sessionStorage keys:', Object.keys(sessionStorage));
+      const sessionKeyBundle = sessionStorage.getItem('priv_key_bundle');
+      console.log('Raw sessionStorage data:', sessionKeyBundle ? 'Found data' : 'No data found');
+      if (sessionKeyBundle) {
+        console.log('Session storage data length:', sessionKeyBundle.length);
+        console.log('First 100 characters of data:', sessionKeyBundle.substring(0, 100));
+      }
+      
+      if (sessionKeyBundle) {
+        try {
+          myKeyBundle = JSON.parse(sessionKeyBundle);
+          console.log('Successfully parsed key bundle:', {
+            username: myKeyBundle.username,
+            hasIK_pub: !!myKeyBundle.IK_pub,
+            hasSPK_pub: !!myKeyBundle.SPK_pub,
+            hasSPK_signature: !!myKeyBundle.SPK_signature,
+            hasOPKs: Array.isArray(myKeyBundle.OPKs),
+            hasIK_priv: !!myKeyBundle.IK_priv,
+            hasSPK_priv: !!myKeyBundle.SPK_priv,
+            hasOPKs_priv: Array.isArray(myKeyBundle.OPKs_priv)
+          });
+        } catch (e) {
+          console.error('Error parsing sessionStorage key bundle:', e);
+          console.error('Raw data that failed to parse:', sessionKeyBundle);
+        }
+      }
 
       if (!myKeyBundle) {
         console.log('No local key bundle found, attempting TOFU restore...');
@@ -172,7 +205,10 @@ const Login: React.FC = () => {
         console.log('Backup data parsed:', {
             hasIdentityKey: !!backupData.identityKey,
             hasSignedPreKey: !!backupData.signedPreKey,
-            hasOneTimePreKeys: backupData.oneTimePreKeys.length
+            hasOneTimePreKeys: backupData.oneTimePreKeys.length,
+            hasPrivateKey: !!backupData.privateKey,
+            hasPDK: !!backupData.pdk,
+            hasKEK: !!backupData.kek
         });
 
         myKeyBundle = {
@@ -184,27 +220,32 @@ const Login: React.FC = () => {
             IK_priv: backupData.identityKeyPrivate,
             SPK_priv: backupData.signedPreKeyPrivate,
             OPKs_priv: backupData.oneTimePreKeysPrivate,
+            secretKey: backupData.privateKey,
+            pdk: backupData.pdk,
+            kek: backupData.kek,
             verified: true,
             lastVerified: new Date().toISOString()
         };
         console.log('Key bundle reconstructed from backup');
 
+        // Save to both sessionStorage and cookies
+        sessionStorage.setItem('priv_key_bundle', JSON.stringify(myKeyBundle));
         storage.saveKeyBundle(myKeyBundle);
         storage.setCurrentUser(trimmedUsername);
-        console.log('Key bundle saved to local storage');
+        console.log('Key bundle saved to both sessionStorage and cookies');
       }
 
       // 5. TOFU check: compare server and local public key bundles
       const prekeyChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username: trimmedUsername,
-        operation: 'get_prekey_bundle'
+        operation: 'get_pre_key_bundle'
       });
       const prekeySignature = sodium.crypto_sign_detached(
         base64.toByteArray(prekeyChallengeResponse.nonce),
         privateKey
       );
       const prekeyResponse = await apiClient.post<{ prekey_bundle: { IK_pub: string } }>(
-        '/get_prekey_bundle',
+        '/get_pre_key_bundle',
         {
           username: trimmedUsername,
           nonce: prekeyChallengeResponse.nonce,
