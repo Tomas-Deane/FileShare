@@ -376,6 +376,7 @@ def get_backup_tofu_keys_handler(req: GetBackupTOFURequest, db: models.UserDB):
         if not backup:
             raise HTTPException(status_code=404, detail="No TOFU backup found")
         
+        logging.debug(f"Found backup: {backup is not None}")
         return {
             "status": "ok",
             "encrypted_backup": base64.b64encode(backup["encrypted_data"]).decode(),

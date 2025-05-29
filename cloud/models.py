@@ -558,7 +558,20 @@ class UserDB:
             LIMIT 1
         """
         self.cursor.execute(sql, (user_id,))
-        return self.cursor.fetchone()
+        row = self.cursor.fetchone()
+        if not row:
+            return None
+        
+        # Convert tuple to dictionary
+        if isinstance(row, dict):
+            return row
+        else:
+            return {
+                "encrypted_data": row[0],
+                "backup_nonce": row[1],
+                "created_at": row[2],
+                "last_verified": row[3]
+            }
 
     def get_all_users(self) -> list:
         """Get all users in the system."""

@@ -209,6 +209,20 @@ const Signup: React.FC = () => {
             backupKey
         );
 
+        // After creating backupData
+        console.log('Creating TOFU backup with data:', {
+            username: trimmedUsername,
+            hasIdentityKey: !!backupData.identityKey,
+            hasSignedPreKey: !!backupData.signedPreKey,
+            hasOneTimePreKeys: backupData.oneTimePreKeys.length
+        });
+
+        // After encrypting backup
+        console.log('Encrypted backup created:', {
+            encryptedLength: encryptedBackup.length,
+            nonceLength: backupNonce.length
+        });
+
         // 3. Get challenge for backup
         const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
             username: trimmedUsername,
@@ -228,6 +242,9 @@ const Signup: React.FC = () => {
             nonce: challengeResponse.nonce,
             signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
         });
+
+        // After sending to server
+        console.log('TOFU backup sent to server');
 
         // Set as current user
         storage.setCurrentUser(trimmedUsername);

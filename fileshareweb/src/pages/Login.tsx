@@ -132,45 +132,66 @@ const Login: React.FC = () => {
       let myKeyBundle = storage.getKeyBundle(trimmedUsername);
 
       if (!myKeyBundle) {
+        console.log('No local key bundle found, attempting TOFU restore...');
+        
         // 4a. Restore from TOFU backup
         const tofuChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
-          username: trimmedUsername,
-          operation: 'get_backup_tofu'
+            username: trimmedUsername,
+            operation: 'get_backup_tofu'
         });
+        console.log('Got TOFU challenge');
+
         const tofuSignature = sodium.crypto_sign_detached(
-          base64.toByteArray(tofuChallengeResponse.nonce),
-          privateKey
+            base64.toByteArray(tofuChallengeResponse.nonce),
+            privateKey
         );
+        console.log('Signed TOFU challenge');
+
         const tofuBackupResponse = await apiClient.post<GetBackupTOFUResponse>('/get_backup_tofu_keys', {
-          username: trimmedUsername,
-          nonce: tofuChallengeResponse.nonce,
-          signature: btoa(String.fromCharCode.apply(null, Array.from(tofuSignature)))
+            username: trimmedUsername,
+            nonce: tofuChallengeResponse.nonce,
+            signature: btoa(String.fromCharCode.apply(null, Array.from(tofuSignature)))
         });
+        console.log('Received TOFU backup from server');
+
         const backupKey = await derivePDK(formData.password, salt, 3, 67108864);
         const encryptedBackup = Uint8Array.from(atob(tofuBackupResponse.encrypted_backup), c => c.charCodeAt(0));
         const backupNonce = Uint8Array.from(atob(tofuBackupResponse.backup_nonce), c => c.charCodeAt(0));
+        
+        console.log('Decrypting TOFU backup...');
         const decryptedBackup = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
-          null,
-          encryptedBackup,
-          null,
-          backupNonce,
-          backupKey
+            null,
+            encryptedBackup,
+            null,
+            backupNonce,
+            backupKey
         );
+        console.log('Backup decrypted successfully');
+
         const backupData = JSON.parse(new TextDecoder().decode(decryptedBackup));
+        console.log('Backup data parsed:', {
+            hasIdentityKey: !!backupData.identityKey,
+            hasSignedPreKey: !!backupData.signedPreKey,
+            hasOneTimePreKeys: backupData.oneTimePreKeys.length
+        });
+
         myKeyBundle = {
-          username: trimmedUsername,
-          IK_pub: backupData.identityKey,
-          SPK_pub: backupData.signedPreKey,
-          SPK_signature: backupData.signedPreKeySig,
-          OPKs: backupData.oneTimePreKeys,
-          IK_priv: backupData.identityKeyPrivate,
-          SPK_priv: backupData.signedPreKeyPrivate,
-          OPKs_priv: backupData.oneTimePreKeysPrivate,
-          verified: true,
-          lastVerified: new Date().toISOString()
+            username: trimmedUsername,
+            IK_pub: backupData.identityKey,
+            SPK_pub: backupData.signedPreKey,
+            SPK_signature: backupData.signedPreKeySig,
+            OPKs: backupData.oneTimePreKeys,
+            IK_priv: backupData.identityKeyPrivate,
+            SPK_priv: backupData.signedPreKeyPrivate,
+            OPKs_priv: backupData.oneTimePreKeysPrivate,
+            verified: true,
+            lastVerified: new Date().toISOString()
         };
+        console.log('Key bundle reconstructed from backup');
+
         storage.saveKeyBundle(myKeyBundle);
         storage.setCurrentUser(trimmedUsername);
+        console.log('Key bundle saved to local storage');
       }
 
       // 5. TOFU check: compare server and local public key bundles
