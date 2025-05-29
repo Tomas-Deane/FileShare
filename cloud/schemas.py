@@ -156,3 +156,23 @@ class AddOPKsRequest(BaseModel):
     pre_keys: list[str]
     nonce: str
     signature: str
+
+
+class BackupTOFURequest(BaseModel):
+    username: str
+    encrypted_backup: str
+    backup_nonce: str
+    nonce: str
+    signature: str
+
+
+class GetBackupTOFURequest(BaseModel):
+    username: str
+    nonce: str
+    signature: str
+
+
+class GetBackupTOFUResponse(BaseModel):
+    status: str
+    encrypted_backup: str
+    backup_nonce: str
