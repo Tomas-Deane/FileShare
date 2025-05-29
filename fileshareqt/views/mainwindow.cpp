@@ -6,7 +6,6 @@
 #include "filecontroller.h"
 #include "logger.h"
 
-#include <sodium.h>
 #include <QPixmap>
 #include <QTimer>
 #include <QFileDialog>
@@ -14,16 +13,16 @@
 #include <QMimeDatabase>
 #include <QFile>
 
- MainWindow::MainWindow(AuthController* authCtrl,
-        FileController* fileCtrl,
-        ProfileController* profileCtrl,
-        QWidget *parent)
-        : QMainWindow(parent)
-        , ui(new Ui::MainWindow)
-        , authController(authCtrl)
-        , profileController(profileCtrl)
-        , fileController(fileCtrl)
-        , pendingDeleteItem(nullptr)
+MainWindow::MainWindow(AuthController* authCtrl,
+                       FileController* fileCtrl,
+                       ProfileController* profileCtrl,
+                       QWidget *parent)
+    : QMainWindow(parent)
+    , ui(new Ui::MainWindow)
+    , authController(authCtrl)
+    , profileController(profileCtrl)
+    , fileController(fileCtrl)
+    , pendingDeleteItem(nullptr)
 {
     ui->setupUi(this);
 
@@ -39,11 +38,6 @@
 
     // Console logger
     Logger::initialize(ui->consoleTextEdit);
-    if (sodium_init() < 0) {
-        Logger::log("sodium_init() failed");
-    } else {
-        Logger::log("sodium initialized");
-    }
 
     // Core connections
     connect(authController, &AuthController::loggedIn,
@@ -68,7 +62,7 @@
         authController->checkConnection();
     });
 
-    // Setup password‐strength bars
+    // Setup password-strength bars
     auto setupBar = [&](QProgressBar *bar, QLabel *label){
         bar->setRange(0,100);
         bar->setValue(0);
@@ -90,7 +84,7 @@
     setupBar(ui->passwordStrengthBar, ui->passwordStrengthLabel);
     setupBar(ui->passwordStrengthBar_2, ui->passwordStrengthLabel_2);
 
-    // Profile‐tab password‐strength updates
+    // Profile-tab password-strength updates
     connect(ui->changePasswordLineEdit, &QLineEdit::textChanged,
             this, &MainWindow::on_changePasswordLineEdit_textChanged);
 }

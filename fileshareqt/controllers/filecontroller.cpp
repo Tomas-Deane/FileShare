@@ -1,10 +1,7 @@
 #include "filecontroller.h"
-#include "networkmanager.h"
 #include "authcontroller.h"
 #include <QJsonObject>
 #include <QJsonDocument>
-#include <sodium.h>
-#include "logger.h"
 
 FileController::FileController(INetworkManager *netMgr,
                                AuthController    *authController,
@@ -58,17 +55,16 @@ void FileController::deleteFile(const QString &filename)
 
 void FileController::onChallenge(const QByteArray &nonce, const QString &operation)
 {
-    if (operation == "upload_file")       processUpload(nonce);
-    else if (operation == "list_files")   processList(nonce);
-    else if (operation == "download_file")processDownload(nonce);
-    else if (operation == "delete_file")  processDelete(nonce);
+    if (operation == "upload_file")        processUpload(nonce);
+    else if (operation == "list_files")    processList(nonce);
+    else if (operation == "download_file") processDownload(nonce);
+    else if (operation == "delete_file")   processDelete(nonce);
 }
 
 void FileController::processUpload(const QByteArray &nonce)
 {
     // generate file DEK
-    QByteArray fileDek(crypto_aead_xchacha20poly1305_ietf_KEYBYTES, 0);
-    randombytes_buf(reinterpret_cast<unsigned char*>(fileDek.data()), fileDek.size());
+    QByteArray fileDek = m_cryptoService->generateAeadKey();
 
     // decrypt base64 to binary
     QByteArray plaintext = QByteArray::fromBase64(m_pendingFileContents);
@@ -79,13 +75,21 @@ void FileController::processUpload(const QByteArray &nonce)
 
     // envelope DEK under session KEK
     QByteArray dekNonce;
-    QByteArray encryptedDek = m_cryptoService->encrypt(fileDek,
-                                                       m_authController->getSessionKek(),
-                                                       dekNonce);
+    QByteArray encryptedDek = m_cryptoService->encrypt(
+        fileDek,
+        m_authController->getSessionKek(),
+        dekNonce
+        );
+
+    // zero out our secrets as soon as we're done with them
+    m_cryptoService->secureZeroMemory(plaintext);
+    m_cryptoService->secureZeroMemory(fileDek);
 
     // sign encrypted DEK
-    QByteArray sig = m_cryptoService->sign(encryptedDek,
-                                           m_authController->getSessionSecretKey());
+    QByteArray sig = m_cryptoService->sign(
+        encryptedDek,
+        m_authController->getSessionSecretKey()
+        );
 
     QJsonObject req{
         { "username",         currentUsername() },
@@ -102,8 +106,10 @@ void FileController::processUpload(const QByteArray &nonce)
 
 void FileController::processList(const QByteArray &nonce)
 {
-    QByteArray sig = m_cryptoService->sign(nonce,
-                                           m_authController->getSessionSecretKey());
+    QByteArray sig = m_cryptoService->sign(
+        nonce,
+        m_authController->getSessionSecretKey()
+        );
     QJsonObject req{
         { "username",  currentUsername() },
         { "nonce",     QString::fromUtf8(nonce.toBase64()) },
@@ -116,7 +122,8 @@ void FileController::processDownload(const QByteArray &nonce)
 {
     QByteArray sig = m_cryptoService->sign(
         m_selectedDownload.toUtf8(),
-        m_authController->getSessionSecretKey());
+        m_authController->getSessionSecretKey()
+        );
     QJsonObject req{
         { "username",  currentUsername() },
         { "filename",  m_selectedDownload },
@@ -130,7 +137,8 @@ void FileController::processDelete(const QByteArray &nonce)
 {
     QByteArray sig = m_cryptoService->sign(
         m_selectedDownload.toUtf8(),
-        m_authController->getSessionSecretKey());
+        m_authController->getSessionSecretKey()
+        );
     QJsonObject req{
         { "username",  currentUsername() },
         { "filename",  m_selectedDownload },
@@ -146,7 +154,9 @@ void FileController::onUploadNetwork(bool success, const QString &message)
     emit uploadFileResult(success, message);
 }
 
-void FileController::onListNetwork(bool success, const QStringList &files, const QString &message)
+void FileController::onListNetwork(bool success,
+                                   const QStringList &files,
+                                   const QString &message)
 {
     m_downloadCache.clear();
     emit listFilesResult(success, files, message);
@@ -169,12 +179,19 @@ void FileController::onDownloadNetwork(bool success,
     QByteArray encryptedDek  = QByteArray::fromBase64(encryptedDekB64.toUtf8());
     QByteArray dekNonce      = QByteArray::fromBase64(dekNonceB64.toUtf8());
 
-    QByteArray fileDek = m_cryptoService->decrypt(encryptedDek,
-                                                  m_authController->getSessionKek(),
-                                                  dekNonce);
-    QByteArray data   = m_cryptoService->decrypt(encryptedFile,
-                                               fileDek,
-                                               fileNonce);
+    QByteArray fileDek = m_cryptoService->decrypt(
+        encryptedDek,
+        m_authController->getSessionKek(),
+        dekNonce
+        );
+    QByteArray data = m_cryptoService->decrypt(
+        encryptedFile,
+        fileDek,
+        fileNonce
+        );
+
+    // zero out the raw DEK immediately
+    m_cryptoService->secureZeroMemory(fileDek);
 
     m_downloadCache.insert(m_selectedDownload, data);
     emit downloadFileResult(true, m_selectedDownload, data, {});

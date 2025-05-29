@@ -1,7 +1,5 @@
 #include "profilecontroller.h"
 #include "authcontroller.h"
-#include <sodium.h>
-#include "logger.h"
 
 ProfileController::ProfileController(INetworkManager *netMgr,
                                      AuthController  *authController,
@@ -41,24 +39,38 @@ void ProfileController::changePassword(const QString &newPassword)
     }
     m_pendingNewPassword = newPassword;
 
-    m_pendingSalt.resize(16);
-    randombytes_buf(reinterpret_cast<unsigned char *>(m_pendingSalt.data()),
-                    m_pendingSalt.size());
-    m_pendingOpsLimit = crypto_pwhash_OPSLIMIT_MODERATE;
-    m_pendingMemLimit = crypto_pwhash_MEMLIMIT_MODERATE;
+    // generate new salt + Argon2 params
+    m_pendingSalt     = m_cryptoService->randomBytes(16);
+    m_pendingOpsLimit = ICryptoService::OPSLIMIT_MODERATE;
+    m_pendingMemLimit = ICryptoService::MEMLIMIT_MODERATE;
 
-    QByteArray newPdk = m_cryptoService->deriveKey(newPassword,
-                                                   m_pendingSalt,
-                                                   m_pendingOpsLimit,
-                                                   m_pendingMemLimit);
+    // derive a brand‐new PDK
+    QByteArray newPdk = m_cryptoService->deriveKey(
+        newPassword,
+        m_pendingSalt,
+        m_pendingOpsLimit,
+        m_pendingMemLimit
+        );
+
+    // re-encrypt both the long-term secrets under that new PDK
+    //    first, the user’s private signing key
     m_pendingEncryptedSK = m_cryptoService->encrypt(
         m_authController->getSessionSecretKey(),
         newPdk,
-        m_pendingPrivKeyNonce);
+        m_pendingPrivKeyNonce
+        );
+    // then the existing file‐encryption KEK
     m_pendingEncryptedKek = m_cryptoService->encrypt(
         m_authController->getSessionKek(),
         newPdk,
-        m_pendingKekNonce);
+        m_pendingKekNonce
+        );
+
+    // install the new PDK into your Auth session
+    m_authController->updateSessionPdk(newPdk);
+
+    // zero out *your* copy immediately
+    m_cryptoService->secureZeroMemory(newPdk);
 
     m_networkManager->requestChallenge(
         m_authController->getSessionUsername(),

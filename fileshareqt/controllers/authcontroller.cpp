@@ -1,13 +1,12 @@
 #include "authcontroller.h"
 #include "logger.h"
 
-#include <sodium.h>
 #include <QJsonObject>
 #include <QJsonDocument>
 
 AuthController::AuthController(INetworkManager *netMgr,
-                               ICryptoService *cryptoSvc,
-                               QObject *parent)
+                               ICryptoService  *cryptoSvc,
+                               QObject         *parent)
     : QObject(parent)
     , cryptoService(cryptoSvc)
     , networkManager(netMgr)
@@ -55,13 +54,12 @@ void AuthController::signup(const QString &username, const QString &password)
     pendingPassword = password;
 
     // generate salt
-    QByteArray salt(16, 0);
-    randombytes_buf(reinterpret_cast<unsigned char*>(salt.data()), salt.size());
+    QByteArray salt = cryptoService->randomBytes(16);
 
     // derive PDK
     sessionPdk = cryptoService->deriveKey(password, salt,
-                                          crypto_pwhash_OPSLIMIT_MODERATE,
-                                          crypto_pwhash_MEMLIMIT_MODERATE);
+                                          ICryptoService::OPSLIMIT_MODERATE,
+                                          ICryptoService::MEMLIMIT_MODERATE);
 
     // generate keypair
     QByteArray pubKey, secKey;
@@ -71,18 +69,23 @@ void AuthController::signup(const QString &username, const QString &password)
     QByteArray skNonce;
     QByteArray encryptedSK = cryptoService->encrypt(secKey, sessionPdk, skNonce);
 
+    // zero out the raw secret-key immediately
+    cryptoService->secureZeroMemory(secKey);
+
     // generate and encrypt KEK
-    QByteArray kek(crypto_aead_xchacha20poly1305_ietf_KEYBYTES, 0);
-    randombytes_buf(reinterpret_cast<unsigned char*>(kek.data()), kek.size());
+    QByteArray kek = cryptoService->generateAeadKey();
     sessionKek = kek;
     QByteArray kekNonce;
     QByteArray encryptedKek = cryptoService->encrypt(kek, sessionPdk, kekNonce);
 
+    // zero out the raw KEK immediately
+    cryptoService->secureZeroMemory(kek);
+
     QJsonObject req{
         { "username",           username },
         { "salt",               QString::fromUtf8(salt.toBase64()) },
-        { "argon2_opslimit",    int(crypto_pwhash_OPSLIMIT_MODERATE) },
-        { "argon2_memlimit",    int(crypto_pwhash_MEMLIMIT_MODERATE) },
+        { "argon2_opslimit",    int(ICryptoService::OPSLIMIT_MODERATE) },
+        { "argon2_memlimit",    int(ICryptoService::MEMLIMIT_MODERATE) },
         { "public_key",         QString::fromUtf8(pubKey.toBase64()) },
         { "encrypted_privkey",  QString::fromUtf8(encryptedSK.toBase64()) },
         { "privkey_nonce",      QString::fromUtf8(skNonce.toBase64()) },
@@ -106,24 +109,30 @@ void AuthController::login(const QString &username, const QString &password)
 
 void AuthController::logout()
 {
-    sodium_memzero(sessionSecretKey.data(), sessionSecretKey.size());
-    sodium_memzero(sessionPdk.data(), sessionPdk.size());
-    sodium_memzero(sessionKek.data(), sessionKek.size());
-    sessionSecretKey.clear();
-    sessionPdk.clear();
-    sessionKek.clear();
+    // securely wipe all secrets
+    cryptoService->secureZeroMemory(sessionSecretKey);
+    cryptoService->secureZeroMemory(sessionPdk);
+    cryptoService->secureZeroMemory(sessionKek);
+
     sessionUsername.clear();
     emit loggedOut();
 }
 
-void AuthController::onSignupResult(bool success, const QString &message) {
-    Logger::log(QString("SignupResult: %1 – %2").arg(success).arg(message));
+void AuthController::updateSessionPdk(const QByteArray &newPdk)
+{
+    // wipe the old PDK
+    cryptoService->secureZeroMemory(sessionPdk);
+    // take ownership of the new PDK
+    sessionPdk = newPdk;
+}
 
+void AuthController::onSignupResult(bool success, const QString &message)
+{
+    Logger::log(QString("SignupResult: %1 – %2").arg(success).arg(message));
     if (success) {
         Logger::log("Auto-logging in after signup …");
         login(pendingUsername, pendingPassword);
     }
-
     emit signupResult(success, message);
 }
 
@@ -136,7 +145,8 @@ void AuthController::onLoginChallenge(
     const QByteArray &skNonce,
     const QByteArray &encryptedKek,
     const QByteArray &kekNonce
-    ) {
+    )
+{
     // derive PDK
     sessionPdk = cryptoService->deriveKey(pendingPassword, salt, opslimit, memlimit);
 

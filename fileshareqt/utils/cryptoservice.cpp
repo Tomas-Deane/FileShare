@@ -1,6 +1,12 @@
 #include "cryptoservice.h"
 #include "crypto_utils.h"
 
+
+CryptoService::CryptoService()
+{
+    CryptoUtils::initializeLibrary();
+}
+
 QByteArray CryptoService::deriveKey(const QString &password,
                                     const QByteArray &salt,
                                     quint64 opslimit,
@@ -9,10 +15,20 @@ QByteArray CryptoService::deriveKey(const QString &password,
     return CryptoUtils::derivePDK(password, salt, opslimit, memlimit);
 }
 
+QByteArray CryptoService::randomBytes(int length)
+{
+    return CryptoUtils::randomBytes(length);
+}
+
 void CryptoService::generateKeyPair(QByteArray &publicKey,
                                     QByteArray &secretKey)
 {
     CryptoUtils::generateKeyPair(publicKey, secretKey);
+}
+
+QByteArray CryptoService::generateAeadKey()
+{
+    return CryptoUtils::generateAeadKey();
 }
 
 QByteArray CryptoService::encrypt(const QByteArray &plaintext,
@@ -33,4 +49,9 @@ QByteArray CryptoService::sign(const QByteArray &message,
                                const QByteArray &secretKey)
 {
     return CryptoUtils::signMessage(message, secretKey);
+}
+
+void CryptoService::secureZeroMemory(QByteArray &data)
+{
+    CryptoUtils::secureZeroMemory(data);
 }
