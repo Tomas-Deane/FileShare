@@ -22,6 +22,7 @@ from schemas import (
     ListUsersRequest,
     ListUsersResponse,
     UserData,
+    AddOPKsRequest,
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
@@ -496,6 +497,36 @@ def list_users_handler(req: ListUsersRequest, db: models.UserDB) -> ListUsersRes
         )
     except InvalidSignature:
         logging.warning(f"Bad signature for list_users of user_id={user_id}")
+        db.delete_challenge(user_id)
+        raise HTTPException(status_code=401, detail="Bad signature")
+
+def add_opks_handler(req: AddOPKsRequest, db: models.UserDB):
+    logging.debug(f"AddOPKs: {req.model_dump_json()}")
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="Unknown user")
+    
+    user_id = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(user_id, "add_opks")
+    if stored is None or provided != stored:
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+    
+    signature = base64.b64decode(req.signature)
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(signature, provided)
+        
+        # Decode base64 data before passing to database
+        try:
+            pre_keys = [base64.b64decode(opk) for opk in req.opks]
+            db.add_opks(user_id, pre_keys)
+            db.delete_challenge(user_id)
+            return {"status": "ok", "message": "OPKs added"}
+        except Exception as e:
+            logging.error(f"Error processing OPKs data: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error processing OPKs data: {str(e)}")
+    except InvalidSignature:
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 

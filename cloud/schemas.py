@@ -112,7 +112,7 @@ class AddPreKeyBundleResponse(BaseModel):
 
 class AddOPKsRequest(BaseModel):
     username: str
-    pre_keys: list[str]  # List of base64 encoded pre-keys
+    opks: list[str]  # List of base64 encoded pre-keys
     nonce: str
     signature: str
 
