@@ -152,18 +152,16 @@ const Signup: React.FC = () => {
         // Save key bundle to IndexedDB for persistence and security
         storage.saveKeyBundle({
             username: trimmedUsername,
-            // Public keys
             IK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
             SPK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
             SPK_signature: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
             OPKs: x3dhKeys.one_time_pre_keys.map(key => 
-                btoa(String.fromCharCode.apply(null, Array.from(key)))
+              btoa(String.fromCharCode.apply(null, Array.from(key)))
             ),
-            // Private keys
             IK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
             SPK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_private))),
             OPKs_priv: x3dhKeys.one_time_pre_keys_private.map(key =>
-                btoa(String.fromCharCode.apply(null, Array.from(key)))
+              btoa(String.fromCharCode.apply(null, Array.from(key)))
             ),
             verified: false,
             lastVerified: new Date().toISOString()
@@ -223,13 +221,13 @@ const Signup: React.FC = () => {
             privateKey
         );
 
-        // await apiClient.post('/backup_tofu_keys', {
-        //     username: trimmedUsername,
-        //     encrypted_backup: btoa(String.fromCharCode.apply(null, Array.from(encryptedBackup))),
-        //     backup_nonce: btoa(String.fromCharCode.apply(null, Array.from(backupNonce))),
-        //     nonce: challengeResponse.nonce,
-        //     signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
-        // });
+        await apiClient.post('/backup_tofu_keys', {
+            username: trimmedUsername,
+            encrypted_backup: btoa(String.fromCharCode.apply(null, Array.from(encryptedBackup))),
+            backup_nonce: btoa(String.fromCharCode.apply(null, Array.from(backupNonce))),
+            nonce: challengeResponse.nonce,
+            signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        });
 
         // Set as current user
         storage.setCurrentUser(trimmedUsername);

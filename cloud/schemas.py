@@ -168,7 +168,11 @@ class AddOPKsRequest(BaseModel):
 
 
 class BackupTOFURequest(BaseModel):
-    username: str 
+    username: str
+    encrypted_backup: str
+    backup_nonce: str
+    nonce: str
+    signature: str
 
 class BackupTOFUResponse(BaseModel):
     status: str

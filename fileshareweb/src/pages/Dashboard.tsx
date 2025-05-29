@@ -18,6 +18,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../utils/apiClient';
 import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
+import { storage } from '../utils/storage';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -171,7 +172,7 @@ const Dashboard: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<number | null>(null);
   const [shareEmail, setShareEmail] = useState('');
   const [openVerify, setOpenVerify] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<{ id: number; email: string } | null>(null);
+  const [selectedUser, setSelectedUser] = useState<{ id: number; username: string } | null>(null);
   const [openProfileSettings, setOpenProfileSettings] = useState(false);
   const [profileData, setProfileData] = useState<ProfileData>(mockUserProfile);
   const [editMode, setEditMode] = useState(false);
@@ -342,17 +343,49 @@ const Dashboard: React.FC = () => {
     logDebug('Revoke initiated', { fileId });
     // TODO: Implement revoke
   };
-  const handleVerifyClick = async (user: { id: number; email: string }) => {
+  const handleVerifyClick = async (user: { id: number; username: string }) => {
     try {
-      const response = await apiClient.post<{ prekey_bundle: { IK_pub: string } }>('/get_prekey_bundle', { username: user.email });
-      const remoteIK = response.prekey_bundle.IK_pub;
-      const myKeyBundle = JSON.parse(localStorage.getItem('priv_key_bundle') || '{}');
-      const myIK = myKeyBundle.IK_pub;
-      if (!myIK || !remoteIK) {
-        setUserError('Could not retrieve identity keys for verification.');
+      // 1. Get your own username from storage
+      const myUsername = storage.getCurrentUser();
+      if (!myUsername) {
+        setUserError('No current user found in storage.');
         return;
       }
-      const code = await generateOOBVerificationCode(myIK, remoteIK);
+
+      // 2. Get your own key bundle from storage
+      const myKeyBundle = storage.getKeyBundle(myUsername);
+      if (!myKeyBundle || !myKeyBundle.IK_pub) {
+        setUserError('Could not retrieve your identity key for verification.');
+        return;
+      }
+
+      // 3. Request challenge for get_prekey_bundle as the logged-in user
+      const challengeResponse = await apiClient.post<{ status: string; nonce: string }>('/challenge', {
+        username: myUsername,
+        operation: 'get_prekey_bundle'
+      });
+      if (challengeResponse.status !== 'challenge') {
+        setUserError('Failed to get challenge for verification.');
+        return;
+      }
+
+      // 4. Sign the nonce with your own secret key
+      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonce, secretKey!);
+
+      // 5. Request the prekey bundle for the target user
+      const prekeyResponse = await apiClient.post<{ prekey_bundle: { IK_pub: string } }>(
+        '/get_prekey_bundle',
+        {
+          username: user.username, // the user you want to verify
+          nonce: challengeResponse.nonce,
+          signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        }
+      );
+      const remoteIK = prekeyResponse.prekey_bundle.IK_pub;
+
+      // 6. Generate the OOB verification code
+      const code = await generateOOBVerificationCode(myKeyBundle.IK_pub, remoteIK);
       setVerificationCode(code);
       setSelectedUser(user);
       setOpenVerify(true);
@@ -1142,7 +1175,7 @@ const Dashboard: React.FC = () => {
                             <Button
                               variant="contained"
                               color="primary"
-                              onClick={() => handleVerifyClick({ id: user.id, email: user.username })}
+                              onClick={() => handleVerifyClick({ id: user.id, username: user.username })}
                               size="small"
                               sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
                             >
@@ -1417,7 +1450,7 @@ const Dashboard: React.FC = () => {
               fontFamily: 'monospace',
             }}
           >
-            {selectedUser?.email}
+            {selectedUser?.username}
           </Typography>
           
           {/* QR Code */}
