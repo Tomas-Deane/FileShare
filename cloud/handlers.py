@@ -433,7 +433,7 @@ def add_prekey_bundle_handler(req: AddPreKeyBundleRequest, db: models.UserDB):
         
         user_id = user["user_id"]
         provided = base64.b64decode(req.nonce)
-        stored = db.get_pending_challenge(user_id, "add_prekey_bundle")
+        stored = db.get_pending_challenge(user_id, "add_pre_key_bundle")
         if stored is None or provided != stored:
             raise HTTPException(status_code=400, detail="Invalid or expired challenge")
         
