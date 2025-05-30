@@ -26,6 +26,9 @@ MainWindow::MainWindow(AuthController* authCtrl,
 {
     ui->setupUi(this);
 
+    // remember starting tab so clearPage knows what to clear first
+    m_prevTabIndex = ui->tabWidget->currentIndex();
+
     // FileController signals
     connect(fileController, &FileController::uploadFileResult,
             this, &MainWindow::onUploadFileResult);
@@ -370,32 +373,109 @@ void MainWindow::onDeleteFileResult(bool success, const QString &message)
 
 void MainWindow::on_tabWidget_currentChanged(int index)
 {
-    constexpr int uploadIndex   = MainWindow::Upload;
-    constexpr int downloadIndex = MainWindow::Download;
+    // clear whatever was on the old tab
+    clearPage(m_prevTabIndex);
 
-    if (index != uploadIndex) {
-        ui->fileNameLabel->setText(tr("No file selected"));
-        ui->fileTypeLabel->setText(tr("-"));
-        ui->uploadTextPreview->clear();
-        ui->uploadImagePreview->clear();
-        ui->uploadImagePreview->setText(tr("No Image File Selected"));
-        ui->uploadPreviewStack->setCurrentIndex(1);
-        currentUploadData.clear();
-        currentUploadPath.clear();
-    }
+    // refresh new tab
+    refreshPage(index);
 
-    if (index == downloadIndex) {
-        ui->downloadTextPreview->clear();
-        ui->downloadImagePreview->clear();
-        ui->downloadImagePreview->setText(tr("No Image File Selected"));
-        ui->downloadPreviewStack->setCurrentIndex(0);
-        fileController->listFiles();
-    } else {
-        ui->downloadTextPreview->clear();
-        ui->downloadImagePreview->clear();
-        ui->downloadImagePreview->setText(tr("No Image File Selected"));
-        ui->downloadPreviewStack->setCurrentIndex(0);
-    }
+    m_prevTabIndex = index;
+}
+
+void MainWindow::clearPage(int idx)
+{
+    using TI = MainWindow::TabIndex;
+    switch (idx) {
+        case TI::Upload:
+            ui->fileNameLabel->setText(tr("No file selected"));
+            ui->fileTypeLabel->setText(tr("-"));
+            ui->uploadTextPreview->clear();
+            ui->uploadImagePreview->clear();
+            ui->uploadImagePreview->setText(tr("No Image File Selected"));
+            ui->uploadPreviewStack->setCurrentIndex(1);
+            currentUploadData.clear();
+            currentUploadPath.clear();
+            break;
+
+        case TI::Download:
+            ui->downloadTextPreview->clear();
+            ui->downloadImagePreview->clear();
+            ui->downloadImagePreview->setText(tr("No Image File Selected"));
+            ui->downloadPreviewStack->setCurrentIndex(0);
+            ui->downloadFileList->clearSelection();
+            ui->downloadFileNameLabel->setText(tr("No file selected"));
+            ui->downloadFileTypeLabel->setText(tr("-"));
+            break;
+
+        case TI::Verify:
+            ui->targetUsernameLineEdit->clear();
+            ui->verifiedUsersList->clear();
+            break;
+
+        case TI::ShareNew:
+            ui->shareNewFileList->clear();
+            ui->shareNewUserList->clear();
+            break;
+
+        case TI::SharesTo:
+            ui->sharesToVerifiedUsersList->clear();
+            ui->sharesToFilesList->clear();
+            break;
+
+        case TI::SharesFrom:
+            ui->sharesFromVerifiedUsersList->clear();
+            ui->sharesFromFilesList->clear();
+            ui->downloadTextPreview_2->clear();
+            ui->downloadImagePreview_2->clear();
+            ui->downloadImagePreview_2->setText(tr("No Image File Selected"));
+            ui->downloadPreviewStack_2->setCurrentIndex(0);
+            break;
+
+        case TI::Profile:
+            ui->changeUsernameLineEdit->clear();
+            ui->changePasswordLineEdit->clear();
+            ui->passwordStrengthBar->setValue(0);
+            ui->passwordStrengthLabel->setText(tr("Too weak"));
+            ui->passwordStrengthBar_2->setValue(0);
+            ui->passwordStrengthLabel_2->setText(tr("Too weak"));
+            break;
+
+            default:
+                           break;
+        }
+}
+
+void MainWindow::refreshPage(int idx)
+{
+    using TI = MainWindow::TabIndex;
+    switch (idx) {
+        case TI::Download:
+            // always re-fetch your file list
+            fileController->listFiles();
+            break;
+
+        case TI::ShareNew:
+            // re-fetch files to share
+            fileController->listFiles();
+            // TODO: refresh your list of verified users here
+            break;
+
+        case TI::SharesTo:
+            // TODO: invoke your share‐to‐user listing API
+            break;
+
+        case TI::SharesFrom:
+            // TODO: invoke your share‐from‐user listing API
+            break;
+
+        case TI::Verify:
+            // TODO: fetch your saved “verified users” for display
+            break;
+
+        default:
+            // no auto-refresh on other pages
+            break;
+        }
 }
 
 void MainWindow::on_signupPasswordLineEdit_textChanged(const QString &text)
