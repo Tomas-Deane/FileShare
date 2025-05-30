@@ -4,6 +4,17 @@ const STORAGE_KEYS = {
     AUTH_TOKEN: 'auth_token'
 };
 
+export interface PreKeyBundle {
+    IK_pub: string;
+    SPK_pub: string;
+    SPK_signature: string;
+}
+
+export interface RecipientKeyBundle {
+    data: PreKeyBundle;  // Changed from string to PreKeyBundle
+    verified: boolean;
+}
+
 export interface KeyBundle {
     username: string;
     IK_pub: string;
@@ -18,6 +29,7 @@ export interface KeyBundle {
     kek: string;
     verified: boolean;  // TOFU verification status
     lastVerified: string; // ISO timestamp of last verification
+    recipients?: { [username: string]: RecipientKeyBundle };
 }
 
 export const storage = {

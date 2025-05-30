@@ -18,7 +18,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../utils/apiClient';
 import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
-import { storage, KeyBundle } from '../utils/storage';
+import { storage } from '../utils/storage';
+import sodium from 'libsodium-wrappers-sumo';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -153,6 +154,28 @@ interface DeleteResponse {
   detail?: string;
 }
 
+// First, let's define the proper types
+interface PreKeyBundle {
+  IK_pub: string;
+  SPK_pub: string;
+  SPK_signature: string;
+}
+
+interface RecipientKeyBundle {
+  data: PreKeyBundle;
+  verified: boolean;
+}
+
+interface SelectedUser {
+  id: number;
+  username: string;
+  prekeyBundle?: {
+    IK_pub: string;
+    SPK_pub: string;
+    SPK_signature: string;
+  };
+}
+
 const DEBUG = true; // Toggle for development
 
 const logDebug = (message: string, data?: any) => {
@@ -171,7 +194,7 @@ const Dashboard: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<number | null>(null);
   const [shareEmail, setShareEmail] = useState('');
   const [openVerify, setOpenVerify] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<{ id: number; username: string } | null>(null);
+  const [selectedUser, setSelectedUser] = useState<SelectedUser | null>(null);
   const [openProfileSettings, setOpenProfileSettings] = useState(false);
   const [profileData, setProfileData] = useState<ProfileData>(mockUserProfile);
   const [editMode, setEditMode] = useState(false);
@@ -369,74 +392,150 @@ const Dashboard: React.FC = () => {
         return;
       }
 
-      // 3. Request challenge for get_prekey_bundle as the logged-in user
+      // Request challenge for get_prekey_bundle
       const challengeResponse = await apiClient.post<{ status: string; nonce: string }>('/challenge', {
         username: myUsername,
         operation: 'get_pre_key_bundle'
       });
+
       if (challengeResponse.status !== 'challenge') {
         setUserError('Failed to get challenge for verification.');
         return;
       }
 
-      // 4. Sign the nonce with your own secret key
+      // Sign the nonce with your own secret key
       const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
       const signature = await signChallenge(nonce, secretKey!);
 
-      // 5. Request the prekey bundle for the target user
-      const prekeyResponse = await apiClient.post<{ prekey_bundle: { IK_pub: string } }>(
-        '/get_pre_key_bundle',
-        {
-          username: myUsername,  // Your username (for challenge verification)
-          target_username: user.username,  // The target user's username
-          nonce: challengeResponse.nonce,
-          signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
-        }
-      );
-      const remoteIK = prekeyResponse.prekey_bundle.IK_pub;
+      // Request the prekey bundle for the target user
+      const prekeyResponse = await apiClient.post<{ 
+        status: string;
+        prekey_bundle: { 
+          IK_pub: string;
+          SPK_pub: string;
+          SPK_signature: string;
+        } 
+      }>('/get_pre_key_bundle', {
+        username: myUsername,
+        target_username: user.username,
+        nonce: challengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+      });
 
-      // 6. Generate the OOB verification code
-      const code = await generateOOBVerificationCode(myKeyBundle.IK_pub, remoteIK);
+      // Store the pre-key bundle temporarily in state for later use
+      setSelectedUser({
+        ...user,
+        prekeyBundle: prekeyResponse.prekey_bundle
+      });
+
+      // Generate and show the verification code
+      const code = await generateOOBVerificationCode(myKeyBundle.IK_pub, prekeyResponse.prekey_bundle.IK_pub);
       setVerificationCode(code);
-      setSelectedUser(user);
       setOpenVerify(true);
+
     } catch (err: any) {
       console.error('Verification error:', err);
       setUserError('Failed to fetch user key bundle or generate verification code.');
     }
   };
 
-  const debugSection = (
-    <Box sx={{ 
-      p: 2, 
-      mb: 2,
-      bgcolor: 'rgba(0,0,0,0.8)', 
-      color: '#00ff00', 
-      fontFamily: 'monospace',
-      border: '1px solid rgba(0, 255, 0, 0.2)',
-      borderRadius: 1
-    }}>
-       <Typography variant="h6" sx={{ color: '#00ffff', mb: 1 }}>Debug Info:</Typography>
-      <Typography>Username: {username}</Typography>
-      <Typography>Secret Key: {secretKey ? 'Present' : 'Not set'}</Typography>
-      <Typography>PDK: {pdk ? 'Present' : 'Not set'}</Typography>
-      <Typography>KEK: {kek ? 'Present' : 'Not set'}</Typography>
-    </Box>
-  );
-  const handleProfileEdit = () => {
-    setEditMode(true);
-    setEditedProfile(profileData);
-  };
+  // Add the verification confirmation handler
+  const handleVerifyConfirm = async () => {
+    try {
+      const myUsername = storage.getCurrentUser();
+      if (!myUsername || !selectedUser?.prekeyBundle) {
+        throw new Error('Missing required data for verification');
+      }
 
-  const handleProfileSave = () => {
-    setProfileData(editedProfile);
-    setEditMode(false);
-    // TODO: Implement profile update logic
-  };
+      const myKeyBundle = storage.getKeyBundle(myUsername);
+      if (!myKeyBundle) {
+        throw new Error('Could not retrieve your key bundle');
+      }
 
-  const handleProfileCancel = () => {
-    setEditMode(false);
-    setEditedProfile(profileData);
+      // Create the recipient key bundle with verified status
+      const recipientKeyBundle: RecipientKeyBundle = {
+        data: selectedUser.prekeyBundle,  // Store raw data directly
+        verified: true
+      };
+
+      // Update the key bundle with the new verified recipient
+      const updatedKeyBundle = {
+        ...myKeyBundle,
+        recipients: {
+          ...(myKeyBundle.recipients || {}),
+          [selectedUser.username]: recipientKeyBundle
+        }
+      };
+
+      // Store the updated key bundle locally
+      storage.saveKeyBundle(updatedKeyBundle);
+
+      // Request challenge for backup_tofu
+      const backupChallengeResponse = await apiClient.post<{ status: string; nonce: string }>('/challenge', {
+        username: myUsername,
+        operation: 'backup_tofu'
+      });
+
+      if (backupChallengeResponse.status !== 'challenge') {
+        throw new Error('Failed to get challenge for backup');
+      }
+
+      // Sign the nonce for backup
+      const backupNonce = Uint8Array.from(atob(backupChallengeResponse.nonce), c => c.charCodeAt(0));
+      const backupSignature = await signChallenge(backupNonce, secretKey!);
+
+      // Create backup data with all necessary keys
+      const backupData = {
+        username: myUsername,
+        // Private keys
+        IK_priv: myKeyBundle.IK_priv,
+        SPK_priv: myKeyBundle.SPK_priv,
+        OPKs_priv: myKeyBundle.OPKs_priv,
+        // Public keys
+        IK_pub: myKeyBundle.IK_pub,
+        SPK_pub: myKeyBundle.SPK_pub,
+        SPK_signature: myKeyBundle.SPK_signature,
+        OPKs: myKeyBundle.OPKs,
+        // Additional keys
+        secretKey: myKeyBundle.secretKey,
+        pdk: myKeyBundle.pdk,
+        kek: myKeyBundle.kek,
+        // Add the recipients with base64 encoded data
+        recipients: updatedKeyBundle.recipients,
+        verified: true,
+        lastVerified: new Date().toISOString()
+      };
+
+      // Generate a new nonce for the backup encryption
+      const encryptionNonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+      
+      // Encrypt the backup with the PDK
+      const encryptedBackup = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+        JSON.stringify(backupData),
+        null,
+        null,
+        encryptionNonce,
+        pdk!
+      );
+
+      // Send the backup to the server
+      await apiClient.post('/backup_tofu_keys', {
+        username: myUsername,
+        encrypted_backup: btoa(String.fromCharCode.apply(null, Array.from(encryptedBackup))),
+        backup_nonce: btoa(String.fromCharCode.apply(null, Array.from(encryptionNonce))),
+        nonce: backupChallengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(backupSignature)))
+      });
+
+      // Close the verification dialog
+      setOpenVerify(false);
+      setSelectedUser(null);
+      setVerificationCode('');
+
+    } catch (err: any) {
+      console.error('Verification confirmation error:', err);
+      setUserError('Failed to confirm verification and update backup.');
+    }
   };
 
   // Update the fetchFiles function
@@ -862,6 +961,39 @@ const Dashboard: React.FC = () => {
       fetchUsers();
     }
   };
+
+  const handleProfileCancel = () => {
+    setEditMode(false);
+    setEditedProfile(profileData);
+  };
+
+  const handleProfileSave = () => {
+    setProfileData(editedProfile);
+    setEditMode(false);
+  };
+
+  const handleProfileEdit = () => {
+    setEditMode(true);
+    setEditedProfile(profileData);
+  };
+
+  const debugSection = (
+    <Box sx={{ 
+      p: 2, 
+      mb: 2,
+      bgcolor: 'rgba(0,0,0,0.8)', 
+      color: '#00ff00', 
+      fontFamily: 'monospace',
+      border: '1px solid rgba(0, 255, 0, 0.2)',
+      borderRadius: 1
+    }}>
+      <Typography variant="h6" sx={{ color: '#00ffff', mb: 1 }}>Debug Info:</Typography>
+      <Typography>Username: {username}</Typography>
+      <Typography>Secret Key: {secretKey ? 'Present' : 'Not set'}</Typography>
+      <Typography>PDK: {pdk ? 'Present' : 'Not set'}</Typography>
+      <Typography>KEK: {kek ? 'Present' : 'Not set'}</Typography>
+    </Box>
+  );
 
   return (
     <>
@@ -1523,10 +1655,7 @@ const Dashboard: React.FC = () => {
             Don't Trust
           </Button>
           <CyberButton
-            onClick={() => {
-              // TODO: Implement verification logic
-              setOpenVerify(false);
-            }}
+            onClick={handleVerifyConfirm}
             size="small"
             sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
           >
