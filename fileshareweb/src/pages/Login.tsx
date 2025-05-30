@@ -191,32 +191,42 @@ const Login: React.FC = () => {
         );
         console.log('Backup decrypted successfully');
 
-        const backupData = JSON.parse(new TextDecoder().decode(decryptedBackup));
-        console.log('Backup data parsed:', {
-            hasIdentityKey: !!backupData.identityKey,
-            hasSignedPreKey: !!backupData.signedPreKey,
-            hasOneTimePreKeys: backupData.oneTimePreKeys.length,
-            hasPrivateKey: !!backupData.privateKey,
-            hasPDK: !!backupData.pdk,
-            hasKEK: !!backupData.kek
-        });
+        let backupData;
+        try {
+            backupData = JSON.parse(new TextDecoder().decode(decryptedBackup));
+            console.log('Backup data parsed:', {
+                hasIdentityKey: !!backupData.identityKey,
+                hasSignedPreKey: !!backupData.signedPreKey,
+                hasOneTimePreKeys: Array.isArray(backupData.oneTimePreKeys) ? backupData.oneTimePreKeys.length : 'not an array',
+                hasPrivateKey: !!backupData.privateKey,
+                hasPDK: !!backupData.pdk,
+                hasKEK: !!backupData.kek
+            });
 
-        myKeyBundle = {
-            username: trimmedUsername,
-            IK_pub: backupData.identityKey,
-            SPK_pub: backupData.signedPreKey,
-            SPK_signature: backupData.signedPreKeySig,
-            OPKs: backupData.oneTimePreKeys,
-            IK_priv: backupData.identityKeyPrivate,
-            SPK_priv: backupData.signedPreKeyPrivate,
-            OPKs_priv: backupData.oneTimePreKeysPrivate,
-            secretKey: backupData.privateKey,
-            pdk: backupData.pdk,
-            kek: backupData.kek,
-            verified: true,
-            lastVerified: new Date().toISOString()
-        };
-        console.log('Key bundle reconstructed from backup');
+            // Validate required fields
+            if (!backupData.identityKey || !backupData.signedPreKey || !Array.isArray(backupData.oneTimePreKeys)) {
+                throw new Error('Invalid backup data structure');
+            }
+
+            myKeyBundle = {
+                username: trimmedUsername,
+                IK_pub: backupData.identityKey,
+                SPK_pub: backupData.signedPreKey,
+                SPK_signature: backupData.signedPreKeySig,
+                OPKs: backupData.oneTimePreKeys || [],
+                IK_priv: backupData.identityKeyPrivate,
+                SPK_priv: backupData.signedPreKeyPrivate,
+                OPKs_priv: backupData.oneTimePreKeysPrivate || [],
+                secretKey: backupData.privateKey,
+                pdk: backupData.pdk,
+                kek: backupData.kek,
+                verified: true,
+                lastVerified: new Date().toISOString()
+            };
+        } catch (err) {
+            console.error('Error processing backup data:', err);
+            throw new Error('Failed to process backup data. The backup may be corrupted.');
+        }
 
         // Save using the new storage functions
         storage.saveKeyBundle(myKeyBundle);

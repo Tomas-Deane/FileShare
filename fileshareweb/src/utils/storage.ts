@@ -1,20 +1,21 @@
-import Cookies from 'js-cookie';
-
 const STORAGE_KEYS = {
     KEY_BUNDLES: 'key_bundles', // Store all key bundles
     CURRENT_USER: 'current_user',
     AUTH_TOKEN: 'auth_token'
 };
 
-interface KeyBundle {
+export interface KeyBundle {
     username: string;
     IK_pub: string;
     SPK_pub: string;
     SPK_signature: string;
     OPKs: string[];
-    IK_priv?: string;
-    SPK_priv?: string;
-    OPKs_priv?: string[];
+    IK_priv: string;
+    SPK_priv: string;
+    OPKs_priv: string[];
+    secretKey: string;
+    pdk: string;
+    kek: string;
     verified: boolean;  // TOFU verification status
     lastVerified: string; // ISO timestamp of last verification
 }
@@ -23,7 +24,7 @@ export const storage = {
     // Save a new key bundle or update existing one
     saveKeyBundle: (keyBundle: KeyBundle) => {
         // Get existing bundles
-        const existingBundlesStr = Cookies.get(STORAGE_KEYS.KEY_BUNDLES);
+        const existingBundlesStr = sessionStorage.getItem(STORAGE_KEYS.KEY_BUNDLES);
         let bundles: { [username: string]: KeyBundle } = {};
         
         if (existingBundlesStr) {
@@ -40,26 +41,18 @@ export const storage = {
             lastVerified: keyBundle.lastVerified || new Date().toISOString()
         };
 
-        // Store in secure cookie
-        Cookies.set(STORAGE_KEYS.KEY_BUNDLES, JSON.stringify(bundles), {
-            secure: true,
-            sameSite: 'strict',
-            expires: 30 // Expires in 30 days
-        });
+        // Store in sessionStorage
+        sessionStorage.setItem(STORAGE_KEYS.KEY_BUNDLES, JSON.stringify(bundles));
 
         // Store current user separately for quick access
-        if (keyBundle.username === Cookies.get(STORAGE_KEYS.CURRENT_USER)) {
-            Cookies.set(STORAGE_KEYS.CURRENT_USER, keyBundle.username, {
-                secure: true,
-                sameSite: 'strict',
-                expires: 30
-            });
+        if (keyBundle.username === sessionStorage.getItem(STORAGE_KEYS.CURRENT_USER)) {
+            sessionStorage.setItem(STORAGE_KEYS.CURRENT_USER, keyBundle.username);
         }
     },
 
     // Get key bundle for a specific user
     getKeyBundle: (username: string): KeyBundle | null => {
-        const bundlesStr = Cookies.get(STORAGE_KEYS.KEY_BUNDLES);
+        const bundlesStr = sessionStorage.getItem(STORAGE_KEYS.KEY_BUNDLES);
         if (!bundlesStr) return null;
 
         try {
@@ -73,7 +66,7 @@ export const storage = {
 
     // Get all key bundles
     getAllKeyBundles: (): { [username: string]: KeyBundle } => {
-        const bundlesStr = Cookies.get(STORAGE_KEYS.KEY_BUNDLES);
+        const bundlesStr = sessionStorage.getItem(STORAGE_KEYS.KEY_BUNDLES);
         if (!bundlesStr) return {};
 
         try {
@@ -86,7 +79,7 @@ export const storage = {
 
     // Update verification status for a user
     updateVerificationStatus: (username: string, verified: boolean) => {
-        const bundlesStr = Cookies.get(STORAGE_KEYS.KEY_BUNDLES);
+        const bundlesStr = sessionStorage.getItem(STORAGE_KEYS.KEY_BUNDLES);
         if (!bundlesStr) return;
 
         try {
@@ -97,11 +90,7 @@ export const storage = {
                     verified,
                     lastVerified: new Date().toISOString()
                 };
-                Cookies.set(STORAGE_KEYS.KEY_BUNDLES, JSON.stringify(bundles), {
-                    secure: true,
-                    sameSite: 'strict',
-                    expires: 30
-                });
+                sessionStorage.setItem(STORAGE_KEYS.KEY_BUNDLES, JSON.stringify(bundles));
             }
         } catch (e) {
             console.error('Error updating verification status:', e);
@@ -110,22 +99,18 @@ export const storage = {
 
     // Set current user
     setCurrentUser: (username: string) => {
-        Cookies.set(STORAGE_KEYS.CURRENT_USER, username, {
-            secure: true,
-            sameSite: 'strict',
-            expires: 30
-        });
+        sessionStorage.setItem(STORAGE_KEYS.CURRENT_USER, username);
     },
 
     // Get current user
     getCurrentUser: (): string | null => {
-        return Cookies.get(STORAGE_KEYS.CURRENT_USER) || null;
+        return sessionStorage.getItem(STORAGE_KEYS.CURRENT_USER);
     },
 
     // Clear all stored data
     clearStorage: () => {
-        Cookies.remove(STORAGE_KEYS.KEY_BUNDLES);
-        Cookies.remove(STORAGE_KEYS.CURRENT_USER);
-        Cookies.remove(STORAGE_KEYS.AUTH_TOKEN);
+        sessionStorage.removeItem(STORAGE_KEYS.KEY_BUNDLES);
+        sessionStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+        sessionStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
     }
 };
