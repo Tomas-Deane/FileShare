@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Container, Typography, Button, Paper, Grid, List, ListItem, ListItemText,
   ListItemIcon, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider
+  TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider, Checkbox
 } from '@mui/material';
 import {
   Upload as UploadIcon, Share as ShareIcon, Delete as DeleteIcon, Download as DownloadIcon,
@@ -164,6 +164,7 @@ interface PreKeyBundle {
 interface RecipientKeyBundle {
   data: PreKeyBundle;
   verified: boolean;
+  lastVerified?: string;
 }
 
 interface SelectedUser {
@@ -192,7 +193,7 @@ const Dashboard: React.FC = () => {
   const [openUpload, setOpenUpload] = useState(false);
   const [openShare, setOpenShare] = useState(false);
   const [selectedFile, setSelectedFile] = useState<number | null>(null);
-  const [shareEmail, setShareEmail] = useState('');
+  const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
   const [openVerify, setOpenVerify] = useState(false);
   const [selectedUser, setSelectedUser] = useState<SelectedUser | null>(null);
   const [openProfileSettings, setOpenProfileSettings] = useState(false);
@@ -1522,7 +1523,10 @@ const Dashboard: React.FC = () => {
       {/* Share Dialog */}
       <Dialog
         open={openShare}
-        onClose={() => setOpenShare(false)}
+        onClose={() => {
+          setOpenShare(false);
+          setSelectedRecipients([]);
+        }}
         PaperProps={{
           sx: {
             background: 'rgba(0, 0, 0, 0.9)',
@@ -1535,41 +1539,132 @@ const Dashboard: React.FC = () => {
           Share File
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
-          <TextField
-            fullWidth
-            label="User Email"
-            variant="outlined"
-            value={shareEmail}
-            onChange={(e) => setShareEmail(e.target.value)}
+          <Typography
+            variant="subtitle1"
             sx={{
-              '& .MuiOutlinedInput-root': {
-                '& fieldset': {
-                  borderColor: 'rgba(0, 255, 0, 0.3)',
-                },
-                '&:hover fieldset': {
-                  borderColor: 'rgba(0, 255, 0, 0.5)',
-                },
-                '&.Mui-focused fieldset': {
-                  borderColor: '#00ff00',
-                },
-              },
-              '& .MuiInputLabel-root': {
-                color: 'rgba(0, 255, 0, 0.7)',
-              },
-              '& .MuiInputBase-input': {
-                color: '#fff',
-              },
+              color: '#00ffff',
+              mb: 2,
+              fontFamily: 'monospace',
             }}
-          />
+          >
+            Select Verified Recipients
+          </Typography>
+          
+          {(() => {
+            const myUsername = storage.getCurrentUser();
+            const myKeyBundle = myUsername ? storage.getKeyBundle(myUsername) : null;
+            const verifiedRecipients = myKeyBundle?.recipients 
+              ? Object.entries(myKeyBundle.recipients)
+                  .filter(([_, bundle]) => bundle.verified)
+                  .reduce<{ [username: string]: RecipientKeyBundle }>((acc, [username, bundle]) => ({
+                    ...acc,
+                    [username]: bundle as RecipientKeyBundle
+                  }), {})
+              : {};
+
+            return Object.keys(verifiedRecipients).length === 0 ? (
+              <Alert severity="info" sx={{ bgcolor: 'rgba(0, 255, 0, 0.1)' }}>
+                No verified recipients found. Verify users first to share files with them.
+              </Alert>
+            ) : (
+              <>
+                <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography
+                    variant="body2"
+                    sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+                  >
+                    {selectedRecipients.length} recipient{selectedRecipients.length !== 1 ? 's' : ''} selected
+                  </Typography>
+                  {selectedRecipients.length > 0 && (
+                    <Button
+                      size="small"
+                      onClick={() => setSelectedRecipients([])}
+                      sx={{ color: 'rgba(255, 0, 0, 0.7)' }}
+                    >
+                      Clear All
+                    </Button>
+                  )}
+                </Box>
+                <List sx={{ 
+                  maxHeight: 300, 
+                  overflowY: 'auto',
+                  border: '1px solid rgba(0, 255, 0, 0.2)',
+                  borderRadius: 1,
+                }}>
+                  {Object.entries(verifiedRecipients).map(([username, bundle]: [string, RecipientKeyBundle]) => (
+                    <ListItem
+                      key={username}
+                      button
+                      onClick={() => {
+                        setSelectedRecipients(prev => 
+                          prev.includes(username)
+                            ? prev.filter(u => u !== username)
+                            : [...prev, username]
+                        );
+                      }}
+                      selected={selectedRecipients.includes(username)}
+                      sx={{
+                        borderBottom: '1px solid rgba(0, 255, 0, 0.1)',
+                        '&:hover': {
+                          backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                        },
+                        '&.Mui-selected': {
+                          backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                          '&:hover': {
+                            backgroundColor: 'rgba(0, 255, 0, 0.15)',
+                          },
+                        },
+                      }}
+                    >
+                      <ListItemIcon>
+                        <VerifiedUserIcon sx={{ color: '#00ff00' }} />
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={username}
+                        primaryTypographyProps={{
+                          sx: { color: '#00ffff', fontWeight: 'bold' },
+                        }}
+                        secondary={`Verified on ${new Date(bundle.lastVerified || '').toLocaleDateString()}`}
+                        secondaryTypographyProps={{
+                          sx: { color: 'rgba(0, 255, 0, 0.7)' },
+                        }}
+                      />
+                      <Checkbox
+                        edge="end"
+                        checked={selectedRecipients.includes(username)}
+                        sx={{
+                          color: 'rgba(0, 255, 0, 0.3)',
+                          '&.Mui-checked': {
+                            color: '#00ff00',
+                          },
+                        }}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </>
+            );
+          })()}
         </DialogContent>
         <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
-          <Button onClick={() => setOpenShare(false)} sx={{ color: 'rgba(0, 255, 0, 0.7)' }}>
+          <Button 
+            onClick={() => {
+              setOpenShare(false);
+              setSelectedRecipients([]);
+            }}
+            sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+          >
             Cancel
           </Button>
           <CyberButton
-            onClick={() => setOpenShare(false)}
+            onClick={() => {
+              // TODO: Implement sharing with multiple recipients
+              setOpenShare(false);
+              setSelectedRecipients([]);
+            }}
             size="small"
             sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+            disabled={selectedRecipients.length === 0}
           >
             Share
           </CyberButton>
