@@ -557,6 +557,9 @@ class UserDB:
             backup_nonce
         ))
         self.conn.commit()
+        
+        # Clean up old backups, keeping only the most recent one
+        self.cleanup_old_tofu_backups(user_id, 1)
 
     def get_tofu_backup(self, user_id: int):
         self.ensure_connection()
@@ -594,4 +597,22 @@ class UserDB:
         """
         self.cursor.execute(sql)
         return self.cursor.fetchall()
+
+    def cleanup_old_tofu_backups(self, user_id: int, keep_last_n: int = 1):
+        self.ensure_connection()
+        sql = """
+            DELETE FROM tofu_backups 
+            WHERE user_id = %s 
+            AND id NOT IN (
+                SELECT id FROM (
+                    SELECT id 
+                    FROM tofu_backups 
+                    WHERE user_id = %s 
+                    ORDER BY created_at DESC 
+                    LIMIT %s
+                ) as latest
+            )
+        """
+        self.cursor.execute(sql, (user_id, user_id, keep_last_n))
+        self.conn.commit()
 
