@@ -264,6 +264,11 @@ export const generateX3DHKeys = async () => {
 };
 
 export async function generateOOBVerificationCode(ik1_b64: string, ik2_b64: string) {
+  // Validate base64 inputs
+  const base64Regex = /^[A-Za-z0-9+/]+={0,2}$/;
+  if (!base64Regex.test(ik1_b64) || !base64Regex.test(ik2_b64)) {
+    throw new Error("Invalid base64 input: Both ik1_b64 and ik2_b64 must be valid base64-encoded strings.");
+  }
   const ik1 = Uint8Array.from(atob(ik1_b64), c => c.charCodeAt(0));
   const ik2 = Uint8Array.from(atob(ik2_b64), c => c.charCodeAt(0));
   const [a, b] = [ik1, ik2].sort((x, y) => {
