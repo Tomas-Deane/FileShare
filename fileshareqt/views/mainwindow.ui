@@ -79,7 +79,7 @@
           </item>
          </layout>
         </widget>
-        <widget class="QWidget" name="tab_5">
+        <widget class="QWidget" name="SignUp">
          <attribute name="title">
           <string>Sign Up</string>
          </attribute>
@@ -100,7 +100,7 @@
           <item>
            <layout class="QHBoxLayout" name="horizontalLayout_27">
             <item>
-             <widget class="QLabel" name="label_7">
+             <widget class="QLabel" name="usernameLabel_3">
               <property name="text">
                <string>Username: </string>
               </property>
@@ -144,7 +144,7 @@
           <item>
            <layout class="QHBoxLayout" name="horizontalLayout_28">
             <item>
-             <widget class="QLabel" name="label_8">
+             <widget class="QLabel" name="passwordLabel_2">
               <property name="text">
                <string>Password: </string>
               </property>
@@ -297,7 +297,7 @@
           <item>
            <layout class="QHBoxLayout" name="horizontalLayout_7">
             <item>
-             <widget class="QLabel" name="label_2">
+             <widget class="QLabel" name="usernameLabel_2">
               <property name="text">
                <string>Username: </string>
               </property>
@@ -328,7 +328,7 @@
           <item>
            <layout class="QHBoxLayout" name="horizontalLayout_8">
             <item>
-             <widget class="QLabel" name="label_3">
+             <widget class="QLabel" name="passwordLabel">
               <property name="text">
                <string>Password: </string>
               </property>
@@ -395,7 +395,7 @@
           </item>
          </layout>
         </widget>
-        <widget class="QWidget" name="tab_7">
+        <widget class="QWidget" name="Verify">
          <attribute name="title">
           <string>Verify</string>
          </attribute>
@@ -407,24 +407,24 @@
               <item>
                <layout class="QVBoxLayout" name="verticalLayout_15">
                 <item>
-                 <widget class="QLabel" name="label_6">
+                 <widget class="QLabel" name="verifyLabel">
                   <property name="text">
                    <string>Verify new user</string>
                   </property>
                  </widget>
                 </item>
                 <item>
-                 <widget class="QLabel" name="label_9">
+                 <widget class="QLabel" name="enterUsernameLabel">
                   <property name="text">
                    <string>Enter target username:</string>
                   </property>
                  </widget>
                 </item>
                 <item>
-                 <widget class="QLineEdit" name="lineEdit"/>
+                 <widget class="QLineEdit" name="targetUsernameLineEdit"/>
                 </item>
                 <item>
-                 <widget class="QPushButton" name="pushButton_3">
+                 <widget class="QPushButton" name="generateCodeButton">
                   <property name="text">
                    <string>Generate Code</string>
                   </property>
@@ -435,7 +435,7 @@
               <item>
                <layout class="QVBoxLayout" name="verticalLayout_17">
                 <item>
-                 <widget class="QLabel" name="label_10">
+                 <widget class="QLabel" name="warningLabel">
                   <property name="text">
                    <string>Do not click verify unless you have confirmed the target user's code they generated on their own client is an exact match with your one above. This should be done securely, ideally in person.</string>
                   </property>
@@ -448,7 +448,7 @@
                  </widget>
                 </item>
                 <item>
-                 <widget class="QPushButton" name="pushButton_2">
+                 <widget class="QPushButton" name="verifyNewUserButton">
                   <property name="text">
                    <string>Verify</string>
                   </property>
@@ -461,24 +461,24 @@
             <item>
              <layout class="QVBoxLayout" name="verticalLayout_16">
               <item>
-               <widget class="QLabel" name="label_11">
+               <widget class="QLabel" name="verifiedUsersLabel">
                 <property name="text">
                  <string>Your verified users:</string>
                 </property>
                </widget>
               </item>
               <item>
-               <widget class="QListWidget" name="listWidget_3"/>
+               <widget class="QListWidget" name="verifiedUsersList"/>
               </item>
               <item>
-               <widget class="QPushButton" name="pushButton_6">
+               <widget class="QPushButton" name="regenerateCodeButton">
                 <property name="text">
                  <string>Regenerate Code</string>
                 </property>
                </widget>
               </item>
               <item>
-               <widget class="QPushButton" name="pushButton_5">
+               <widget class="QPushButton" name="deleteVerifiedUserButton">
                 <property name="text">
                  <string>Delete</string>
                 </property>
@@ -490,7 +490,7 @@
           </item>
          </layout>
         </widget>
-        <widget class="QWidget" name="tab_3">
+        <widget class="QWidget" name="Upload">
          <attribute name="title">
           <string>Upload</string>
          </attribute>
@@ -519,7 +519,7 @@
           <item>
            <widget class="QStackedWidget" name="uploadPreviewStack">
             <property name="currentIndex">
-             <number>1</number>
+             <number>0</number>
             </property>
             <widget class="QWidget" name="page">
              <layout class="QVBoxLayout" name="verticalLayout_9">
@@ -540,7 +540,7 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>548</width>
+                   <width>667</width>
                    <height>249</height>
                   </rect>
                  </property>
@@ -572,7 +572,7 @@
           </item>
          </layout>
         </widget>
-        <widget class="QWidget" name="tab_4">
+        <widget class="QWidget" name="Download">
          <attribute name="title">
           <string>Download</string>
          </attribute>
@@ -661,89 +661,145 @@
           </item>
          </layout>
         </widget>
-        <widget class="QWidget" name="tab">
+        <widget class="QWidget" name="ShareNew">
          <attribute name="title">
-          <string>Share</string>
+          <string>Share New</string>
          </attribute>
-         <widget class="QPushButton" name="pushButton_4">
-          <property name="geometry">
-           <rect>
-            <x>290</x>
-            <y>510</y>
-            <width>101</width>
-            <height>32</height>
-           </rect>
-          </property>
-          <property name="text">
-           <string>Share</string>
-          </property>
-         </widget>
-         <widget class="QLabel" name="label_4">
-          <property name="geometry">
-           <rect>
-            <x>30</x>
-            <y>20</y>
-            <width>121</width>
-            <height>16</height>
-           </rect>
-          </property>
-          <property name="text">
-           <string>Select file to share</string>
-          </property>
-         </widget>
-         <widget class="QLabel" name="label_5">
-          <property name="geometry">
-           <rect>
-            <x>350</x>
-            <y>20</y>
-            <width>121</width>
-            <height>16</height>
-           </rect>
-          </property>
-          <property name="text">
-           <string>Select verified user</string>
-          </property>
-         </widget>
-         <widget class="QListWidget" name="listWidget">
-          <property name="geometry">
-           <rect>
-            <x>20</x>
-            <y>70</y>
-            <width>256</width>
-            <height>192</height>
-           </rect>
-          </property>
-         </widget>
-         <widget class="QListWidget" name="listWidget_2">
-          <property name="geometry">
-           <rect>
-            <x>310</x>
-            <y>80</y>
-            <width>151</width>
-            <height>192</height>
-           </rect>
-          </property>
-         </widget>
-         <widget class="QPushButton" name="pushButton">
-          <property name="geometry">
-           <rect>
-            <x>40</x>
-            <y>330</y>
-            <width>101</width>
-            <height>32</height>
-           </rect>
-          </property>
-          <property name="text">
-           <string>Share File</string>
-          </property>
-         </widget>
+         <layout class="QVBoxLayout" name="verticalLayout_22">
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_16">
+            <item>
+             <layout class="QVBoxLayout" name="verticalLayout_20">
+              <item>
+               <widget class="QLabel" name="selectFileLabel">
+                <property name="text">
+                 <string>Select file to share:</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QListWidget" name="shareNewFileList"/>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <layout class="QVBoxLayout" name="verticalLayout_21">
+              <item>
+               <widget class="QLabel" name="selectUserLabel">
+                <property name="text">
+                 <string>Select verified user to share file with:</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QListWidget" name="shareNewUserList"/>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QPushButton" name="shareFileButton">
+            <property name="text">
+             <string>Share File</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </widget>
-        <widget class="QWidget" name="tab_6">
+        <widget class="QWidget" name="SharesTo">
          <attribute name="title">
-          <string>Shared</string>
+          <string>Shares To</string>
          </attribute>
+         <layout class="QVBoxLayout" name="verticalLayout_30">
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_18">
+            <item>
+             <layout class="QVBoxLayout" name="verticalLayout_26">
+              <item>
+               <widget class="QLabel" name="sharesToVerifiedUsersLabel">
+                <property name="text">
+                 <string>Select a verified user:</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QListWidget" name="sharesToVerifiedUsersList"/>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <layout class="QVBoxLayout" name="verticalLayout_27">
+              <item>
+               <widget class="QLabel" name="sharesToFilesLabel">
+                <property name="text">
+                 <string>Files you shared with selected user:</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QListWidget" name="sharesToFilesList"/>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QPushButton" name="pushButton">
+            <property name="text">
+             <string>Revoke Access</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </widget>
-        <widget class="QWidget" name="tab_2">
+        <widget class="QWidget" name="SharesFrom">
+         <attribute name="title">
+          <string>Shares From</string>
+         </attribute>
+         <layout class="QVBoxLayout" name="verticalLayout_25">
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_17">
+            <item>
+             <layout class="QVBoxLayout" name="verticalLayout_24">
+              <item>
+               <widget class="QLabel" name="sharesFromVerifiedUsersLabel">
+                <property name="text">
+                 <string>Select a verified user: </string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QListWidget" name="sharesFromVerifiedUsersList"/>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <layout class="QVBoxLayout" name="verticalLayout_23">
+              <item>
+               <widget class="QLabel" name="sharesFromFilesLabel">
+                <property name="text">
+                 <string>Files shared to you from selected user:</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QListWidget" name="sharesFromFilesList"/>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QPushButton" name="saveSharesFromFileButton">
+            <property name="text">
+             <string>Save File as...</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+        <widget class="QWidget" name="Profile">
          <attribute name="title">
           <string>Profile</string>
          </attribute>
@@ -1032,16 +1088,6 @@
    </layout>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
-  <widget class="QMenuBar" name="menuBar">
-   <property name="geometry">
-    <rect>
-     <x>0</x>
-     <y>0</y>
-     <width>1037</width>
-     <height>38</height>
-    </rect>
-   </property>
-  </widget>
  </widget>
  <resources>
   <include location="../build/Qt_6_9_0_for_macOS-Debug/qmake_qmake_immediate.qrc"/>
