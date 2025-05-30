@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Container, Typography, Button, Paper, Grid, List, ListItem, ListItemText,
   ListItemIcon, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider, Checkbox
+  TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider, Checkbox,
+  LinearProgress
 } from '@mui/material';
 import {
   Upload as UploadIcon, Share as ShareIcon, Delete as DeleteIcon, Download as DownloadIcon,
@@ -214,6 +215,8 @@ const Dashboard: React.FC = () => {
   const [users, setUsers] = useState<UserData[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
+  const [openDelete, setOpenDelete] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<number | null>(null);
 
   // Get current user and their key bundle
   const currentUsername = storage.getCurrentUser();
@@ -245,13 +248,19 @@ const Dashboard: React.FC = () => {
     setOpenShare(true);
   };
   const handleDelete = async (fileId: number) => {
+    setFileToDelete(fileId);
+    setOpenDelete(true);
+  };
+  const handleDeleteConfirm = async () => {
+    if (!fileToDelete) return;
+    
     try {
       setLoading(true);
       setError(null);
-      logDebug('Starting file deletion', { fileId });
+      logDebug('Starting file deletion', { fileId: fileToDelete });
 
-      const fileToDelete = files.find(f => f.id === fileId);
-      if (!fileToDelete) {
+      const file = files.find(f => f.id === fileToDelete);
+      if (!file) {
         throw new Error('File not found');
       }
 
@@ -273,7 +282,7 @@ const Dashboard: React.FC = () => {
       // Step 2: Sign the filename
       logDebug('Signing filename');
       const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
-      const signature = await signChallenge(new TextEncoder().encode(fileToDelete.name), secretKey!);
+      const signature = await signChallenge(new TextEncoder().encode(file.name), secretKey!);
       logDebug('Filename signed', {
         signatureLength: signature.length
       });
@@ -282,7 +291,7 @@ const Dashboard: React.FC = () => {
       logDebug('Sending delete request');
       const deleteResponse = await apiClient.post<DeleteResponse>('/delete_file', {
         username,
-        filename: fileToDelete.name,
+        filename: file.name,
         nonce: challengeResponse.nonce,
         signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
       });
@@ -309,6 +318,8 @@ const Dashboard: React.FC = () => {
       setError(err.message || 'Failed to delete file');
     } finally {
       setLoading(false);
+      setOpenDelete(false);
+      setFileToDelete(null);
       logDebug('Delete process completed');
     }
   };
@@ -1937,6 +1948,87 @@ const Dashboard: React.FC = () => {
           <Button onClick={() => setOpenPreview(false)} sx={{ color: 'rgba(0, 255, 0, 0.7)' }}>
             Close
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={openDelete}
+        onClose={() => {
+          if (!loading) {
+            setOpenDelete(false);
+            setFileToDelete(null);
+          }
+        }}
+        PaperProps={{
+          sx: {
+            background: 'rgba(0, 0, 0, 0.9)',
+            border: '1px solid rgba(0, 255, 0, 0.2)',
+            color: '#00ff00',
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#00ffff', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
+          Confirm Delete
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Typography sx={{ color: '#00ff00', mb: 2 }}>
+            Are you sure you want to delete this file? This action cannot be undone.
+          </Typography>
+          {loading && (
+            <Box sx={{ width: '100%', mt: 2 }}>
+              <LinearProgress 
+                sx={{
+                  backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                  '& .MuiLinearProgress-bar': {
+                    backgroundColor: '#00ff00',
+                    boxShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                  },
+                }}
+              />
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  color: 'rgba(0, 255, 0, 0.7)', 
+                  mt: 1,
+                  textAlign: 'center',
+                  fontFamily: 'monospace'
+                }}
+              >
+                Deleting file...
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
+          <Button
+            onClick={() => {
+              setOpenDelete(false);
+              setFileToDelete(null);
+            }}
+            sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+            disabled={loading}
+          >
+            Cancel
+          </Button>
+          <CyberButton
+            onClick={handleDeleteConfirm}
+            size="small"
+            sx={{ 
+              minWidth: 100, 
+              fontSize: '0.95rem', 
+              height: 36, 
+              px: 2.5, 
+              py: 1,
+              backgroundColor: 'rgba(255, 0, 0, 0.2)',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 0, 0, 0.3)',
+              },
+            }}
+            disabled={loading}
+          >
+            Delete
+          </CyberButton>
         </DialogActions>
       </Dialog>
     </>
