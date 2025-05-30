@@ -597,6 +597,55 @@ class UserDB:
         """
         self.cursor.execute(sql)
         return self.cursor.fetchall()
+    
+    def get_file_id(self, username: str, filename: str) -> int:
+         """Lookup the internal file ID for a given owner+filename."""
+         self.ensure_connection()
+         user_id = self._get_user_id(username)
+         if user_id is None:
+             raise ValueError(f"Unknown user '{username}'")
+         sql = """
+             SELECT id
+             FROM files
+             WHERE owner_id = %s
+               AND filename = %s
+             LIMIT 1
+         """
+         self.cursor.execute(sql, (user_id, filename))
+         row = self.cursor.fetchone()
+         if not row:
+             return None
+         return row['id'] if isinstance(row, dict) else row[0]
+
+    def get_shared_files_to(self, owner_id: int, recipient_id: int):
+        """Files *I* (owner_id) have shared *to* recipient_id."""
+        self.ensure_connection()
+        sql = """
+            SELECT sf.share_id, sf.file_id, f.filename,
+                sf.EK_pub, sf.IK_pub, sf.encrypted_file_key, sf.shared_at
+            FROM shared_files sf
+            JOIN files f ON sf.file_id = f.id
+            WHERE f.owner_id    = %s
+            AND sf.recipient_id = %s
+            ORDER BY sf.shared_at DESC
+        """
+        self.cursor.execute(sql, (owner_id, recipient_id))
+        return self.cursor.fetchall()
+
+    def get_shared_files_from(self, recipient_id: int, owner_id: int):
+        """Files that owner_id has shared *to* me (recipient_id)."""
+        self.ensure_connection()
+        sql = """
+            SELECT sf.share_id, sf.file_id, f.filename,
+                sf.EK_pub, sf.IK_pub, sf.encrypted_file_key, sf.shared_at
+            FROM shared_files sf
+            JOIN files f ON sf.file_id = f.id
+            WHERE sf.recipient_id = %s
+            AND f.owner_id      = %s
+            ORDER BY sf.shared_at DESC
+        """
+        self.cursor.execute(sql, (recipient_id, owner_id))
+        return self.cursor.fetchall()
 
     def cleanup_old_tofu_backups(self, user_id: int, keep_last_n: int = 1):
         self.ensure_connection()

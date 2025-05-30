@@ -4,6 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
@@ -32,6 +33,8 @@ from schemas import (
     BackupTOFURequest,
     GetBackupTOFURequest,
     ListUsersRequest,
+    ListSharedToRequest, 
+    ListSharedFromRequest
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -89,9 +92,14 @@ app.add_middleware(
 def get_db():
     return app.state.db
 
-# ─── Global exception handler ──────────────────────────────────────────────────
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    # Let FastAPI render the JSON with the proper status code & detail
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    # Everything else is a 500
     logger.error("Unhandled exception during request", exc_info=exc)
     return JSONResponse(
         status_code=500,
@@ -195,7 +203,7 @@ async def add_prekey_bundle(req: AddPreKeyBundleRequest, db: models.UserDB = Dep
     return resp
 
 
-@app.get("/opk")
+@app.post("/opk")
 async def opk(req: GetOPKRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"GetOPKRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.opk_handler, req, db)
@@ -216,8 +224,8 @@ async def share_file(req: ShareFileRequest, db: models.UserDB = Depends(get_db))
     logger.debug(f"ShareFile response: {resp}")
     return resp
 
-@app.post("/remove_share")
-async def remove_share(req: RemoveSharedFileRequest, db: models.UserDB = Depends(get_db)):
+@app.post("/remove_shared_file")
+async def remove_shared_file(req: RemoveSharedFileRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"RemoveSharedFileRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.remove_shared_file_handler, req, db)
     logger.debug(f"RemoveSharedFile response: {resp}")
@@ -230,15 +238,15 @@ async def list_shared_files(req: ListSharedFilesRequest, db: models.UserDB = Dep
     logger.debug(f"ListSharedFiles response: {resp}")
     return resp
 
-@app.post("/backup_tofu_keys")
-async def backup_tofu_keys(req: BackupTOFURequest, db: models.UserDB = Depends(get_db)):
+@app.post("/backup_tofu")
+async def backup_tofu(req: BackupTOFURequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"BackupTOFURequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.backup_tofu_keys_handler, req, db)
     logger.debug(f"BackupTOFU response: {resp}")
     return resp
 
-@app.post("/get_backup_tofu_keys")
-async def get_backup_tofu_keys(req: GetBackupTOFURequest, db: models.UserDB = Depends(get_db)):
+@app.post("/get_backup_tofu")
+async def get_backup_tofu(req: GetBackupTOFURequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"GetBackupTOFURequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.get_backup_tofu_keys_handler, req, db)
     logger.debug(f"GetBackupTOFU response: {resp}")
@@ -249,6 +257,22 @@ async def list_users(req: ListUsersRequest, db: models.UserDB = Depends(get_db))
     logger.debug(f"ListUsersRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.list_users_handler, req, db)
     logger.debug(f"ListUsers response: {resp}")
+    return resp
+
+# New: list the files I have shared *to* a given user
+@app.post("/list_shared_to")
+async def list_shared_to(req: ListSharedToRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListSharedToRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.list_shared_to_handler, req, db)
+    logger.debug(f"ListSharedTo response: {resp}")
+    return resp
+
+# New: list the files shared *to me* *from* a given user
+@app.post("/list_shared_from")
+async def list_shared_from(req: ListSharedFromRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListSharedFromRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.list_shared_from_handler, req, db)
+    logger.debug(f"ListSharedFrom response: {resp}")
     return resp
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────

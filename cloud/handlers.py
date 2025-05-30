@@ -23,6 +23,14 @@ from schemas import (
     ListUsersResponse,
     UserData,
     AddOPKsRequest,
+    ShareFileRequest, 
+    RemoveSharedFileRequest, 
+    ListSharedFilesRequest,
+    ListSharedToRequest, 
+    ListSharedFromRequest, 
+    SharedFileResponse,
+    OPKResponse, 
+    GetOPKRequest
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
@@ -89,7 +97,8 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
         logging.warning(f"User '{req.username}' already exists")
         raise HTTPException(status_code=400, detail="User already exists")
 
-    db.add_user(
+    # 1) create the user row
+    user_id = db.add_user(
         req.username,
         base64.b64decode(req.salt),
         req.argon2_opslimit,
@@ -101,7 +110,19 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
         base64.b64decode(req.kek_nonce)
     )
 
-    logging.info(f"Signup successful for '{req.username}'")
+    # 2) store their X3DH pre-key bundle
+    db.add_pre_key_bundle(
+        user_id,
+        base64.b64decode(req.identity_key),
+        base64.b64decode(req.signed_pre_key),
+        base64.b64decode(req.signed_pre_key_sig),
+    )
+
+    # 3) store their one-time pre-keys
+    opk_bytes = [base64.b64decode(k) for k in req.one_time_pre_keys]
+    db.add_opks(user_id, opk_bytes)
+
+    logging.info(f"Signup successful (and X3DH keys stored) for '{req.username}'")
     return {"status": "ok"}
 
 # --- AUTHENTICATE (LOGIN COMPLETE) --------------------------------------
@@ -551,3 +572,216 @@ def add_opks_handler(req: AddOPKsRequest, db: models.UserDB):
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
+def share_file_handler(req: ShareFileRequest, db: models.UserDB):
+    # 1) verify owner & challenge
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(404, "Unknown user")
+
+    uid = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(uid, "share_file")
+    if stored is None or provided != stored:
+        raise HTTPException(400, "Invalid or expired challenge")
+
+    # 2) verify signature over the encrypted_file_key
+    sig = base64.b64decode(req.signature)
+    payload = base64.b64decode(req.encrypted_file_key)
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, payload)
+    except Exception:
+        db.delete_challenge(uid)
+        raise HTTPException(401, "Bad signature")
+
+    # 3) lookup file and recipient
+    file_id = db.get_file_id(req.username, req.filename)
+    if file_id is None:
+        raise HTTPException(404, "File not found")
+    recipient = db.get_user(req.recipient_username)
+    if not recipient:
+        raise HTTPException(404, "Recipient not found")
+
+    rid = recipient["user_id"]
+    ek_pub = base64.b64decode(req.EK_pub)
+    ik_pub = base64.b64decode(req.IK_pub)
+    efk    = payload
+
+    # 4) consume one‐time prekey
+    opk = db.get_unused_opk(rid)
+    if not opk:
+        raise HTTPException(409, "No OPKs available for recipient")
+    opk_id = opk["id"] if isinstance(opk, dict) else opk[0]
+    db.mark_opk_consumed(opk_id)
+
+    # 5) record the share
+    db.share_file(file_id, rid, ek_pub, ik_pub, efk, opk_id)
+
+    db.delete_challenge(uid)
+    return {"status": "ok", "message": "file shared"}
+
+# ─── LIST ALL SHARES TO ME ───────────────────────────────────────────────
+def list_shared_files_handler(req: ListSharedFilesRequest, db: models.UserDB):
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(404, "Unknown user")
+    uid = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(uid, "list_shared_files")
+    if stored is None or provided != stored:
+        raise HTTPException(400, "Invalid or expired challenge")
+    # no extra signature payload
+    sig = base64.b64decode(req.signature)
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, provided)
+    except Exception:
+        db.delete_challenge(uid)
+        raise HTTPException(401, "Bad signature")
+
+    rows = db.get_shared_files(uid)
+    db.delete_challenge(uid)
+    return {
+        "status": "ok",
+        "shares": [
+            SharedFileResponse(
+                share_id = r["share_id"],
+                file_id  = r["file_id"],
+                filename = r["filename"],
+                EK_pub   = base64.b64encode(r["EK_pub"]).decode(),
+                IK_pub   = base64.b64encode(r["IK_pub"]).decode(),
+                shared_at= r["shared_at"].isoformat()
+            )
+            for r in rows
+        ]
+    }
+
+# ─── LIST SHARES I SENT TO A SPECIFIC USER ──────────────────────────────
+def list_shared_to_handler(req: ListSharedToRequest, db: models.UserDB):
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(404, "Unknown user")
+    uid = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(uid, "list_shared_to")
+    if stored is None or provided != stored:
+        raise HTTPException(400, "Invalid or expired challenge")
+    sig = base64.b64decode(req.signature)
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, provided)
+    except Exception:
+        db.delete_challenge(uid)
+        raise HTTPException(401, "Bad signature")
+
+    target = db.get_user(req.target_username)
+    if not target:
+        raise HTTPException(404, "Target user not found")
+    rows = db.get_shared_files_to(uid, target["user_id"])
+    db.delete_challenge(uid)
+    return {"status": "ok", "shares": [
+        SharedFileResponse(
+            share_id = r["share_id"],
+            file_id  = r["file_id"],
+            filename = r["filename"],
+            EK_pub   = base64.b64encode(r["EK_pub"]).decode(),
+            IK_pub   = base64.b64encode(r["IK_pub"]).decode(),
+            shared_at= r["shared_at"].isoformat()
+        )
+        for r in rows
+    ]}
+
+# ─── LIST SHARES SENT TO ME FROM A SPECIFIC USER ────────────────────────
+def list_shared_from_handler(req: ListSharedFromRequest, db: models.UserDB):
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(404, "Unknown user")
+    uid = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(uid, "list_shared_from")
+    if stored is None or provided != stored:
+        raise HTTPException(400, "Invalid or expired challenge")
+    sig = base64.b64decode(req.signature)
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, provided)
+    except Exception:
+        db.delete_challenge(uid)
+        raise HTTPException(401, "Bad signature")
+
+    target = db.get_user(req.target_username)
+    if not target:
+        raise HTTPException(404, "Target user not found")
+    rows = db.get_shared_files_from(uid, target["user_id"])
+    db.delete_challenge(uid)
+    return {"status": "ok", "shares": [
+        SharedFileResponse(
+            share_id = r["share_id"],
+            file_id  = r["file_id"],
+            filename = r["filename"],
+            EK_pub   = base64.b64encode(r["EK_pub"]).decode(),
+            IK_pub   = base64.b64encode(r["IK_pub"]).decode(),
+            shared_at= r["shared_at"].isoformat()
+        )
+        for r in rows
+    ]}
+
+# ─── REMOVE A SHARE ────────────────────────────────────────────────────
+def remove_shared_file_handler(req: RemoveSharedFileRequest, db: models.UserDB):
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(404, "Unknown user")
+    uid = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(uid, "remove_shared_file")
+    if stored is None or provided != stored:
+        raise HTTPException(400, "Invalid or expired challenge")
+    sig = base64.b64decode(req.signature)
+    # verify signature on the share_id itself
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(sig, str(req.share_id).encode())
+    except Exception:
+        db.delete_challenge(uid)
+        raise HTTPException(401, "Bad signature")
+
+    db.remove_shared_file(req.share_id)
+    db.delete_challenge(uid)
+    return {"status": "ok", "message": "share removed"}
+
+def opk_handler(req: GetOPKRequest, db: models.UserDB):
+    # 1) lookup user & verify challenge
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(404, "Unknown user")
+    user_id = user["user_id"]
+
+    provided = base64.b64decode(req.nonce)
+    stored   = db.get_pending_challenge(user_id, "get_opk")
+    if stored is None or provided != stored:
+        raise HTTPException(400, "Invalid or expired challenge")
+
+    # 2) verify signature over the nonce
+    signature = base64.b64decode(req.signature)
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"])\
+            .verify(signature, provided)
+    except InvalidSignature:
+        db.delete_challenge(user_id)
+        raise HTTPException(401, "Bad signature")
+
+    # 3) fetch & consume one-time pre-key
+    opk = db.get_unused_opk(user_id)
+    if not opk:
+        db.delete_challenge(user_id)
+        raise HTTPException(404, "No OPK available")
+    opk_id, raw_pre = opk["id"], opk["pre_key"]
+    db.mark_opk_consumed(opk_id)
+
+    # 4) done—return it (base64!)
+    db.delete_challenge(user_id)
+    return OPKResponse(
+        opk_id = opk_id,
+        pre_key = base64.b64encode(raw_pre).decode()
+    )
