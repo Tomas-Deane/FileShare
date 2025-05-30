@@ -17,7 +17,8 @@ import { CyberButton, MatrixBackground } from '../components';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../utils/apiClient';
-import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK } from '../utils/crypto';
+import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
+import { storage, KeyBundle } from '../utils/storage';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -98,14 +99,11 @@ const mockSharedFiles = [
   { id: 8, name: 'meeting_minutes.txt', type: 'text', size: '0.6 MB', sharedBy: 'user5', date: new Date('2024-03-11T14:00:00') },
 ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
-const mockUsers = [
-  { id: 1, email: 'user1@example.com', verified: true },
-  { id: 2, email: 'user2@example.com', verified: true },
-  { id: 3, email: 'user3@example.com', verified: true },
-  { id: 4, email: 'user4@example.com', verified: true },
-  { id: 5, email: 'user5@example.com', verified: true },
-  { id: 6, email: 'user6@example.com', verified: true },
-];
+// Add interface for user data
+interface UserData {
+  id: number;
+  username: string;
+}
 
 // Update the ProfileData interface
 interface ProfileData {
@@ -165,7 +163,6 @@ const logDebug = (message: string, data?: any) => {
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { username, secretKey, pdk, kek } = useAuth();
   const [activeTab, setActiveTab] = useState<'home'|'files'|'users'|'profile'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [userSearchQuery, setUserSearchQuery] = useState('');
@@ -174,15 +171,12 @@ const Dashboard: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<number | null>(null);
   const [shareEmail, setShareEmail] = useState('');
   const [openVerify, setOpenVerify] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<{ id: number; email: string } | null>(null);
+  const [selectedUser, setSelectedUser] = useState<{ id: number; username: string } | null>(null);
   const [openProfileSettings, setOpenProfileSettings] = useState(false);
   const [profileData, setProfileData] = useState<ProfileData>(mockUserProfile);
   const [editMode, setEditMode] = useState(false);
   const [editedProfile, setEditedProfile] = useState<ProfileData>(mockUserProfile);
-  const [verificationCode] = useState(() => {
-    // Generate a random 60-digit integer
-    return Array.from({ length: 60 }, () => Math.floor(Math.random() * 10)).join('');
-  });
+  const [verificationCode, setVerificationCode] = useState<string>('');
   const [files, setFiles] = useState<FileData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -193,6 +187,21 @@ const Dashboard: React.FC = () => {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [users, setUsers] = useState<UserData[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [userError, setUserError] = useState<string | null>(null);
+
+  // Get current user and their key bundle
+  const currentUsername = storage.getCurrentUser();
+  const keyBundle = React.useMemo(() => {
+    if (!currentUsername) return null;
+    return storage.getKeyBundle(currentUsername);
+  }, [currentUsername]);
+
+  const username = keyBundle?.username;
+  const secretKey = keyBundle?.secretKey ? Uint8Array.from(atob(keyBundle.secretKey), c => c.charCodeAt(0)) : null;
+  const pdk = keyBundle?.pdk ? Uint8Array.from(atob(keyBundle.pdk), c => c.charCodeAt(0)) : null;
+  const kek = keyBundle?.kek ? Uint8Array.from(atob(keyBundle.kek), c => c.charCodeAt(0)) : null;
 
   // Add a ref to track if we've already fetched files
   const isMounted = React.useRef(false);
@@ -202,11 +211,6 @@ const Dashboard: React.FC = () => {
   // Filter files based on search query
   const filteredFiles = mockFiles.filter(file => 
     file.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  // Filter users based on search query
-  const filteredUsers = mockUsers.filter(user =>
-    user.email.toLowerCase().includes(userSearchQuery.toLowerCase())
   );
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: 'home'|'files'|'users'|'profile') => setActiveTab(newValue);
@@ -350,10 +354,56 @@ const Dashboard: React.FC = () => {
     logDebug('Revoke initiated', { fileId });
     // TODO: Implement revoke
   };
-  const handleVerifyClick = (user: { id: number; email: string }) => {
-    logDebug('Verification initiated', { userId: user.id, email: user.email });
-    setSelectedUser(user);
-    setOpenVerify(true);
+  const handleVerifyClick = async (user: { id: number; username: string }) => {
+    try {
+      // Get your own username and key bundle
+      const myUsername = storage.getCurrentUser();
+      if (!myUsername) {
+        setUserError('No current user found in session storage.');
+        return;
+      }
+
+      const myKeyBundle = storage.getKeyBundle(myUsername);
+      if (!myKeyBundle || !myKeyBundle.IK_pub) {
+        setUserError('Could not retrieve your identity key for verification.');
+        return;
+      }
+
+      // 3. Request challenge for get_prekey_bundle as the logged-in user
+      const challengeResponse = await apiClient.post<{ status: string; nonce: string }>('/challenge', {
+        username: myUsername,
+        operation: 'get_pre_key_bundle'
+      });
+      if (challengeResponse.status !== 'challenge') {
+        setUserError('Failed to get challenge for verification.');
+        return;
+      }
+
+      // 4. Sign the nonce with your own secret key
+      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonce, secretKey!);
+
+      // 5. Request the prekey bundle for the target user
+      const prekeyResponse = await apiClient.post<{ prekey_bundle: { IK_pub: string } }>(
+        '/get_pre_key_bundle',
+        {
+          username: myUsername,  // Your username (for challenge verification)
+          target_username: user.username,  // The target user's username
+          nonce: challengeResponse.nonce,
+          signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        }
+      );
+      const remoteIK = prekeyResponse.prekey_bundle.IK_pub;
+
+      // 6. Generate the OOB verification code
+      const code = await generateOOBVerificationCode(myKeyBundle.IK_pub, remoteIK);
+      setVerificationCode(code);
+      setSelectedUser(user);
+      setOpenVerify(true);
+    } catch (err: any) {
+      console.error('Verification error:', err);
+      setUserError('Failed to fetch user key bundle or generate verification code.');
+    }
   };
 
   const debugSection = (
@@ -760,6 +810,59 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // Add function to fetch users
+  const fetchUsers = async () => {
+    try {
+      setLoadingUsers(true);
+      setUserError(null);
+
+      // Step 1: Request challenge
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'list_users'
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+
+      // Step 2: Sign the nonce
+      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonce, secretKey!);
+
+      // Step 3: Get user list
+      const listResponse = await apiClient.post<{ status: string; users: UserData[] }>('/list_users', {
+        username,
+        nonce: challengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+      });
+
+      if (listResponse.status === 'ok') {
+        setUsers(listResponse.users);
+      } else {
+        throw new Error('Failed to list users');
+      }
+    } catch (err: any) {
+      setUserError(err.message || 'Failed to fetch users');
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  // Update useEffect to fetch users when needed
+  useEffect(() => {
+    if (activeTab === 'users' && username && secretKey && !loadingUsers && !users.length) {
+      fetchUsers();
+    }
+  }, [activeTab]); // Only depend on activeTab changes
+
+  // Add a function to manually refresh users
+  const refreshUsers = () => {
+    if (username && secretKey) {
+      fetchUsers();
+    }
+  };
+
   return (
     <>
       <MatrixBackground />
@@ -862,14 +965,13 @@ const Dashboard: React.FC = () => {
                 {/* Verified Users Section */}
                 <DashboardCard sx={{ mb: 3 }}>
                   <Typography variant="h6" sx={{ color: '#00ffff', mb: 2 }}>
-                    Verified Users
+                    Users
                   </Typography>
                   <Grid container spacing={2}>
-                    {mockUsers
-                      .filter((u) => u.verified)
+                    {users
                       .slice(0, 6)
-                      .map((u) => (
-                        <Grid item xs={4} sm={2} key={u.id}>
+                      .map((user) => (
+                        <Grid item xs={4} sm={2} key={user.id}>
                           <Paper
                             sx={{
                               p: 2,
@@ -877,11 +979,11 @@ const Dashboard: React.FC = () => {
                               background: 'rgba(0,0,0,0.6)',
                             }}
                           >
-                            <VerifiedUserIcon sx={{ fontSize: 32, color: '#00ff00' }} />
+                            <PersonIcon sx={{ fontSize: 32, color: '#00ff00' }} />
                             <Typography
                               sx={{ mt: 1, color: '#00ffff', fontSize: '0.875rem' }}
                             >
-                              {u.email}
+                              {user.username}
                             </Typography>
                           </Paper>
                         </Grid>
@@ -1032,7 +1134,7 @@ const Dashboard: React.FC = () => {
                       mb: 2,
                     }}
                   >
-                    User Verification
+                    Users
                   </Typography>
                   <SearchField
                     fullWidth
@@ -1048,50 +1150,61 @@ const Dashboard: React.FC = () => {
                     }}
                   />
                 </Box>
-                <List>
-                  {filteredUsers.map((user) => (
-                    <ListItem
-                      key={user.id}
-                      sx={{
-                        border: '1px solid rgba(0, 255, 0, 0.2)',
-                        borderRadius: 1,
-                        mb: 1,
-                        '&:hover': {
-                          border: '1px solid rgba(0, 255, 0, 0.4)',
-                          backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                        },
-                      }}
-                    >
-                      <ListItemIcon>
-                        {user.verified ? (
-                          <VerifiedUserIcon sx={{ color: '#00ff00' }} />
-                        ) : (
-                          <PersonIcon sx={{ color: 'rgba(0, 255, 0, 0.5)' }} />
-                        )}
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={user.email}
-                        secondary={user.verified ? 'Verified' : 'Not Verified'}
-                        primaryTypographyProps={{
-                          sx: { color: '#00ffff', fontWeight: 'bold' },
-                        }}
-                        secondaryTypographyProps={{
-                          sx: { color: user.verified ? '#00ff00' : 'rgba(0, 255, 0, 0.5)' },
-                        }}
-                      />
-                      {!user.verified && (
-                        <CyberButton
-                          size="small"
-                          startIcon={<VerifiedUserIcon />}
-                          onClick={() => handleVerifyClick(user)}
-                          sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+                {loadingUsers ? (
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography sx={{ color: '#00ff00' }}>Loading users...</Typography>
+                  </Box>
+                ) : userError ? (
+                  <Alert severity="error" sx={{ bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
+                    {userError}
+                  </Alert>
+                ) : users.length === 0 ? (
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography sx={{ color: '#00ff00' }}>No users found.</Typography>
+                  </Box>
+                ) : (
+                  <List>
+                    {users
+                      .filter(user => user.username.toLowerCase().includes(userSearchQuery.toLowerCase()))
+                      .map((user) => (
+                        <ListItem
+                          key={user.id}
+                          sx={{
+                            border: '1px solid rgba(0, 255, 0, 0.2)',
+                            borderRadius: 1,
+                            mb: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            '&:hover': {
+                              border: '1px solid rgba(0, 255, 0, 0.4)',
+                              backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                            },
+                          }}
                         >
-                          Verify
-                        </CyberButton>
-                      )}
-                    </ListItem>
-                  ))}
-                </List>
+                          <ListItemIcon>
+                            <PersonIcon sx={{ color: '#00ff00' }} />
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={user.username}
+                            primaryTypographyProps={{
+                              sx: { color: '#00ffff', fontWeight: 'bold' },
+                            }}
+                          />
+                          <Box sx={{ ml: 'auto' }}>
+                            <Button
+                              variant="contained"
+                              color="primary"
+                              onClick={() => handleVerifyClick({ id: user.id, username: user.username })}
+                              size="small"
+                              sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+                            >
+                              Verify
+                            </Button>
+                          </Box>
+                        </ListItem>
+                      ))}
+                  </List>
+                )}
               </DashboardCard>
             ) : (
               <DashboardCard>
@@ -1356,7 +1469,7 @@ const Dashboard: React.FC = () => {
               fontFamily: 'monospace',
             }}
           >
-            {selectedUser?.email}
+            {selectedUser?.username}
           </Typography>
           
           {/* QR Code */}

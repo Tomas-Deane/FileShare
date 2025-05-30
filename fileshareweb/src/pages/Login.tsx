@@ -96,34 +96,30 @@ const Login: React.FC = () => {
     setIsLoading(true);
 
     try {
-      // Validate input
+      console.log('Starting login process...');
+      // 1. Validate input
       if (!formData.username || !formData.password) {
         throw new Error('Username and password are required');
       }
-
       const trimmedUsername = formData.username.trim();
       if (!trimmedUsername) {
         throw new Error('Username cannot be empty or contain only spaces');
       }
-
       if (!isBrowserCompatible) {
         throw new Error('Your browser is not compatible with the required security features');
       }
 
-      console.log('Starting login process...');
-      
-      // Step 1: Request login challenge
       console.log('Requesting login challenge...');
+      // 2. Request login challenge
       const challengeResponse = await apiClient.post<LoginChallenge>('/login', {
         username: trimmedUsername
       });
-
       if (challengeResponse.status !== 'challenge') {
         throw new Error(challengeResponse.detail || 'Login failed');
       }
 
-      // Step 2: Derive PDK and decrypt private key
-      console.log('Deriving PDK...');
+      console.log('Deriving PDK and decrypting private key...');
+      // 3. Derive PDK and decrypt private key
       const salt = Uint8Array.from(atob(challengeResponse.salt), c => c.charCodeAt(0));
       const pdk = await derivePDK(
         formData.password,
@@ -131,88 +127,155 @@ const Login: React.FC = () => {
         challengeResponse.argon2_opslimit,
         challengeResponse.argon2_memlimit
       );
-
-      console.log('Decrypting private key...');
       const encryptedPrivateKey = Uint8Array.from(atob(challengeResponse.encrypted_privkey), c => c.charCodeAt(0));
-      const nonce = Uint8Array.from(atob(challengeResponse.privkey_nonce), c => c.charCodeAt(0));
-      const privateKey = await decryptPrivateKey(encryptedPrivateKey, pdk, nonce);
+      const privNonce = Uint8Array.from(atob(challengeResponse.privkey_nonce), c => c.charCodeAt(0));
+      const privateKey = await decryptPrivateKey(encryptedPrivateKey, pdk, privNonce);
 
-      // Step 3: Get challenge for TOFU backup
-      console.log('Requesting TOFU backup challenge...');
-      const tofuChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+      console.log('Checking for local key bundle...');
+      // 4. Check for local key bundle
+      let myKeyBundle = null;
+      
+      // Check sessionStorage for key bundle
+      console.log('All sessionStorage keys:', Object.keys(sessionStorage));
+      const sessionKeyBundle = storage.getKeyBundle(trimmedUsername);
+      console.log('Key bundle found:', sessionKeyBundle ? 'Yes' : 'No');
+
+      if (sessionKeyBundle) {
+        console.log('Key bundle details:', {
+          username: sessionKeyBundle.username,
+          hasIK_pub: !!sessionKeyBundle.IK_pub,
+          hasSPK_pub: !!sessionKeyBundle.SPK_pub,
+          hasSPK_signature: !!sessionKeyBundle.SPK_signature,
+          hasOPKs: Array.isArray(sessionKeyBundle.OPKs),
+          hasIK_priv: !!sessionKeyBundle.IK_priv,
+          hasSPK_priv: !!sessionKeyBundle.SPK_priv,
+          hasOPKs_priv: Array.isArray(sessionKeyBundle.OPKs_priv)
+        });
+        myKeyBundle = sessionKeyBundle;
+      }
+
+      if (!myKeyBundle) {
+        console.log('No local key bundle found, attempting TOFU restore...');
+        
+        // 4a. Restore from TOFU backup
+        const tofuChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+            username: trimmedUsername,
+            operation: 'get_backup_tofu'
+        });
+        console.log('Got TOFU challenge');
+
+        const tofuSignature = sodium.crypto_sign_detached(
+            base64.toByteArray(tofuChallengeResponse.nonce),
+            privateKey
+        );
+        console.log('Signed TOFU challenge');
+
+        const tofuBackupResponse = await apiClient.post<GetBackupTOFUResponse>('/get_backup_tofu_keys', {
+            username: trimmedUsername,
+            nonce: tofuChallengeResponse.nonce,
+            signature: btoa(String.fromCharCode.apply(null, Array.from(tofuSignature)))
+        });
+        console.log('Received TOFU backup from server');
+
+        const backupKey = await derivePDK(formData.password, salt, 3, 67108864);
+        const encryptedBackup = Uint8Array.from(atob(tofuBackupResponse.encrypted_backup), c => c.charCodeAt(0));
+        const backupNonce = Uint8Array.from(atob(tofuBackupResponse.backup_nonce), c => c.charCodeAt(0));
+        
+        console.log('Decrypting TOFU backup...');
+        const decryptedBackup = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
+            null,
+            encryptedBackup,
+            null,
+            backupNonce,
+            backupKey
+        );
+        console.log('Backup decrypted successfully');
+
+        let backupData;
+        try {
+            backupData = JSON.parse(new TextDecoder().decode(decryptedBackup));
+            console.log('Backup data parsed:', {
+                hasIdentityKey: !!backupData.identityKey,
+                hasSignedPreKey: !!backupData.signedPreKey,
+                hasOneTimePreKeys: Array.isArray(backupData.oneTimePreKeys) ? backupData.oneTimePreKeys.length : 'not an array',
+                hasPrivateKey: !!backupData.privateKey,
+                hasPDK: !!backupData.pdk,
+                hasKEK: !!backupData.kek
+            });
+
+            // Validate required fields
+            if (!backupData.identityKey || !backupData.signedPreKey || !Array.isArray(backupData.oneTimePreKeys)) {
+                throw new Error('Invalid backup data structure');
+            }
+
+            myKeyBundle = {
+                username: trimmedUsername,
+                IK_pub: backupData.identityKey,
+                SPK_pub: backupData.signedPreKey,
+                SPK_signature: backupData.signedPreKeySig,
+                OPKs: backupData.oneTimePreKeys || [],
+                IK_priv: backupData.identityKeyPrivate,
+                SPK_priv: backupData.signedPreKeyPrivate,
+                OPKs_priv: backupData.oneTimePreKeysPrivate || [],
+                secretKey: backupData.privateKey,
+                pdk: backupData.pdk,
+                kek: backupData.kek,
+                verified: true,
+                lastVerified: new Date().toISOString()
+            };
+        } catch (err) {
+            console.error('Error processing backup data:', err);
+            throw new Error('Failed to process backup data. The backup may be corrupted.');
+        }
+
+        // Save using the new storage functions
+        storage.saveKeyBundle(myKeyBundle);
+        storage.setCurrentUser(trimmedUsername);
+        console.log('Key bundle saved for user:', trimmedUsername);
+      }
+
+      // 5. TOFU check: compare server and local public key bundles
+      const prekeyChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username: trimmedUsername,
-        operation: 'get_backup_tofu'
+        operation: 'get_pre_key_bundle'
       });
-
-      // Step 4: Sign and request TOFU backup
-      console.log('Signing TOFU challenge...');
-      const tofuSignature = sodium.crypto_sign_detached(
-        base64.toByteArray(tofuChallengeResponse.nonce),
+      const prekeySignature = sodium.crypto_sign_detached(
+        base64.toByteArray(prekeyChallengeResponse.nonce),
         privateKey
       );
+      const prekeyResponse = await apiClient.post<{ prekey_bundle: { IK_pub: string } }>(
+        '/get_pre_key_bundle',
+        {
+          username: trimmedUsername,
+          target_username: trimmedUsername,
+          nonce: prekeyChallengeResponse.nonce,
+          signature: btoa(String.fromCharCode.apply(null, Array.from(prekeySignature)))
+        }
+      );
+      const serverIK = prekeyResponse.prekey_bundle.IK_pub;
+      if (serverIK !== myKeyBundle.IK_pub) {
+        setError('Warning: Your local identity key does not match the server! Possible key rotation or tampering.');
+        setIsLoading(false);
+        return;
+      }
 
-      // console.log('Retrieving TOFU backup...');
-      // const tofuBackupResponse = await apiClient.post<GetBackupTOFUResponse>('/get_backup_tofu_keys', {
-      //   username: trimmedUsername,
-      //   nonce: tofuChallengeResponse.nonce,
-      //   signature: btoa(String.fromCharCode.apply(null, Array.from(tofuSignature)))
-      // });
-
-      // // Step 5: Decrypt TOFU backup
-      // console.log('Decrypting TOFU backup...');
-      // const backupKey = await derivePDK(formData.password, salt, 3, 67108864);
-      // const encryptedBackup = Uint8Array.from(atob(tofuBackupResponse.encrypted_backup), c => c.charCodeAt(0));
-      // const backupNonce = Uint8Array.from(atob(tofuBackupResponse.backup_nonce), c => c.charCodeAt(0));
-      
-      // const decryptedBackup = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
-      //   null,
-      //   encryptedBackup,
-      //   null,
-      //   backupNonce,
-      //   backupKey
-      // );
-
-      // const backupData = JSON.parse(new TextDecoder().decode(decryptedBackup));
-
-      // // Step 6: Verify and save TOFU keys
-      // console.log('Verifying TOFU keys...');
-      // const tofuKeys = {
-      //   username: trimmedUsername,
-      //   IK_pub: backupData.identityKey,
-      //   SPK_pub: backupData.signedPreKey,
-      //   SPK_signature: backupData.signedPreKeySig,
-      //   OPKs: backupData.oneTimePreKeys,
-      //   verified: true,
-      //   lastVerified: new Date().toISOString()
-      // };
-
-      // // Save verified TOFU keys
-      // storage.saveKeyBundle(tofuKeys);
-      // storage.setCurrentUser(trimmedUsername);
-
-      // Step 7: Complete authentication
-      console.log('Signing login challenge...');
-      const signature = await signChallenge(
+      // 6. Complete authentication
+      const loginSignature = await signChallenge(
         base64.toByteArray(challengeResponse.nonce),
         privateKey
       );
-
-      console.log('Authenticating...');
       const authResponse = await apiClient.post<LoginResponse>('/authenticate', {
         username: trimmedUsername,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: btoa(String.fromCharCode.apply(null, Array.from(loginSignature)))
       });
 
       if (authResponse.status === 'ok') {
-        console.log('Login successful, saving auth data...');
-        
         // Decrypt KEK
         const encryptedKek = Uint8Array.from(atob(challengeResponse.encrypted_kek), c => c.charCodeAt(0));
         const kekNonce = Uint8Array.from(atob(challengeResponse.kek_nonce), c => c.charCodeAt(0));
         const kek = await decryptKEK(encryptedKek, pdk, kekNonce);
-        
-        // Save the auth data
+
         setAuthData({
           username: trimmedUsername,
           secretKey: privateKey,
@@ -220,7 +283,6 @@ const Login: React.FC = () => {
           kek: kek
         });
 
-        // Navigate to dashboard
         navigate('/dashboard', { replace: true });
       } else {
         setError(authResponse.detail || 'Authentication failed');
@@ -228,7 +290,6 @@ const Login: React.FC = () => {
     } catch (err: any) {
       console.error('Login error:', err);
       if (err instanceof CryptoError) {
-        console.error('Crypto error details:', err.cause);
         setError('Failed to decrypt private key. Please check your password and try again.');
       } else if (err.response?.data?.detail) {
         setError(err.response.data.detail);

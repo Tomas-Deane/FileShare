@@ -87,7 +87,13 @@ class DeleteFileRequest(BaseModel):
     signature: str
 
 
-class PreKeyBundleRequest(BaseModel):
+class GetPreKeyBundleRequest(BaseModel):
+    username: str  # The requesting user's username (for challenge verification)
+    target_username: str  # The username whose prekey bundle we want to get
+    nonce: str
+    signature: str
+
+class AddPreKeyBundleRequest(BaseModel):
     username: str
     nonce: str
     signature: str
@@ -95,16 +101,19 @@ class PreKeyBundleRequest(BaseModel):
     SPK_pub: str
     SPK_signature: str
 
-
 class PreKeyBundleResponse(BaseModel):
     IK_pub: str
     SPK_pub: str
     SPK_signature: str
 
+class AddPreKeyBundleResponse(BaseModel):
+    status: str
+    message: str
+
 
 class AddOPKsRequest(BaseModel):
     username: str
-    pre_keys: list[str]  # List of base64 encoded pre-keys
+    opks: list[str]  # List of base64 encoded pre-keys
     nonce: str
     signature: str
 
@@ -124,6 +133,7 @@ class ShareFileRequest(BaseModel):
     username: str
     filename: str
     recipient_username: str
+    encrypted_key: str
     EK_pub: str
     IK_pub: str
     nonce: str
@@ -150,12 +160,6 @@ class RemoveSharedFileRequest(BaseModel):
     share_id: int
     nonce: str
     signature: str
-    
-class AddOPKsRequest(BaseModel):    
-    username: str
-    pre_keys: list[str]
-    nonce: str
-    signature: str
 
 
 class BackupTOFURequest(BaseModel):
@@ -164,6 +168,10 @@ class BackupTOFURequest(BaseModel):
     backup_nonce: str
     nonce: str
     signature: str
+
+class BackupTOFUResponse(BaseModel):
+    status: str
+    encrypted_backup: str
 
 
 class GetBackupTOFURequest(BaseModel):
@@ -176,3 +184,17 @@ class GetBackupTOFUResponse(BaseModel):
     status: str
     encrypted_backup: str
     backup_nonce: str
+
+
+class ListUsersRequest(BaseModel):
+    username: str
+    nonce: str
+    signature: str
+
+class UserData(BaseModel):
+    id: int
+    username: str
+
+class ListUsersResponse(BaseModel):
+    status: str
+    users: list[UserData]

@@ -148,56 +148,56 @@ const Signup: React.FC = () => {
       console.log('Sending signup request...');
       const response = await apiClient.post<SignupResponse>('/signup', payload);
       
-      if (response.status === 'ok') {
-        // Save key bundle to IndexedDB for persistence and security
-        storage.saveKeyBundle({
+      if (response.status === 'ok') {        
+        // Also save critical keys to sessionStorage for quick access during session
+        const keyBundle = {
             username: trimmedUsername,
+            // Private keys
+            IK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
+            SPK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_private))),
+            OPKs_priv: x3dhKeys.one_time_pre_keys_private.map(key =>
+                btoa(String.fromCharCode.apply(null, Array.from(key)))
+            ),
             // Public keys
             IK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
             SPK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
             SPK_signature: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
-            OPKs: x3dhKeys.one_time_pre_keys.map(key => 
+            OPKs: x3dhKeys.one_time_pre_keys.map(key =>
                 btoa(String.fromCharCode.apply(null, Array.from(key)))
             ),
-            // Private keys
-            IK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
-            SPK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_private))),
-            OPKs_priv: x3dhKeys.one_time_pre_keys_private.map(key =>
-                btoa(String.fromCharCode.apply(null, Array.from(key)))
-            ),
-            verified: false,
+            // Additional keys
+            secretKey: btoa(String.fromCharCode.apply(null, Array.from(privateKey))),
+            pdk: btoa(String.fromCharCode.apply(null, Array.from(pdk))),
+            kek: btoa(String.fromCharCode.apply(null, Array.from(kek))),
+            verified: true,
             lastVerified: new Date().toISOString()
-        });
+        };
 
-        // Also save critical keys to sessionStorage for quick access during session
-        sessionStorage.setItem('priv_key_bundle', JSON.stringify({
+        storage.saveKeyBundle(keyBundle);
+        storage.setCurrentUser(trimmedUsername);
+
+        // 2. Create encrypted backup for server
+        const backupData = {
             username: trimmedUsername,
             // Private keys
             IK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
             SPK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_private))),
             OPKs_priv: x3dhKeys.one_time_pre_keys_private.map(key =>
                 btoa(String.fromCharCode.apply(null, Array.from(key)))
-            )
-            //public keys
-            ,IK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
+            ),
+            // Public keys
+            IK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
             SPK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
             SPK_signature: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
             OPKs: x3dhKeys.one_time_pre_keys.map(key =>
                 btoa(String.fromCharCode.apply(null, Array.from(key)))
-            )
-        }));
-        
-        // 2. Create encrypted backup for server
-        const backupData = {
-            privateKey: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
-            //public keys
-            identityKey: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
-            signedPreKey: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
-            signedPreKeySig: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
-            oneTimePreKeys: x3dhKeys.one_time_pre_keys.map(key => 
-                btoa(String.fromCharCode.apply(null, Array.from(key)))
-            )
-          
+            ),
+            // Additional keys
+            secretKey: btoa(String.fromCharCode.apply(null, Array.from(privateKey))),
+            pdk: btoa(String.fromCharCode.apply(null, Array.from(pdk))),
+            kek: btoa(String.fromCharCode.apply(null, Array.from(kek))),
+            verified: true,
+            lastVerified: new Date().toISOString()
         };
 
         // Encrypt backup with password-derived key
@@ -211,6 +211,20 @@ const Signup: React.FC = () => {
             backupKey
         );
 
+        // After creating backupData
+        console.log('Creating TOFU backup with data:', {
+            username: trimmedUsername,
+            hasIdentityKey: !!backupData.IK_pub,
+            hasSignedPreKey: !!backupData.SPK_pub,
+            hasOneTimePreKeys: backupData.OPKs.length
+        });
+
+        // After encrypting backup
+        console.log('Encrypted backup created:', {
+            encryptedLength: encryptedBackup.length,
+            nonceLength: backupNonce.length
+        });
+
         // 3. Get challenge for backup
         const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
             username: trimmedUsername,
@@ -223,16 +237,58 @@ const Signup: React.FC = () => {
             privateKey
         );
 
-        // await apiClient.post('/backup_tofu_keys', {
-        //     username: trimmedUsername,
-        //     encrypted_backup: btoa(String.fromCharCode.apply(null, Array.from(encryptedBackup))),
-        //     backup_nonce: btoa(String.fromCharCode.apply(null, Array.from(backupNonce))),
-        //     nonce: challengeResponse.nonce,
-        //     signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
-        // });
+        await apiClient.post('/backup_tofu_keys', {
+            username: trimmedUsername,
+            encrypted_backup: btoa(String.fromCharCode.apply(null, Array.from(encryptedBackup))),
+            backup_nonce: btoa(String.fromCharCode.apply(null, Array.from(backupNonce))),
+            nonce: challengeResponse.nonce,
+            signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        });
 
-        // Set as current user
-        storage.setCurrentUser(trimmedUsername);
+        // After sending to server
+        console.log('TOFU backup sent to server');
+
+        // 1. Get challenge for prekey bundle
+        const prekeyChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+            username: trimmedUsername,
+            operation: 'add_pre_key_bundle'
+        });
+
+        // Sign the challenge
+        const prekeySignature = sodium.crypto_sign_detached(
+            base64.toByteArray(prekeyChallengeResponse.nonce),
+            privateKey
+        );
+
+        // Upload prekey bundle with challenge
+        await apiClient.post('/add_pre_key_bundle', {
+            username: trimmedUsername,
+            IK_pub: payload.identity_key,
+            SPK_pub: payload.signed_pre_key,
+            SPK_signature: payload.signed_pre_key_sig,
+            nonce: prekeyChallengeResponse.nonce,
+            signature: btoa(String.fromCharCode.apply(null, Array.from(prekeySignature)))
+        });
+
+        // 2. Get challenge for OPKs
+        const opksChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+            username: trimmedUsername,
+            operation: 'add_opks'
+        });
+
+        // Sign the challenge
+        const opksSignature = sodium.crypto_sign_detached(
+            base64.toByteArray(opksChallengeResponse.nonce),
+            privateKey
+        );
+
+        // Upload OPKs with challenge
+        await apiClient.post('/add_opks', {
+            username: trimmedUsername,
+            opks: payload.one_time_pre_keys,
+            nonce: opksChallengeResponse.nonce,
+            signature: btoa(String.fromCharCode.apply(null, Array.from(opksSignature)))
+        });
 
         console.log('Signup successful, redirecting to login...');
         navigate('/login');
