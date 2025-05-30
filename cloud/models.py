@@ -2,6 +2,8 @@
 #!/usr/bin/env python3
 import os
 import pymysql as connector
+import logging
+import datetime
 
 # Database connection parameters (will use env variables)
 DB_USER     = os.environ.get('DB_USER',     'nrmc')
@@ -129,6 +131,8 @@ def init_db():
         recipient_id         BIGINT              NOT NULL,
         EK_pub               BLOB                NOT NULL,
         IK_pub               BLOB                NOT NULL,
+        encrypted_file_key   BLOB                NOT NULL,
+        OPK_id              BIGINT              NOT NULL,
         shared_at            DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT fk_shared_file
         FOREIGN KEY (file_id)
@@ -149,20 +153,16 @@ def init_db():
     CREATE TABLE IF NOT EXISTS tofu_backups (
         id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
         user_id             BIGINT              NOT NULL,
-        backup_type         VARCHAR(32)         NOT NULL,  -- 'own_keys' or 'other_user'
-        target_username     VARCHAR(255),                  -- NULL for own_keys, username for other_user
         encrypted_data      LONGBLOB            NOT NULL,  -- Encrypted backup data
         backup_nonce        BLOB                NOT NULL,  -- Nonce for encrypted_data
         created_at          DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
         last_verified       DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        verified            BOOLEAN             NOT NULL DEFAULT FALSE,
         CONSTRAINT fk_tofu_user
           FOREIGN KEY (user_id)
           REFERENCES users(id)
           ON DELETE CASCADE
           ON UPDATE CASCADE,
-        INDEX idx_user_type (user_id, backup_type),
-        INDEX idx_target_user (target_username)
+        INDEX idx_user (user_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
     conn.commit()
@@ -282,7 +282,7 @@ class UserDB:
     def get_pending_challenge(self, user_id, operation, expiry_seconds=300):
         self.ensure_connection()
         sql = """
-            SELECT challenge
+            SELECT challenge, created_at
             FROM pending_challenges
             WHERE user_id = %s
               AND operation = %s
@@ -292,8 +292,16 @@ class UserDB:
         self.cursor.execute(sql, (user_id, operation, expiry_seconds))
         row = self.cursor.fetchone()
         if not row:
+            logging.debug(f"No challenge found for user_id={user_id} operation={operation}")
             return None
-        return row['challenge'] if isinstance(row, dict) else row[0]
+        
+        challenge = row['challenge'] if isinstance(row, dict) else row[0]
+        created_at = row['created_at'] if isinstance(row, dict) else row[1]
+        logging.debug(f"Found challenge for user_id={user_id} operation={operation}")
+        logging.debug(f"Challenge created at: {created_at}")
+        logging.debug(f"Current time: {datetime.datetime.utcnow()}")
+        logging.debug(f"Challenge age: {(datetime.datetime.utcnow() - created_at).total_seconds()} seconds")
+        return challenge
 
     def delete_challenge(self, user_id):
         self.ensure_connection()
@@ -476,14 +484,14 @@ class UserDB:
         self.cursor.execute(sql, (opk_id,))
         self.conn.commit()
 
-    def share_file(self, file_id, recipient_id, EK_pub, IK_pub):
+    def share_file(self, file_id, recipient_id, EK_pub, IK_pub, encrypted_file_key, OPK_id):
         self.ensure_connection()
         sql = """
             INSERT INTO shared_files
-                (file_id, recipient_id, EK_pub, IK_pub)
-            VALUES (%s, %s, %s, %s)
+                (file_id, recipient_id, EK_pub, IK_pub, encrypted_file_key, OPK_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """
-        self.cursor.execute(sql, (file_id, recipient_id, EK_pub, IK_pub))
+        self.cursor.execute(sql, (file_id, recipient_id, EK_pub, IK_pub, encrypted_file_key, OPK_id))
         self.conn.commit()
 
     def get_shared_files(self, recipient_id):
@@ -494,6 +502,8 @@ class UserDB:
                 sf.file_id,
                 sf.EK_pub,
                 sf.IK_pub,
+                sf.encrypted_file_key,
+                sf.OPK_id,
                 sf.shared_at,
                 f.filename
             FROM shared_files sf
@@ -513,6 +523,8 @@ class UserDB:
                 sf.recipient_id,
                 sf.EK_pub,
                 sf.IK_pub,
+                sf.encrypted_file_key,
+                sf.OPK_id,
                 sf.shared_at,
                 f.filename
             FROM shared_files sf
@@ -532,68 +544,54 @@ class UserDB:
         self.cursor.execute(sql, (share_id,))
         self.conn.commit()
 
-    def add_tofu_backup(self, user_id: int, backup_type: str, target_username: str | None,
-                       encrypted_data: bytes, backup_nonce: bytes):
+    def add_tofu_backup(self, user_id: int, encrypted_data: bytes, backup_nonce: bytes):
         self.ensure_connection()
         sql = """
             INSERT INTO tofu_backups
-                (user_id, backup_type, target_username, encrypted_data, backup_nonce)
-            VALUES (%s, %s, %s, %s, %s)
+                (user_id, encrypted_data, backup_nonce)
+            VALUES (%s, %s, %s)
         """
         self.cursor.execute(sql, (
             user_id,
-            backup_type,
-            target_username,
             encrypted_data,
             backup_nonce
         ))
         self.conn.commit()
 
-    def get_tofu_backup(self, user_id: int, backup_type: str, target_username: str | None = None):
+    def get_tofu_backup(self, user_id: int):
         self.ensure_connection()
         sql = """
-            SELECT encrypted_data, backup_nonce, created_at, last_verified, verified
+            SELECT encrypted_data, backup_nonce, created_at, last_verified
             FROM tofu_backups
             WHERE user_id = %s
-              AND backup_type = %s
-              AND (target_username = %s OR (target_username IS NULL AND %s IS NULL))
             ORDER BY created_at DESC
             LIMIT 1
         """
-        self.cursor.execute(sql, (user_id, backup_type, target_username, target_username))
-        return self.cursor.fetchone()
+        self.cursor.execute(sql, (user_id,))
+        row = self.cursor.fetchone()
+        if not row:
+            return None
+        
+        # Convert tuple to dictionary
+        if isinstance(row, dict):
+            return row
+        else:
+            return {
+                "encrypted_data": row[0],
+                "backup_nonce": row[1],
+                "created_at": row[2],
+                "last_verified": row[3]
+            }
 
-    def update_tofu_verification(self, user_id: int, backup_type: str, 
-                               target_username: str | None, verified: bool):
+    def get_all_users(self) -> list:
+        """Get all users in the system."""
         self.ensure_connection()
         sql = """
-            UPDATE tofu_backups
-            SET verified = %s,
-                last_verified = UTC_TIMESTAMP()
-            WHERE user_id = %s
-              AND backup_type = %s
-              AND (target_username = %s OR (target_username IS NULL AND %s IS NULL))
+            SELECT u.id, m.username
+            FROM users u
+            JOIN username_map m ON u.id = m.user_id
+            ORDER BY u.id
         """
-        self.cursor.execute(sql, (verified, user_id, backup_type, target_username, target_username))
-        self.conn.commit()
-
-    def list_tofu_backups(self, user_id: int, backup_type: str | None = None):
-        self.ensure_connection()
-        if backup_type:
-            sql = """
-                SELECT backup_type, target_username, created_at, last_verified, verified
-                FROM tofu_backups
-                WHERE user_id = %s AND backup_type = %s
-                ORDER BY created_at DESC
-            """
-            self.cursor.execute(sql, (user_id, backup_type))
-        else:
-            sql = """
-                SELECT backup_type, target_username, created_at, last_verified, verified
-                FROM tofu_backups
-                WHERE user_id = %s
-                ORDER BY created_at DESC
-            """
-            self.cursor.execute(sql, (user_id,))
+        self.cursor.execute(sql)
         return self.cursor.fetchall()
 
