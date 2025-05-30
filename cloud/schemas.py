@@ -133,7 +133,7 @@ class ShareFileRequest(BaseModel):
     username: str
     filename: str
     recipient_username: str
-    encrypted_key: str
+    encrypted_file_key: str
     EK_pub: str
     IK_pub: str
     nonce: str
@@ -141,7 +141,22 @@ class ShareFileRequest(BaseModel):
 
 
 class ListSharedFilesRequest(BaseModel):
+    """List *all* files shared to me (no filter)."""
     username: str
+    nonce: str
+    signature: str
+
+# New: list files I shared TO a particular user
+class ListSharedToRequest(BaseModel):
+    username: str
+    target_username: str
+    nonce: str
+    signature: str
+
+# New: list files shared FROM a particular user to me
+class ListSharedFromRequest(BaseModel):
+    username: str
+    target_username: str
     nonce: str
     signature: str
 
