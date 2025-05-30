@@ -29,7 +29,7 @@ def challenge_handler(req: ChallengeRequest, db: models.UserDB):
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' at challenge")
-        raise HTTPException(status_code=404, detail="Unknown user")
+        raise HTTPException(status_code=400, detail="Invalid credentials")
 
     user_id = user["user_id"]
     challenge = secrets.token_bytes(32)
@@ -47,7 +47,7 @@ def login_handler_continue(req: LoginRequest, db: models.UserDB, b64_nonce: str)
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' in login continuation")
-        raise HTTPException(status_code=404, detail="Unknown user")
+        raise HTTPException(status_code=400, detail="Invalid credentials")
 
     return {
         "status": "challenge",
@@ -89,14 +89,14 @@ def authenticate_handler(req: AuthenticateRequest, db: models.UserDB):
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' at authenticate")
-        raise HTTPException(status_code=404, detail="Unknown user")
+        raise HTTPException(status_code=400, detail="Invalid credentials")
 
     user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
     stored = db.get_pending_challenge(user_id, "login")
     if stored is None or provided != stored:
         logging.warning(f"No valid pending challenge for user_id={user_id} (login)")
-        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+        raise HTTPException(status_code=400, detail="Invalid credentials")
 
     signature = base64.b64decode(req.signature)
     try:
@@ -108,7 +108,7 @@ def authenticate_handler(req: AuthenticateRequest, db: models.UserDB):
     except InvalidSignature:
         logging.warning(f"Bad signature for user_id={user_id} (login)")
         db.delete_challenge(user_id)
-        raise HTTPException(status_code=401, detail="Bad signature")
+        raise HTTPException(status_code=400, detail="Invalid credentials")
 
 # --- CHANGE USERNAME ------------------------------------------------------
 def change_username_handler(req: ChangeUsernameRequest, db: models.UserDB):
