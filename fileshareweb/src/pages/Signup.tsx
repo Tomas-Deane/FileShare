@@ -173,7 +173,8 @@ const Signup: React.FC = () => {
             lastVerified: new Date().toISOString()
         };
 
-        storage.saveKeyBundle(keyBundle);
+        await storage.initializeMasterKey(formData.password, salt);
+        await storage.saveKeyBundle(keyBundle);
         storage.setCurrentUser(trimmedUsername);
 
         // 2. Create encrypted backup for server

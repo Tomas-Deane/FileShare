@@ -19,7 +19,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../utils/apiClient';
 import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
 import { storage } from '../utils/storage';
-
+import { KeyBundle } from '../utils/crypto';
+import sodium from 'libsodium-wrappers-sumo';
+import base64 from 'base64-js';
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
   background: 'rgba(0, 0, 0, 0.8)',
@@ -190,14 +192,20 @@ const Dashboard: React.FC = () => {
   const [users, setUsers] = useState<UserData[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
+  const [keyBundle, setKeyBundle] = useState<KeyBundle | null>(null);
 
-  // Get current user and their key bundle
-  const currentUsername = storage.getCurrentUser();
-  const keyBundle = React.useMemo(() => {
-    if (!currentUsername) return null;
-    return storage.getKeyBundle(currentUsername);
-  }, [currentUsername]);
+  useEffect(() => {
+    const loadKeyBundle = async () => {
+      const username = storage.getCurrentUser();
+      if (username) {
+        const bundle = await storage.getKeyBundle(username);
+        setKeyBundle(bundle);
+      }
+    };
+    loadKeyBundle();
+  }, []);
 
+  // Now you can safely use keyBundle in your component
   const username = keyBundle?.username;
   const secretKey = keyBundle?.secretKey ? Uint8Array.from(atob(keyBundle.secretKey), c => c.charCodeAt(0)) : null;
   const pdk = keyBundle?.pdk ? Uint8Array.from(atob(keyBundle.pdk), c => c.charCodeAt(0)) : null;
@@ -354,55 +362,53 @@ const Dashboard: React.FC = () => {
     logDebug('Revoke initiated', { fileId });
     // TODO: Implement revoke
   };
-  const handleVerifyClick = async (user: { id: number; username: string }) => {
+  const handleVerifyUser = async (user: any) => {
     try {
-      // Get your own username and key bundle
+      setUserError(null);
       const myUsername = storage.getCurrentUser();
       if (!myUsername) {
-        setUserError('No current user found in session storage.');
+        setUserError('You must be logged in to verify users.');
         return;
       }
 
-      const myKeyBundle = storage.getKeyBundle(myUsername);
+      // Get the key bundle and await it
+      const myKeyBundle = await storage.getKeyBundle(myUsername);
       if (!myKeyBundle || !myKeyBundle.IK_pub) {
         setUserError('Could not retrieve your identity key for verification.');
         return;
       }
 
-      // 3. Request challenge for get_prekey_bundle as the logged-in user
-      const challengeResponse = await apiClient.post<{ status: string; nonce: string }>('/challenge', {
+      // Get the remote user's prekey bundle
+      const prekeyChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username: myUsername,
         operation: 'get_pre_key_bundle'
       });
-      if (challengeResponse.status !== 'challenge') {
-        setUserError('Failed to get challenge for verification.');
-        return;
-      }
 
-      // 4. Sign the nonce with your own secret key
-      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
-      const signature = await signChallenge(nonce, secretKey!);
+      const prekeySignature = sodium.crypto_sign_detached(
+        base64.toByteArray(prekeyChallengeResponse.nonce),
+        Uint8Array.from(atob(myKeyBundle.secretKey), c => c.charCodeAt(0))
+      );
 
-      // 5. Request the prekey bundle for the target user
       const prekeyResponse = await apiClient.post<{ prekey_bundle: { IK_pub: string } }>(
         '/get_pre_key_bundle',
         {
-          username: myUsername,  // Your username (for challenge verification)
-          target_username: user.username,  // The target user's username
-          nonce: challengeResponse.nonce,
-          signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+          username: myUsername,
+          target_username: user.username,
+          nonce: prekeyChallengeResponse.nonce,
+          signature: btoa(String.fromCharCode.apply(null, Array.from(prekeySignature)))
         }
       );
+
       const remoteIK = prekeyResponse.prekey_bundle.IK_pub;
 
-      // 6. Generate the OOB verification code
+      // Generate the OOB verification code
       const code = await generateOOBVerificationCode(myKeyBundle.IK_pub, remoteIK);
       setVerificationCode(code);
       setSelectedUser(user);
       setOpenVerify(true);
     } catch (err: any) {
-      console.error('Verification error:', err);
-      setUserError('Failed to fetch user key bundle or generate verification code.');
+      console.error('Error verifying user:', err);
+      setUserError(err.message || 'Failed to verify user');
     }
   };
 
@@ -1194,7 +1200,7 @@ const Dashboard: React.FC = () => {
                             <Button
                               variant="contained"
                               color="primary"
-                              onClick={() => handleVerifyClick({ id: user.id, username: user.username })}
+                              onClick={() => handleVerifyUser(user)}
                               size="small"
                               sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
                             >

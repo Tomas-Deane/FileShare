@@ -262,3 +262,43 @@ export const generateX3DHKeys = async () => {
     one_time_pre_keys_private: OPKs_priv
   };
 };
+
+export async function generateOOBVerificationCode(ik1_b64: string, ik2_b64: string) {
+  const ik1 = Uint8Array.from(atob(ik1_b64), c => c.charCodeAt(0));
+  const ik2 = Uint8Array.from(atob(ik2_b64), c => c.charCodeAt(0));
+  const [a, b] = [ik1, ik2].sort((x, y) => {
+    for (let i = 0; i < x.length; i++) {
+      if (x[i] !== y[i]) return x[i] - y[i];
+    }
+    return 0;
+  });
+  const concat = new Uint8Array(a.length + b.length);
+  concat.set(a, 0);
+  concat.set(b, a.length);
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', concat);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex.slice(0, 60); // 60 hex chars
+}
+
+export interface KeyBundle {
+  username: string;
+  IK_pub: string;
+  SPK_pub: string;
+  SPK_signature: string;
+  OPKs: string[];
+  IK_priv: string;
+  SPK_priv: string;
+  OPKs_priv: string[];
+  secretKey: string;
+  pdk: string;
+  kek: string;
+  verified: boolean;
+  lastVerified: string;
+}
+
+export interface EncryptedKeyBundle extends KeyBundle {
+  encrypted: boolean;
+  iv?: Uint8Array;
+  _encryptedData?: string;
+}

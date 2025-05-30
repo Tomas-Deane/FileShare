@@ -132,12 +132,10 @@ const Login: React.FC = () => {
       const privateKey = await decryptPrivateKey(encryptedPrivateKey, pdk, privNonce);
 
       console.log('Checking for local key bundle...');
-      // 4. Check for local key bundle
       let myKeyBundle = null;
       
-      // Check sessionStorage for key bundle
-      console.log('All sessionStorage keys:', Object.keys(sessionStorage));
-      const sessionKeyBundle = storage.getKeyBundle(trimmedUsername);
+      // Check for key bundle
+      const sessionKeyBundle = await storage.getKeyBundle(trimmedUsername);
       console.log('Key bundle found:', sessionKeyBundle ? 'Yes' : 'No');
 
       if (sessionKeyBundle) {
