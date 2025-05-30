@@ -1544,7 +1544,6 @@ const Dashboard: React.FC = () => {
             background: 'rgba(0, 0, 0, 0.9)',
             border: '1px solid rgba(0, 255, 0, 0.2)',
             color: '#00ff00',
-            minWidth: '400px',
           },
         }}
       >
@@ -1553,12 +1552,14 @@ const Dashboard: React.FC = () => {
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
           <Box sx={{ mb: 3 }}>
+            <Typography variant="h6" sx={{ color: '#00ffff', mb: 2 }}>
+              Change Username
+            </Typography>
             <TextField
               fullWidth
-              label="Username"
-              value={editMode ? editedProfile.username : profileData.username}
-              onChange={(e) => setEditedProfile({ ...editedProfile, username: e.target.value })}
-              disabled={!editMode}
+              label="New Username"
+              value={newUsername}
+              onChange={(e) => setNewUsername(e.target.value)}
               sx={{
                 mb: 2,
                 '& .MuiOutlinedInput-root': {
@@ -1580,40 +1581,27 @@ const Dashboard: React.FC = () => {
                 },
               }}
             />
+            <CyberButton
+              onClick={handleUsernameChange}
+              disabled={!newUsername || loading}
+              sx={{ width: '100%' }}
+            >
+              Change Username
+            </CyberButton>
+          </Box>
 
-            <TextField
-              fullWidth
-              label="Email"
-              value={editMode ? editedProfile.email : profileData.email}
-              onChange={(e) => setEditedProfile({ ...editedProfile, email: e.target.value })}
-              disabled={!editMode}
-              sx={{
-                mb: 2,
-                '& .MuiOutlinedInput-root': {
-                  '& fieldset': {
-                    borderColor: 'rgba(0, 255, 0, 0.3)',
-                  },
-                  '&:hover fieldset': {
-                    borderColor: 'rgba(0, 255, 0, 0.5)',
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderColor: '#00ff00',
-                  },
-                },
-                '& .MuiInputLabel-root': {
-                  color: 'rgba(0, 255, 0, 0.7)',
-                },
-                '& .MuiInputBase-input': {
-                  color: '#fff',
-                },
-              }}
-            />
+          <Divider sx={{ borderColor: 'rgba(0, 255, 0, 0.2)', my: 3 }} />
 
+          <Box>
+            <Typography variant="h6" sx={{ color: '#00ffff', mb: 2 }}>
+              Change Password
+            </Typography>
             <TextField
               fullWidth
               label="New Password"
               type="password"
-              disabled={!editMode}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
               sx={{
                 mb: 2,
                 '& .MuiOutlinedInput-root': {
@@ -1635,32 +1623,58 @@ const Dashboard: React.FC = () => {
                 },
               }}
             />
+            <TextField
+              fullWidth
+              label="Confirm Password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              error={!!passwordError}
+              helperText={passwordError}
+              sx={{
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  '& fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.3)',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.5)',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#00ff00',
+                  },
+                },
+                '& .MuiInputLabel-root': {
+                  color: 'rgba(0, 255, 0, 0.7)',
+                },
+                '& .MuiInputBase-input': {
+                  color: '#fff',
+                },
+              }}
+            />
+            <CyberButton
+              onClick={handlePasswordChange}
+              disabled={!newPassword || !confirmPassword || loading}
+              sx={{ width: '100%' }}
+            >
+              Change Password
+            </CyberButton>
           </Box>
+
+          {error && (
+            <Alert severity="error" sx={{ mt: 2, bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
+              {error}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
-          <Button
+          <Button 
             onClick={() => setOpenProfileSettings(false)}
             sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+            disabled={loading}
           >
-            Cancel
+            Close
           </Button>
-          {editMode ? (
-            <>
-              <Button
-                onClick={handleProfileCancel}
-                sx={{ color: 'rgba(255, 0, 0, 0.7)' }}
-              >
-                Cancel Edit
-              </Button>
-              <CyberButton onClick={handleProfileSave}>
-                Save Changes
-              </CyberButton>
-            </>
-          ) : (
-            <CyberButton onClick={handleProfileEdit}>
-              Edit Profile
-            </CyberButton>
-          )}
         </DialogActions>
       </Dialog>
 
