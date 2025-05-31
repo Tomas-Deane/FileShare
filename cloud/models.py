@@ -501,7 +501,7 @@ class UserDB:
             SELECT s.share_id, f.file_id, f.filename, s.shared_by, f.created_at
             FROM shared_files s
             JOIN files f ON s.file_id = f.file_id
-            WHERE s.shared_with = ?
+            WHERE s.shared_with = %s
             ORDER BY f.created_at DESC
         """
         cursor = self.conn.cursor()
