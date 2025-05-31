@@ -34,7 +34,8 @@ from schemas import (
     GetBackupTOFURequest,
     ListUsersRequest,
     ListSharedToRequest, 
-    ListSharedFromRequest
+    ListSharedFromRequest,
+    RetrieveFileKEKRequest
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -165,6 +166,13 @@ async def upload_file(req: UploadRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"UploadFile response: {resp}")
     return resp
 
+@app.post("/retrieve_file_kek")
+async def retrieve_file_kek(req: RetrieveFileKEKRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"RetrieveFileKEKRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.retrieve_file_kek_handler, req, db)
+    logger.debug(f"RetrieveFileKEK response: {resp}")
+    return resp
+
 @app.post("/list_files")
 async def list_files(req: ListFilesRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"ListFilesRequest body: {req.model_dump_json()}")
@@ -274,6 +282,8 @@ async def list_shared_from(req: ListSharedFromRequest, db: models.UserDB = Depen
     resp = await run_in_threadpool(handlers.list_shared_from_handler, req, db)
     logger.debug(f"ListSharedFrom response: {resp}")
     return resp
+
+@app.post("/download_shared_file")
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":

@@ -213,3 +213,9 @@ class UserData(BaseModel):
 class ListUsersResponse(BaseModel):
     status: str
     users: list[UserData]
+
+class RetrieveFileKEKRequest(BaseModel):
+    username: str
+    file_id: int
+    nonce: str
+    signature: str
