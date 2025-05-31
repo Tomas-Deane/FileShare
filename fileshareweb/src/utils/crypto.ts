@@ -285,3 +285,71 @@ export async function generateOOBVerificationCode(ik1_b64: string, ik2_b64: stri
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   return hashHex.slice(0, 60); // 60 hex chars
 }
+
+export async function generateEphemeralKeyPair() {
+  await sodium.ready;
+  const keypair = sodium.crypto_kx_keypair();
+  return {
+    publicKey: keypair.publicKey,   // Uint8Array
+    privateKey: keypair.privateKey, // Uint8Array
+  };
+}
+
+export async function deriveX3DHSharedSecret({
+  myIKPriv,
+  myEKPriv,
+  recipientIKPub,
+  recipientSPKPub,
+  recipientSPKSignature,
+  // Optionally: recipientOPKPub
+}: {
+  myIKPriv: Uint8Array,
+  myEKPriv: Uint8Array,
+  recipientIKPub: Uint8Array,
+  recipientSPKPub: Uint8Array,
+  recipientSPKSignature: Uint8Array,
+  // recipientOPKPub?: Uint8Array,
+}) {
+  await sodium.ready;
+
+  // 1. Verify SPK signature
+  const valid = sodium.crypto_sign_verify_detached(
+    recipientSPKSignature,
+    recipientSPKPub,
+    recipientIKPub
+  );
+  if (!valid) throw new Error('Invalid SPK signature');
+
+  // 2. Convert Ed25519 keys to X25519 for DH
+  const myIKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(myIKPriv);
+  const myEKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(myEKPriv);
+  const recipientIKPub_x = sodium.crypto_sign_ed25519_pk_to_curve25519(recipientIKPub);
+  const recipientSPKPub_x = sodium.crypto_sign_ed25519_pk_to_curve25519(recipientSPKPub);
+
+  // 3. Perform DHs (see X3DH spec)
+  const DH1 = sodium.crypto_scalarmult(myIKPriv_x, recipientSPKPub_x);
+  const DH2 = sodium.crypto_scalarmult(myEKPriv_x, recipientIKPub_x);
+  const DH3 = sodium.crypto_scalarmult(myEKPriv_x, recipientSPKPub_x);
+  // Optionally: const DH4 = sodium.crypto_scalarmult(myEKPriv_x, recipientOPKPub_x);
+
+  // 4. Concatenate and hash to derive shared secret
+  const concat = sodium.crypto_generichash(32, sodium.crypto_core_ed25519_add(DH1, sodium.crypto_core_ed25519_add(DH2, DH3)));
+  return concat; // Uint8Array (32 bytes)
+}
+
+export async function encryptWithAESGCM(key: Uint8Array, data: Uint8Array) {
+  await sodium.ready;
+  const nonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+  const ciphertext = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+    data,
+    null, // no additional data
+    null, // no additional data
+    nonce,
+    key
+  );
+  // Return both ciphertext and nonce, as both are needed for decryption
+  return {
+    ciphertext, // Uint8Array
+    nonce       // Uint8Array
+  };
+}

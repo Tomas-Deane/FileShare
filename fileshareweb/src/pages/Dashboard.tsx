@@ -16,11 +16,11 @@ import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
 import { CyberButton, MatrixBackground } from '../components';
 import { QRCodeSVG } from 'qrcode.react';
-import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../utils/apiClient';
 import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
 import { storage } from '../utils/storage';
 import sodium from 'libsodium-wrappers-sumo';
+import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithAESGCM } from '../utils/crypto';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -185,6 +185,10 @@ const logDebug = (message: string, data?: any) => {
     console.log(`[Dashboard Debug] ${message}`, data ? data : '');
   }
 };
+
+function b64ToUint8Array(b64: string): Uint8Array {
+  return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+}
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -531,7 +535,7 @@ const Dashboard: React.FC = () => {
       );
 
       // Send the backup to the server
-      await apiClient.post('/backup_tofu_keys', {
+      await apiClient.post('/backup_tofu', {
         username: myUsername,
         encrypted_backup: btoa(String.fromCharCode.apply(null, Array.from(encryptedBackup))),
         backup_nonce: btoa(String.fromCharCode.apply(null, Array.from(encryptionNonce))),
@@ -1006,6 +1010,77 @@ const Dashboard: React.FC = () => {
       <Typography>KEK: {kek ? 'Present' : 'Not set'}</Typography>
     </Box>
   );
+
+  const handleShareConfirm = async () => {
+    if (!selectedFile || selectedRecipients.length === 0) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      const file = files.find(f => f.id === selectedFile);
+      if (!file) throw new Error('File not found');
+
+      // 1. Get the DEK for this file then once we have the DEK 
+      // decrypt the file key using the KEK
+
+
+      for (const recipientUsername of selectedRecipients) {
+        // 2. Get recipient's verified pre-key bundle from local storage
+        const myUsername = storage.getCurrentUser();
+        if (!myUsername) throw new Error('No current user found');
+        const myKeyBundle = storage.getKeyBundle(myUsername);
+        if (!myKeyBundle) throw new Error('Key bundle not found for current user');
+        const recipientBundle = myKeyBundle.recipients?.[recipientUsername]?.data;
+        if (!recipientBundle) throw new Error('Recipient bundle not found or not verified');
+
+        // 3. Generate ephemeral X25519 key pair
+        const ephemeralKeyPair = await generateEphemeralKeyPair();
+
+        // 4. Derive X3DH shared secret
+        const sharedSecret = await deriveX3DHSharedSecret({
+          myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
+          myEKPriv: ephemeralKeyPair.privateKey,
+          recipientIKPub: b64ToUint8Array(recipientBundle.IK_pub),
+          recipientSPKPub: b64ToUint8Array(recipientBundle.SPK_pub),
+          recipientSPKSignature: b64ToUint8Array(recipientBundle.SPK_signature),
+          // ...other params as needed we need an OPK here
+        });
+
+        // 5. Encrypt the file key (DEK) with the shared secret
+        const { ciphertext, nonce } = await encryptWithAESGCM(sharedSecret, fileKey);
+
+        // 6. Request challenge for share_file
+        const challengeResp = await apiClient.post<{ nonce: string }>('/challenge', {
+          username,
+          operation: 'share_file'
+        });
+
+        // 7. Sign the encrypted file key
+        const signature = await signChallenge(ciphertext, secretKey);
+
+        // 8. Send /share_file request
+        await apiClient.post('/share_file', {
+          username,
+          filename: file.name,
+          recipient_username: recipientUsername,
+          EK_pub: ephemeralKeyPair.publicKey, // base64
+          IK_pub: myKeyBundle.IK_pub,         // base64
+          encrypted_file_key: btoa(String.fromCharCode(...ciphertext)),
+          nonce: challengeResp.nonce,
+          signature: btoa(String.fromCharCode(...signature)) // base64
+        });
+      }
+
+      setOpenShare(false);
+      setSelectedRecipients([]);
+      // Optionally show a success message
+
+    } catch (err: any) {
+      setError(err.message || 'Failed to share file');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <>
@@ -1698,11 +1773,7 @@ const Dashboard: React.FC = () => {
             Cancel
           </Button>
           <CyberButton
-            onClick={() => {
-              // TODO: Implement sharing with multiple recipients
-              setOpenShare(false);
-              setSelectedRecipients([]);
-            }}
+            onClick={handleShareConfirm}
             size="small"
             sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
             disabled={selectedRecipients.length === 0}

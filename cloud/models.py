@@ -379,7 +379,7 @@ class UserDB:
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
         sql = """
-            SELECT filename
+            SELECT filename, id, created_at
             FROM files
             WHERE owner_id = %s
             ORDER BY created_at

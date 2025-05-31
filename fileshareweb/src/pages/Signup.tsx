@@ -237,7 +237,7 @@ const Signup: React.FC = () => {
             privateKey
         );
 
-        await apiClient.post('/backup_tofu_keys', {
+        await apiClient.post('/backup_tofu', {
             username: trimmedUsername,
             encrypted_backup: btoa(String.fromCharCode.apply(null, Array.from(encryptedBackup))),
             backup_nonce: btoa(String.fromCharCode.apply(null, Array.from(backupNonce))),
@@ -247,48 +247,6 @@ const Signup: React.FC = () => {
 
         // After sending to server
         console.log('TOFU backup sent to server');
-
-        // 1. Get challenge for prekey bundle
-        const prekeyChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
-            username: trimmedUsername,
-            operation: 'add_pre_key_bundle'
-        });
-
-        // Sign the challenge
-        const prekeySignature = sodium.crypto_sign_detached(
-            base64.toByteArray(prekeyChallengeResponse.nonce),
-            privateKey
-        );
-
-        // Upload prekey bundle with challenge
-        await apiClient.post('/add_pre_key_bundle', {
-            username: trimmedUsername,
-            IK_pub: payload.identity_key,
-            SPK_pub: payload.signed_pre_key,
-            SPK_signature: payload.signed_pre_key_sig,
-            nonce: prekeyChallengeResponse.nonce,
-            signature: btoa(String.fromCharCode.apply(null, Array.from(prekeySignature)))
-        });
-
-        // 2. Get challenge for OPKs
-        const opksChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
-            username: trimmedUsername,
-            operation: 'add_opks'
-        });
-
-        // Sign the challenge
-        const opksSignature = sodium.crypto_sign_detached(
-            base64.toByteArray(opksChallengeResponse.nonce),
-            privateKey
-        );
-
-        // Upload OPKs with challenge
-        await apiClient.post('/add_opks', {
-            username: trimmedUsername,
-            opks: payload.one_time_pre_keys,
-            nonce: opksChallengeResponse.nonce,
-            signature: btoa(String.fromCharCode.apply(null, Array.from(opksSignature)))
-        });
 
         console.log('Signup successful, redirecting to login...');
         navigate('/login');

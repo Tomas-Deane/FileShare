@@ -30,7 +30,8 @@ from schemas import (
     ListSharedFromRequest, 
     SharedFileResponse,
     OPKResponse, 
-    GetOPKRequest
+    GetOPKRequest,
+    RetrieveFileKEKRequest
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
@@ -315,6 +316,35 @@ def download_file_handler(req: DownloadFileRequest, db: models.UserDB):
         }
     except InvalidSignature:
         logging.warning(f"Bad signature for download_file of user_id={user_id}")
+        db.delete_challenge(user_id)
+        raise HTTPException(status_code=401, detail="Bad signature")
+    
+def retrieve_file_kek_handler(req: RetrieveFileKEKRequest, db: models.UserDB):
+    logging.debug(f"RetrieveFileKEK: {req.model_dump_json()}")
+    user = db.get_user(req.username)
+    if not user:
+        logging.warning(f"Unknown user '{req.username}' at retrieve_file_kek")
+        raise HTTPException(status_code=404, detail="Unknown user")
+
+    user_id = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(user_id, "retrieve_file_kek")
+    if stored is None or provided != stored:
+        logging.warning(f"No valid pending challenge for user_id={user_id} (retrieve_file_kek)")
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+
+    signature = base64.b64decode(req.signature)
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(signature, provided)
+        kek = db.get_file_kek(user_id, req.filename)
+        if not kek:
+            logging.warning(f"No KEK found for user_id={user_id} and filename={req.filename}")
+            raise HTTPException(status_code=404, detail="KEK not found")
+        db.delete_challenge(user_id)
+        return {"status": "ok", "kek": base64.b64encode(kek).decode()}
+    except InvalidSignature:
+        logging.warning(f"Bad signature for retrieve_file_kek of user_id={user_id}")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
