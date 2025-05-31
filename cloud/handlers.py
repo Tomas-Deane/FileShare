@@ -338,16 +338,10 @@ def retrieve_file_dek_handler(req: RetrieveFileKEKRequest, db: models.UserDB):
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, provided)
         
-        # Get file ID from filename
-        file_id = db.get_file_id(req.username, req.filename)
-        if not file_id:
-            logging.warning(f"No file found for user_id={user_id} and filename={req.filename}")
-            raise HTTPException(status_code=404, detail="File not found")
-            
-        # Get the DEK
-        dek_data = db.retrieve_file_dek(file_id)
+        # Get the DEK directly using file_id
+        dek_data = db.retrieve_file_dek(req.file_id)
         if not dek_data:
-            logging.warning(f"No DEK found for file_id={file_id}")
+            logging.warning(f"No DEK found for file_id={req.file_id}")
             raise HTTPException(status_code=404, detail="DEK not found")
             
         db.delete_challenge(user_id)

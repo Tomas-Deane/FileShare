@@ -1039,7 +1039,7 @@ const Dashboard: React.FC = () => {
       // Get the encrypted DEK
       const dekResponse = await apiClient.post<{ status: string; encrypted_dek: string; dek_nonce: string }>('/retrieve_file_dek', {
         username,
-        filename: file.name,
+        file_id: selectedFile,
         nonce: challengeResponse.nonce,
         signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
       });
