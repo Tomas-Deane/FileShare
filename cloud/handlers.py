@@ -338,6 +338,17 @@ def retrieve_file_dek_handler(req: RetrieveFileKEKRequest, db: models.UserDB):
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, provided)
         
+        # First check if the file exists
+        file_owner = db.get_file_owner(req.file_id)
+        if not file_owner:
+            logging.warning(f"File {req.file_id} not found")
+            raise HTTPException(status_code=404, detail="File not found")
+            
+        # Then verify ownership
+        if file_owner != user_id:
+            logging.warning(f"File {req.file_id} not owned by user {user_id}")
+            raise HTTPException(status_code=404, detail="File not found")
+        
         # Get the DEK directly using file_id
         dek_data = db.retrieve_file_dek(req.file_id)
         if not dek_data:

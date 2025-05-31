@@ -665,3 +665,35 @@ class UserDB:
         self.cursor.execute(sql, (user_id, user_id, keep_last_n))
         self.conn.commit()
 
+    def retrieve_file_dek(self, file_id: int):
+        self.ensure_connection()
+        sql = """
+            SELECT encrypted_dek, dek_nonce
+            FROM files
+            WHERE id = %s
+        """
+        self.cursor.execute(sql, (file_id,))
+        row = self.cursor.fetchone()
+        if not row:
+            return None
+        if isinstance(row, dict):
+            return row
+        columns = [col[0] for col in self.cursor.description]
+        return dict(zip(columns, row))
+
+    def get_file_owner(self, file_id: int) -> int | None:
+        """Get the owner ID of a file."""
+        self.ensure_connection()
+        sql = """
+            SELECT owner_id
+            FROM files
+            WHERE id = %s
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (file_id,))
+        row = self.cursor.fetchone()
+        if not row:
+            return None
+        return row['owner_id'] if isinstance(row, dict) else row[0]
+
+

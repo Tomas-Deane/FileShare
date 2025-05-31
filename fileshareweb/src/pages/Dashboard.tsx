@@ -1033,8 +1033,8 @@ const Dashboard: React.FC = () => {
         throw new Error(challengeResponse.detail || 'Failed to get challenge');
       }
 
-      // Sign the filename
-      const signature = await signChallenge(new TextEncoder().encode(file.name), secretKey!);
+      // Sign the nonce 
+      const signature = await signChallenge(b64ToUint8Array(challengeResponse.nonce), secretKey!);
 
       // Get the encrypted DEK
       const dekResponse = await apiClient.post<{ status: string; encrypted_dek: string; dek_nonce: string }>('/retrieve_file_dek', {
