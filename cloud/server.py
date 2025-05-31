@@ -283,7 +283,8 @@ async def list_shared_from(req: ListSharedFromRequest, db: models.UserDB = Depen
     logger.debug(f"ListSharedFrom response: {resp}")
     return resp
 
-@app.post("/download_shared_file")
+# TODO: Implement download_shared_file endpoint
+# @app.post("/download_shared_file")
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
