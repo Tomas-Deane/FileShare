@@ -506,7 +506,8 @@ class UserDB:
         """
         cursor = self.conn.cursor()
         try:
-            return cursor.execute(query, (username,)).fetchall()
+            cursor.execute(query, (username,))
+            return cursor.fetchall()
         finally:
             cursor.close()
 
