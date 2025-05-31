@@ -35,7 +35,8 @@ from schemas import (
     ListUsersRequest,
     ListSharedToRequest, 
     ListSharedFromRequest,
-    RetrieveFileDEKRequest
+    RetrieveFileDEKRequest,
+    DownloadSharedFileRequest,
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -244,6 +245,13 @@ async def list_shared_files(req: ListSharedFilesRequest, db: models.UserDB = Dep
     logger.debug(f"ListSharedFilesRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.list_shared_files_handler, req, db)
     logger.debug(f"ListSharedFiles response: {resp}")
+    return resp
+
+@app.post("/download_shared_file")
+async def download_shared_file(req: DownloadSharedFileRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"DownloadSharedFileRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.download_shared_file_handler, req, db)
+    logger.debug(f"DownloadSharedFile response: {resp}")
     return resp
 
 @app.post("/backup_tofu")

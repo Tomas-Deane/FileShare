@@ -226,3 +226,9 @@ class RetrieveFileDEKResponse(BaseModel):
     status: str
     encrypted_dek: str
     dek_nonce: str
+
+class DownloadSharedFileRequest(BaseModel):
+    username: str
+    share_id: int
+    nonce: str
+    signature: str

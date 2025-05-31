@@ -699,4 +699,30 @@ class UserDB:
             return None
         return row['owner_id'] if isinstance(row, dict) else row[0]
 
+    def get_shared_file(self, share_id: int, recipient_id: int):
+        """Get a shared file's data for a specific recipient."""
+        self.ensure_connection()
+        sql = """
+            SELECT 
+                f.encrypted_file,
+                f.file_nonce,
+                sf.encrypted_file_key,
+                sf.EK_pub,
+                sf.IK_pub,
+                sf.OPK_id
+            FROM shared_files sf
+            JOIN files f ON sf.file_id = f.id
+            WHERE sf.share_id = %s
+            AND sf.recipient_id = %s
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (share_id, recipient_id))
+        row = self.cursor.fetchone()
+        if not row:
+            return None
+        if isinstance(row, dict):
+            return row
+        columns = [col[0] for col in self.cursor.description]
+        return dict(zip(columns, row))
+
 
