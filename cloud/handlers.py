@@ -31,7 +31,7 @@ from schemas import (
     SharedFileResponse,
     OPKResponse, 
     GetOPKRequest,
-    RetrieveFileKEKRequest
+    RetrieveFileDEKRequest
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
@@ -319,7 +319,7 @@ def download_file_handler(req: DownloadFileRequest, db: models.UserDB):
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
     
-def retrieve_file_dek_handler(req: RetrieveFileKEKRequest, db: models.UserDB):
+def retrieve_file_dek_handler(req: RetrieveFileDEKRequest, db: models.UserDB):
     logging.debug(f"RetrieveFileDEK: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
@@ -354,10 +354,10 @@ def retrieve_file_dek_handler(req: RetrieveFileKEKRequest, db: models.UserDB):
         if not dek_data:
             logging.warning(f"No DEK found for file_id={req.file_id}")
             raise HTTPException(status_code=404, detail="DEK not found")
-            
+        
         db.delete_challenge(user_id)
         return {
-            "status": "ok", 
+            "status": "ok",
             "encrypted_dek": base64.b64encode(dek_data['encrypted_dek']).decode(),
             "dek_nonce": base64.b64encode(dek_data['dek_nonce']).decode()
         }

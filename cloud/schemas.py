@@ -215,8 +215,13 @@ class ListUsersResponse(BaseModel):
     status: str
     users: list[UserData]
 
-class RetrieveFileKEKRequest(BaseModel):
+class RetrieveFileDEKRequest(BaseModel):
     username: str
     file_id: int
     nonce: str
     signature: str
+
+class RetrieveFileDEKResponse(BaseModel):
+    status: str
+    encrypted_dek: str
+    dek_nonce: str

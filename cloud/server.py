@@ -35,7 +35,7 @@ from schemas import (
     ListUsersRequest,
     ListSharedToRequest, 
     ListSharedFromRequest,
-    RetrieveFileKEKRequest
+    RetrieveFileDEKRequest
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -166,11 +166,11 @@ async def upload_file(req: UploadRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"UploadFile response: {resp}")
     return resp
 
-@app.post("/retrieve_file_kek")
-async def retrieve_file_kek(req: RetrieveFileKEKRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"RetrieveFileKEKRequest body: {req.model_dump_json()}")
-    resp = await run_in_threadpool(handlers.retrieve_file_kek_handler, req, db)
-    logger.debug(f"RetrieveFileKEK response: {resp}")
+@app.post("/retrieve_file_dek")
+async def retrieve_file_dek(req: RetrieveFileDEKRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"RetrieveFileDEKRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.retrieve_file_dek_handler, req, db)
+    logger.debug(f"RetrieveFileDEK response: {resp}")
     return resp
 
 @app.post("/list_files")
