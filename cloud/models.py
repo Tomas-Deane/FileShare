@@ -498,10 +498,10 @@ class UserDB:
     def get_shared_files(self, username: str) -> List[Tuple]:
         """Get all files shared with the given user."""
         query = """
-            SELECT s.share_id, f.id, f.filename, s.shared_by, f.created_at
+            SELECT s.share_id, f.id, f.filename, f.owner_id, f.created_at
             FROM shared_files s
             JOIN files f ON s.file_id = f.id
-            WHERE s.shared_with = %s
+            WHERE s.recipient_id = %s
             ORDER BY f.created_at DESC
         """
         cursor = self.conn.cursor()
