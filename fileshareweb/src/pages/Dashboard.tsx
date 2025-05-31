@@ -403,8 +403,45 @@ const Dashboard: React.FC = () => {
       // Step 4: Decrypt file
       const encryptedFile = Uint8Array.from(atob(downloadResponse.encrypted_file), c => c.charCodeAt(0));
       const fileNonce = Uint8Array.from(atob(downloadResponse.file_nonce), c => c.charCodeAt(0));
-      const dek = await decryptFileKey(downloadResponse.encrypted_file_key, kek!, downloadResponse.file_key_nonce);
-      const decrypted = await decryptFile(encryptedFile, dek, fileNonce);
+      
+      let decrypted: Uint8Array;
+      if (isShared) {
+        // For shared files, we need to derive the shared secret using X3DH
+        if (!username) {
+          throw new Error('Username not found');
+        }
+        const myKeyBundle = storage.getKeyBundle(username);
+        if (!myKeyBundle) {
+          throw new Error('Key bundle not found');
+        }
+
+        // Get our private OPK that matches the OPK_id from the response
+        const myOPK = myKeyBundle.OPKs?.[downloadResponse.OPK_id];
+        if (!myOPK) {
+          throw new Error('OPK not found in key bundle');
+        }
+
+        // Derive the shared secret using our private keys and sender's public keys
+        const sharedSecret = await deriveX3DHSharedSecret({
+          myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
+          myEKPriv: b64ToUint8Array(myOPK), // OPK is already the private key
+          recipientIKPub: Uint8Array.from(atob(downloadResponse.IK_pub), c => c.charCodeAt(0)),
+          recipientSPKPub: Uint8Array.from(atob(downloadResponse.SPK_pub), c => c.charCodeAt(0)),
+          recipientSPKSignature: Uint8Array.from(atob(downloadResponse.SPK_signature), c => c.charCodeAt(0)),
+          recipientOPKPub: Uint8Array.from(atob(downloadResponse.EK_pub), c => c.charCodeAt(0))
+        });
+
+        // Decrypt the file key using the shared secret
+        const encryptedFileKey = Uint8Array.from(atob(downloadResponse.encrypted_file_key), c => c.charCodeAt(0));
+        const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileNonce);
+
+        // Decrypt the file using the file key
+        decrypted = await decryptFile(encryptedFile, fileKey, fileNonce);
+      } else {
+        // For regular files, just decrypt the file key with our KEK
+        const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
+        decrypted = await decryptFile(encryptedFile, dek, fileNonce);
+      }
 
       // Step 5: Create a Blob and trigger download
       const blob = new Blob([decrypted], { type: 'application/octet-stream' });
@@ -1542,7 +1579,7 @@ const Dashboard: React.FC = () => {
                               </IconButton>
                             </Tooltip>
                             <Tooltip title="Download">
-                              <IconButton onClick={() => handleDownload(file.id, true)} sx={{ color: '#00ff00' }}>
+                              <IconButton onClick={() => handleDownload(file.id, false)} sx={{ color: '#00ff00' }}>
                                 <DownloadIcon />
                               </IconButton>
                             </Tooltip>
