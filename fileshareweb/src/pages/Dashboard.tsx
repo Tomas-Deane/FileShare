@@ -10,7 +10,7 @@ import {
   Folder as FolderIcon, Person as PersonIcon, Lock as LockIcon, LockOpen as LockOpenIcon,
   Search as SearchIcon, VerifiedUser as VerifiedUserIcon, People as PeopleIcon,
   Home as HomeIcon, Storage as StorageIcon, Security as SecurityIcon, Settings as SettingsIcon,
-  Edit as EditIcon, Visibility as VisibilityIcon
+  Edit as EditIcon, Visibility as VisibilityIcon, Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
@@ -178,6 +178,14 @@ interface SelectedUser {
   };
 }
 
+// Add this interface near the top with other interfaces
+interface SharedFileData {
+  id: number;
+  filename: string;
+  shared_by: string;
+  created_at: string;
+}
+
 const DEBUG = true; // Toggle for development
 
 const logDebug = (message: string, data?: any) => {
@@ -231,6 +239,8 @@ const Dashboard: React.FC = () => {
   const [userError, setUserError] = useState<string | null>(null);
   const [openDelete, setOpenDelete] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<number | null>(null);
+  const [sharedFiles, setSharedFiles] = useState<SharedFileData[]>([]);
+  const [loadingSharedFiles, setLoadingSharedFiles] = useState(false);
 
   // Get current user and their key bundle
   const currentUsername = storage.getCurrentUser();
@@ -248,6 +258,9 @@ const Dashboard: React.FC = () => {
   const isMounted = React.useRef(false);
   const hasFetchedFiles = React.useRef(false);
   const mountCount = React.useRef(0);
+
+  // Add this ref near the top of the component with other refs
+  const hasFetchedSharedFiles = React.useRef(false);
 
   // Filter files based on search query
   const filteredFiles = mockFiles.filter(file => 
@@ -694,6 +707,7 @@ const Dashboard: React.FC = () => {
 
       try {
         await fetchFiles();
+        await fetchSharedFiles();
       } catch (error) {
         if (isMounted.current) {
           logDebug('Error in loadFiles', { error });
@@ -705,11 +719,12 @@ const Dashboard: React.FC = () => {
 
     return () => {
       isMounted.current = false;
+      hasFetchedSharedFiles.current = false; // Reset the flag on unmount
       logDebug('Dashboard unmounted', {
         mountCount: mountCount.current
       });
     };
-  }, [username, pdk]); // Keep these dependencies
+  }, [username, pdk]); // Keep these dependencies for initial load
 
   // Update the refreshFiles function
   const refreshFiles = async () => {
@@ -1210,6 +1225,66 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // Add this function to fetch shared files
+  const fetchSharedFiles = async () => {
+    if (!username || !secretKey || hasFetchedSharedFiles.current) return;
+    
+    try {
+      setLoadingSharedFiles(true);
+      setError(null);
+
+      // Request challenge
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'list_shared_files'
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+
+      // Sign the nonce
+      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonce, secretKey);
+
+      // Get shared files
+      const response = await apiClient.post<{ status: string; files: SharedFileData[] }>('/list_shared_files', {
+        username,
+        nonce: challengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+      });
+
+      if (response.status === 'ok') {
+        setSharedFiles(response.files);
+        hasFetchedSharedFiles.current = true;
+      } else {
+        throw new Error('Failed to list shared files');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to fetch shared files');
+    } finally {
+      setLoadingSharedFiles(false);
+    }
+  };
+
+  // Update the useEffect
+  useEffect(() => {
+    if (activeTab === 'files' && username && secretKey) {
+      if (!hasFetchedFiles.current) {
+        fetchFiles();
+      }
+      if (!hasFetchedSharedFiles.current) {
+        fetchSharedFiles();
+      }
+    }
+  }, [activeTab]); // Only depend on activeTab
+
+  // Add a refresh function for shared files
+  const refreshSharedFiles = async () => {
+    hasFetchedSharedFiles.current = false;
+    await fetchSharedFiles();
+  };
+
   return (
     <>
       <MatrixBackground />
@@ -1401,6 +1476,8 @@ const Dashboard: React.FC = () => {
                     Upload File
                   </CyberButton>
                 </Box>
+
+                {/* Your Files Section */}
                 {loading ? (
                   <Box sx={{ textAlign: 'center', py: 4 }}>
                     <Typography sx={{ color: '#00ff00' }}>Loading files...</Typography>
@@ -1414,61 +1491,137 @@ const Dashboard: React.FC = () => {
                     <Typography sx={{ color: '#00ff00' }}>No files found. Upload your first file!</Typography>
                   </Box>
                 ) : (
-                <List>
+                  <List>
                     {files
                       .filter(file => file.name.toLowerCase().includes(searchQuery.toLowerCase()))
                       .map((file) => (
-                    <ListItem
-                      key={file.id}
+                        <ListItem
+                          key={file.id}
+                          sx={{
+                            border: '1px solid rgba(0, 255, 0, 0.2)',
+                            borderRadius: 1,
+                            mb: 1,
+                            '&:hover': {
+                              border: '1px solid rgba(0, 255, 0, 0.4)',
+                              backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                            },
+                          }}
+                        >
+                          <ListItemIcon>
+                            <FolderIcon sx={{ color: '#00ff00' }} />
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={file.name}
+                            secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                            primaryTypographyProps={{
+                              sx: { color: '#00ffff', fontWeight: 'bold' },
+                            }}
+                            secondaryTypographyProps={{
+                              sx: { color: 'rgba(0, 255, 0, 0.7)' },
+                            }}
+                          />
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Tooltip title="Share">
+                              <IconButton onClick={() => handleShare(file.id)} sx={{ color: '#00ff00' }}>
+                                <ShareIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Download">
+                              <IconButton onClick={() => handleDownload(file.id)} sx={{ color: '#00ff00' }}>
+                                <DownloadIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete">
+                              <IconButton onClick={() => handleDelete(file.id)} sx={{ color: '#00ff00' }}>
+                                <DeleteIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Preview">
+                              <IconButton onClick={() => handlePreview(file.id)} sx={{ color: '#00ff00' }}>
+                                <VisibilityIcon />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        </ListItem>
+                      ))}
+                  </List>
+                )}
+
+                {/* Shared Files Section */}
+                <Box sx={{ mt: 4 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography
+                      variant="h6"
                       sx={{
-                        border: '1px solid rgba(0, 255, 0, 0.2)',
-                        borderRadius: 1,
-                        mb: 1,
-                        '&:hover': {
-                          border: '1px solid rgba(0, 255, 0, 0.4)',
-                          backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                        },
+                        color: '#00ffff',
+                        textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
                       }}
                     >
-                      <ListItemIcon>
-                        <FolderIcon sx={{ color: '#00ff00' }} />
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={file.name}
-                        secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
-                        primaryTypographyProps={{
-                          sx: { color: '#00ffff', fontWeight: 'bold' },
-                        }}
-                        secondaryTypographyProps={{
-                          sx: { color: 'rgba(0, 255, 0, 0.7)' },
-                        }}
-                      />
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Tooltip title="Share">
-                          <IconButton onClick={() => handleShare(file.id)} sx={{ color: '#00ff00' }}>
-                            <ShareIcon />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Download">
-                          <IconButton onClick={() => handleDownload(file.id)} sx={{ color: '#00ff00' }}>
-                            <DownloadIcon />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete">
-                          <IconButton onClick={() => handleDelete(file.id)} sx={{ color: '#00ff00' }}>
-                            <DeleteIcon />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Preview">
-                          <IconButton onClick={() => handlePreview(file.id)} sx={{ color: '#00ff00' }}>
-                            <VisibilityIcon />
-                          </IconButton>
-                        </Tooltip>
-                      </Box>
-                    </ListItem>
-                  ))}
-                </List>
-                )}
+                      Files Shared With You
+                    </Typography>
+                    <IconButton 
+                      onClick={refreshSharedFiles} 
+                      sx={{ color: '#00ff00' }}
+                      disabled={loadingSharedFiles}
+                    >
+                      <RefreshIcon />
+                    </IconButton>
+                  </Box>
+                  {loadingSharedFiles ? (
+                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                      <Typography sx={{ color: '#00ff00' }}>Loading shared files...</Typography>
+                    </Box>
+                  ) : sharedFiles.length === 0 ? (
+                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                      <Typography sx={{ color: '#00ff00' }}>No files have been shared with you yet.</Typography>
+                    </Box>
+                  ) : (
+                    <List>
+                      {sharedFiles
+                        .filter(file => file.filename.toLowerCase().includes(searchQuery.toLowerCase()))
+                        .map((file) => (
+                          <ListItem
+                            key={file.id}
+                            sx={{
+                              border: '1px solid rgba(0, 255, 0, 0.2)',
+                              borderRadius: 1,
+                              mb: 1,
+                              '&:hover': {
+                                border: '1px solid rgba(0, 255, 0, 0.4)',
+                                backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                              },
+                            }}
+                          >
+                            <ListItemIcon>
+                              <FolderIcon sx={{ color: '#00ff00' }} />
+                            </ListItemIcon>
+                            <ListItemText
+                              primary={file.filename}
+                              secondary={`Shared by ${file.shared_by} • ${new Date(file.created_at).toLocaleDateString()}`}
+                              primaryTypographyProps={{
+                                sx: { color: '#00ffff', fontWeight: 'bold' },
+                              }}
+                              secondaryTypographyProps={{
+                                sx: { color: 'rgba(0, 255, 0, 0.7)' },
+                              }}
+                            />
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Tooltip title="Download">
+                                <IconButton onClick={() => handleDownload(file.id)} sx={{ color: '#00ff00' }}>
+                                  <DownloadIcon />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Preview">
+                                <IconButton onClick={() => handlePreview(file.id)} sx={{ color: '#00ff00' }}>
+                                  <VisibilityIcon />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
+                          </ListItem>
+                        ))}
+                    </List>
+                  )}
+                </Box>
               </DashboardCard>
             ) : activeTab === 'users' ? (
               <DashboardCard>

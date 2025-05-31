@@ -4,6 +4,7 @@ import os
 import pymysql as connector
 import logging
 import datetime
+from typing import List, Tuple
 
 # Database connection parameters (will use env variables)
 DB_USER     = os.environ.get('DB_USER',     'nrmc')
@@ -494,25 +495,16 @@ class UserDB:
         self.cursor.execute(sql, (file_id, recipient_id, EK_pub, IK_pub, encrypted_file_key, OPK_id))
         self.conn.commit()
 
-    def get_shared_files(self, recipient_id):
-        self.ensure_connection()
-        sql = """
-            SELECT 
-                sf.share_id,
-                sf.file_id,
-                sf.EK_pub,
-                sf.IK_pub,
-                sf.encrypted_file_key,
-                sf.OPK_id,
-                sf.shared_at,
-                f.filename
-            FROM shared_files sf
-            JOIN files f ON sf.file_id = f.id
-            WHERE sf.recipient_id = %s
-            ORDER BY sf.shared_at DESC
+    def get_shared_files(self, username: str) -> List[Tuple]:
+        """Get all files shared with the given user."""
+        query = """
+            SELECT s.share_id, f.file_id, f.filename, s.shared_by, f.created_at
+            FROM shared_files s
+            JOIN files f ON s.file_id = f.file_id
+            WHERE s.shared_with = ?
+            ORDER BY f.created_at DESC
         """
-        self.cursor.execute(sql, (recipient_id,))
-        return self.cursor.fetchall()
+        return self.conn.execute(query, (username,)).fetchall()
 
     def get_shared_file_details(self, share_id):
         self.ensure_connection()

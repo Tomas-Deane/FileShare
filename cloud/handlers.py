@@ -667,39 +667,31 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
     return {"status": "ok", "message": "file shared"}
 
 # ─── LIST ALL SHARES TO ME ───────────────────────────────────────────────
-def list_shared_files_handler(req: ListSharedFilesRequest, db: models.UserDB):
-    user = db.get_user(req.username)
-    if not user:
-        raise HTTPException(404, "Unknown user")
-    uid = user["user_id"]
-    provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(uid, "list_shared_files")
-    if stored is None or provided != stored:
-        raise HTTPException(400, "Invalid or expired challenge")
-    # no extra signature payload
-    sig = base64.b64decode(req.signature)
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-    try:
-        Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, provided)
-    except Exception:
-        db.delete_challenge(uid)
-        raise HTTPException(401, "Bad signature")
+def list_shared_files_handler(req: ListSharedFilesRequest, db: models.UserDB) -> dict:
+    """List all files shared with the user."""
+    # Verify the challenge
+    if not verify_signature(req.username, req.nonce, req.signature):
+        raise HTTPException(status_code=401, detail="Invalid challenge signature")
 
-    rows = db.get_shared_files(uid)
-    db.delete_challenge(uid)
+    # Get all files shared with this user
+    shared_files = db.get_shared_files(req.username)
+    
+    # Format the response
+    files = []
+    for share in shared_files:
+        # Unpack the tuple correctly
+        share_id, file_id, filename, shared_by, created_at = share
+        
+        files.append({
+            "id": file_id,
+            "filename": filename,
+            "shared_by": shared_by,
+            "created_at": created_at
+        })
+
     return {
         "status": "ok",
-        "shares": [
-            SharedFileResponse(
-                share_id = r["share_id"],
-                file_id  = r["file_id"],
-                filename = r["filename"],
-                EK_pub   = base64.b64encode(r["EK_pub"]).decode(),
-                IK_pub   = base64.b64encode(r["IK_pub"]).decode(),
-                shared_at= r["shared_at"].isoformat()
-            )
-            for r in rows
-        ]
+        "files": files
     }
 
 # ─── LIST SHARES I SENT TO A SPECIFIC USER ──────────────────────────────
