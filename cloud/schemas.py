@@ -119,7 +119,8 @@ class AddOPKsRequest(BaseModel):
 
 
 class GetOPKRequest(BaseModel):
-    username: str
+    username: str  # The requesting user (for signature verification)
+    target_username: str  # The user we want OPK for
     nonce: str
     signature: str
 

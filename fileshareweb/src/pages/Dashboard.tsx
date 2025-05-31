@@ -1092,7 +1092,7 @@ const Dashboard: React.FC = () => {
 
         // 5. Get OPK for recipient
         const opkChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
-          username: recipientUsername,
+          username: myUsername,  // Use requesting user's username for challenge
           operation: 'get_opk'
         });
 
@@ -1102,7 +1102,8 @@ const Dashboard: React.FC = () => {
 
         const opkSignature = await signChallenge(b64ToUint8Array(opkChallengeResponse.nonce), secretKey!);
         const opkResponse = await apiClient.post<{ status: string; opk_id: number; pre_key: string }>('/opk', {
-          username: recipientUsername,
+          username: myUsername,  // Use requesting user's username for signature verification
+          target_username: recipientUsername,  // Add target_username for getting their OPK
           nonce: opkChallengeResponse.nonce,
           signature: btoa(String.fromCharCode.apply(null, Array.from(opkSignature)))
         });

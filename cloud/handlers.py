@@ -797,36 +797,42 @@ def remove_shared_file_handler(req: RemoveSharedFileRequest, db: models.UserDB):
     return {"status": "ok", "message": "share removed"}
 
 def opk_handler(req: GetOPKRequest, db: models.UserDB):
-    # 1) lookup user & verify challenge
-    user = db.get_user(req.username)
-    if not user:
-        raise HTTPException(404, "Unknown user")
-    user_id = user["user_id"]
+    # 1) lookup target user (the one we want OPK for)
+    target_user = db.get_user(req.target_username)  # Add target_username to GetOPKRequest
+    if not target_user:
+        raise HTTPException(404, "Target user not found")
+    target_user_id = target_user["user_id"]
 
+    # 2) lookup requesting user (for signature verification)
+    requesting_user = db.get_user(req.username)
+    if not requesting_user:
+        raise HTTPException(404, "Requesting user not found")
+    
+    # 3) verify challenge using requesting user's ID
     provided = base64.b64decode(req.nonce)
-    stored   = db.get_pending_challenge(user_id, "get_opk")
+    stored = db.get_pending_challenge(requesting_user["user_id"], "get_opk")
     if stored is None or provided != stored:
         raise HTTPException(400, "Invalid or expired challenge")
 
-    # 2) verify signature over the nonce
+    # 4) verify signature using requesting user's public key
     signature = base64.b64decode(req.signature)
     try:
-        Ed25519PublicKey.from_public_bytes(user["public_key"])\
+        Ed25519PublicKey.from_public_bytes(requesting_user["public_key"])\
             .verify(signature, provided)
     except InvalidSignature:
-        db.delete_challenge(user_id)
+        db.delete_challenge(requesting_user["user_id"])
         raise HTTPException(401, "Bad signature")
 
-    # 3) fetch & consume one-time pre-key
-    opk = db.get_unused_opk(user_id)
+    # 5) fetch & consume one-time pre-key for target user
+    opk = db.get_unused_opk(target_user_id)
     if not opk:
-        db.delete_challenge(user_id)
+        db.delete_challenge(requesting_user["user_id"])
         raise HTTPException(404, "No OPK available")
     opk_id, raw_pre = opk["id"], opk["pre_key"]
     db.mark_opk_consumed(opk_id)
 
-    # 4) done—return it (base64!)
-    db.delete_challenge(user_id)
+    # 6) done—return it
+    db.delete_challenge(requesting_user["user_id"])
     return OPKResponse(
         opk_id = opk_id,
         pre_key = base64.b64encode(raw_pre).decode()
