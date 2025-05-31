@@ -286,12 +286,15 @@ export async function generateOOBVerificationCode(ik1_b64: string, ik2_b64: stri
   return hashHex.slice(0, 60); // 60 hex chars
 }
 
-export async function generateEphemeralKeyPair() {
+export async function generateEphemeralKeyPair(): Promise<{ publicKey: Uint8Array; privateKey: Uint8Array }> {
   await sodium.ready;
-  const keypair = sodium.crypto_kx_keypair();
+  
+  // Generate Ed25519 key pair instead of X25519
+  const keyPair = sodium.crypto_sign_keypair();
+  
   return {
-    publicKey: keypair.publicKey,   // Uint8Array
-    privateKey: keypair.privateKey, // Uint8Array
+    publicKey: keyPair.publicKey,
+    privateKey: keyPair.privateKey  // This will be 64 bytes
   };
 }
 
@@ -301,16 +304,25 @@ export async function deriveX3DHSharedSecret({
   recipientIKPub,
   recipientSPKPub,
   recipientSPKSignature,
-  // Optionally: recipientOPKPub
+  recipientOPKPub
 }: {
   myIKPriv: Uint8Array,
   myEKPriv: Uint8Array,
   recipientIKPub: Uint8Array,
   recipientSPKPub: Uint8Array,
   recipientSPKSignature: Uint8Array,
-  // recipientOPKPub?: Uint8Array,
+  recipientOPKPub: Uint8Array
 }) {
   await sodium.ready;
+
+  // Add debug logging for key lengths
+  console.log('Key lengths:', {
+    myIKPriv: myIKPriv.length,
+    myEKPriv: myEKPriv.length,
+    recipientIKPub: recipientIKPub.length,
+    recipientSPKPub: recipientSPKPub.length,
+    recipientOPKPub: recipientOPKPub.length
+  });
 
   // 1. Verify SPK signature
   const valid = sodium.crypto_sign_verify_detached(
@@ -320,21 +332,39 @@ export async function deriveX3DHSharedSecret({
   );
   if (!valid) throw new Error('Invalid SPK signature');
 
-  // 2. Convert Ed25519 keys to X25519 for DH
-  const myIKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(myIKPriv);
-  const myEKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(myEKPriv);
-  const recipientIKPub_x = sodium.crypto_sign_ed25519_pk_to_curve25519(recipientIKPub);
-  const recipientSPKPub_x = sodium.crypto_sign_ed25519_pk_to_curve25519(recipientSPKPub);
+  try {
+    // 2. Convert Ed25519 keys to X25519 for DH
+    const myIKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(myIKPriv);
+    const myEKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(myEKPriv);
+    const recipientIKPub_x = sodium.crypto_sign_ed25519_pk_to_curve25519(recipientIKPub);
+    const recipientSPKPub_x = sodium.crypto_sign_ed25519_pk_to_curve25519(recipientSPKPub);
+    const recipientOPKPub_x = sodium.crypto_sign_ed25519_pk_to_curve25519(recipientOPKPub);
 
-  // 3. Perform DHs (see X3DH spec)
-  const DH1 = sodium.crypto_scalarmult(myIKPriv_x, recipientSPKPub_x);
-  const DH2 = sodium.crypto_scalarmult(myEKPriv_x, recipientIKPub_x);
-  const DH3 = sodium.crypto_scalarmult(myEKPriv_x, recipientSPKPub_x);
-  // Optionally: const DH4 = sodium.crypto_scalarmult(myEKPriv_x, recipientOPKPub_x);
+    // 3. Perform DHs (see X3DH spec)
+    const DH1 = sodium.crypto_scalarmult(myIKPriv_x, recipientSPKPub_x);
+    const DH2 = sodium.crypto_scalarmult(myEKPriv_x, recipientIKPub_x);
+    const DH3 = sodium.crypto_scalarmult(myEKPriv_x, recipientSPKPub_x);
+    const DH4 = sodium.crypto_scalarmult(myEKPriv_x, recipientOPKPub_x);
 
-  // 4. Concatenate and hash to derive shared secret
-  const concat = sodium.crypto_generichash(32, sodium.crypto_core_ed25519_add(DH1, sodium.crypto_core_ed25519_add(DH2, DH3)));
-  return concat; // Uint8Array (32 bytes)
+    // 4. Concatenate all DH results and hash to derive shared secret
+    const combined = new Uint8Array(DH1.length + DH2.length + DH3.length + DH4.length);
+    combined.set(DH1, 0);
+    combined.set(DH2, DH1.length);
+    combined.set(DH3, DH1.length + DH2.length);
+    combined.set(DH4, DH1.length + DH2.length + DH3.length);
+
+    // 5. Generate final shared secret using the combined DH results
+    const sharedSecret = sodium.crypto_generichash(32, combined);
+    return sharedSecret;
+
+  } catch (error: unknown) {
+    console.error('Key conversion error:', error);
+    if (error instanceof Error) {
+      throw new Error(`Key conversion failed: ${error.message}`);
+    } else {
+      throw new Error('Key conversion failed: Unknown error');
+    }
+  }
 }
 
 export async function encryptWithAESGCM(key: Uint8Array, data: Uint8Array) {
