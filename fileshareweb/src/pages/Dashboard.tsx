@@ -181,6 +181,7 @@ interface SelectedUser {
 // Add this interface near the top with other interfaces
 interface SharedFileData {
   id: number;
+  share_id: number;  // Add this
   filename: string;
   shared_by: string;
   created_at: string;
@@ -350,55 +351,68 @@ const Dashboard: React.FC = () => {
       logDebug('Delete process completed');
     }
   };
-  const handleDownload = async (fileId: number) => {
-    const file = files.find(f => f.id === fileId);
-    if (!file) return;
+  const handleDownload = async (fileId: number, isShared: boolean = false) => {
     setLoading(true);
     setError(null);
 
     try {
+      // Get file information
+      const file = isShared 
+        ? sharedFiles.find(f => f.id === fileId)
+        : files.find(f => f.id === fileId);
+      
+      if (!file) {
+        throw new Error('File not found');
+      }
+
+      // Get the filename based on the type
+      const filename = isShared 
+        ? (file as SharedFileData).filename 
+        : (file as FileData).name;
+
       // Step 1: Request challenge
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
-        operation: 'download_file'
+        operation: isShared ? 'download_shared_file' : 'download_file'
       });
       if (challengeResponse.status !== 'challenge') {
         throw new Error(challengeResponse.detail || 'Failed to get challenge');
       }
-      // Step 2: Sign the filename
-      const signature = await signChallenge(new TextEncoder().encode(file.name), secretKey!);
+
+      // Step 2: Sign the appropriate data
+      const signature = await signChallenge(
+        isShared ? new TextEncoder().encode((file as SharedFileData).share_id.toString()) : new TextEncoder().encode(filename),
+        secretKey!
+      );
+
       // Step 3: Download file
-      const downloadResponse = await apiClient.post<any>('/download_file', {
-        username,
-        filename: file.name,
-        nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
-      });
+      const downloadResponse = await apiClient.post<any>(
+        isShared ? '/download_shared_file' : '/download_file',
+        {
+          username,
+          ...(isShared ? { share_id: (file as SharedFileData).share_id } : { filename }),
+          nonce: challengeResponse.nonce,
+          signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        }
+      );
+
       if (downloadResponse.status !== 'ok') {
         throw new Error(downloadResponse.detail || 'Failed to download file');
       }
+
       // Step 4: Decrypt file
       const encryptedFile = Uint8Array.from(atob(downloadResponse.encrypted_file), c => c.charCodeAt(0));
       const fileNonce = Uint8Array.from(atob(downloadResponse.file_nonce), c => c.charCodeAt(0));
-      const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
+      const dek = await decryptFileKey(downloadResponse.encrypted_file_key, kek!, downloadResponse.file_key_nonce);
       const decrypted = await decryptFile(encryptedFile, dek, fileNonce);
 
       // Step 5: Create a Blob and trigger download
-      // Guess MIME type from extension
-      let mime = 'application/octet-stream';
-      if (isTextFile(file.name)) mime = 'text/plain';
-      else if (/\.png$/i.test(file.name)) mime = 'image/png';
-      else if (/\.jpe?g$/i.test(file.name)) mime = 'image/jpeg';
-      else if (/\.gif$/i.test(file.name)) mime = 'image/gif';
-      else if (/\.bmp$/i.test(file.name)) mime = 'image/bmp';
-      else if (/\.webp$/i.test(file.name)) mime = 'image/webp';
-
-      const blob = new Blob([decrypted], { type: mime });
+      const blob = new Blob([decrypted], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
 
       const a = document.createElement('a');
       a.href = url;
-      a.download = file.name;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       setTimeout(() => {
@@ -1528,7 +1542,7 @@ const Dashboard: React.FC = () => {
                               </IconButton>
                             </Tooltip>
                             <Tooltip title="Download">
-                              <IconButton onClick={() => handleDownload(file.id)} sx={{ color: '#00ff00' }}>
+                              <IconButton onClick={() => handleDownload(file.id, true)} sx={{ color: '#00ff00' }}>
                                 <DownloadIcon />
                               </IconButton>
                             </Tooltip>
@@ -1609,7 +1623,7 @@ const Dashboard: React.FC = () => {
                             />
                             <Box sx={{ display: 'flex', gap: 1 }}>
                               <Tooltip title="Download">
-                                <IconButton onClick={() => handleDownload(file.id)} sx={{ color: '#00ff00' }}>
+                                <IconButton onClick={() => handleDownload(file.id, true)} sx={{ color: '#00ff00' }}>
                                   <DownloadIcon />
                                 </IconButton>
                               </Tooltip>

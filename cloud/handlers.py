@@ -685,6 +685,7 @@ def list_shared_files_handler(req: ListSharedFilesRequest, db: models.UserDB) ->
         
         files.append({
             "id": file_id,
+            "share_id": share_id,
             "filename": filename,
             "shared_by": shared_by,
             "created_at": created_at
