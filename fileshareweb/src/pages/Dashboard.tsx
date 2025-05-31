@@ -190,6 +190,16 @@ function b64ToUint8Array(b64: string): Uint8Array {
   return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
 }
 
+// Update the interface for the file list response
+interface FileListResponse {
+  status: string;
+  files: Array<{
+    filename: string;
+    id: number;
+    created_at: string;
+  }>;
+}
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'home'|'files'|'users'|'profile'>('home');
@@ -576,11 +586,11 @@ const Dashboard: React.FC = () => {
       });
 
       // Request challenge
-      logDebug('Requesting challenge for list_files');
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
         operation: 'list_files'
       });
+
       logDebug('Challenge response received', {
         status: challengeResponse.status,
         hasNonce: !!challengeResponse.nonce,
@@ -591,48 +601,40 @@ const Dashboard: React.FC = () => {
         throw new Error(challengeResponse.detail || 'Failed to get challenge');
       }
 
-      // Convert base64 nonce to Uint8Array
-      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
-      logDebug('Nonce converted', {
-        nonceLength: nonce.length,
-        nonceBase64: challengeResponse.nonce
-      });
-
       // Sign the nonce
-      logDebug('Signing nonce with secretKey');
+      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
       const signature = await signChallenge(nonce, secretKey!);
-      logDebug('Nonce signed', {
-        signatureLength: signature.length,
-        signatureBase64: btoa(String.fromCharCode.apply(null, Array.from(signature)))
-      });
 
       // List files
-      logDebug('Requesting file list');
-      const listResponse = await apiClient.post<{ status: string; files: string[] }>('/list_files', {
+      const listResponse = await apiClient.post<FileListResponse>('/list_files', {
         username,
         nonce: challengeResponse.nonce,
         signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
       });
+
       logDebug('File list response received', {
         status: listResponse.status,
         fileCount: listResponse.files?.length
       });
 
       if (listResponse.status === 'ok' && isMounted.current) {
-        const fileData: FileData[] = listResponse.files.map((filename, index) => ({
-          id: index + 1,
-          name: filename,
-          type: filename.split('.').pop() || 'unknown',
-          size: '0 KB',
-          shared: false,
-          date: new Date()
-        }));
-        logDebug('Files processed', {
-          fileCount: fileData.length,
-          fileNames: fileData.map(f => f.name)
+        const fileData: FileData[] = listResponse.files.map(file => {
+          if (!file || !file.filename) {
+            logDebug('Invalid file data received', { file });
+            throw new Error('Invalid file data received from server');
+          }
+          return {
+            id: file.id,
+            name: file.filename,
+            type: file.filename.split('.').pop() || 'unknown',
+            size: '0 KB', // Size not provided in response
+            shared: false, // Shared status not provided in response
+            date: new Date(file.created_at)
+          };
         });
         setFiles(fileData);
         hasFetchedFiles.current = true;
+        logDebug('Files processed successfully', { fileCount: fileData.length });
       } else if (!isMounted.current) {
         logDebug('Component unmounted during fetch, skipping state update');
       } else {
@@ -644,7 +646,8 @@ const Dashboard: React.FC = () => {
           errorType: err.constructor.name,
           message: err.message,
           hasResponse: !!err.response,
-          responseData: err.response?.data
+          responseData: err.response?.data,
+          stack: err.stack
         });
         setError(err.message || 'Failed to list files');
       }
@@ -1020,10 +1023,34 @@ const Dashboard: React.FC = () => {
       const file = files.find(f => f.id === selectedFile);
       if (!file) throw new Error('File not found');
 
-      // 1. Get the DEK for this file then once we have the DEK 
-      // decrypt the file key using the KEK
+      // 1. Get the DEK for this file
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'retrieve_file_kek'
+      });
 
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
 
+      // Sign the filename
+      const signature = await signChallenge(new TextEncoder().encode(file.name), secretKey!);
+
+      // Get the encrypted DEK
+      const kekResponse = await apiClient.post<{ status: string; encrypted_dek: string; dek_nonce: string }>('/retrieve_file_kek', {
+        username,
+        filename: file.name,
+        nonce: challengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+      });
+
+      if (kekResponse.status !== 'ok') {
+        throw new Error('Failed to retrieve file key');
+      }
+
+      // Decrypt the file key using the KEK
+      const fileKey = await decryptFileKey(kekResponse.encrypted_dek, kek!, kekResponse.dek_nonce);
+      
       for (const recipientUsername of selectedRecipients) {
         // 2. Get recipient's verified pre-key bundle from local storage
         const myUsername = storage.getCurrentUser();
@@ -1043,31 +1070,35 @@ const Dashboard: React.FC = () => {
           recipientIKPub: b64ToUint8Array(recipientBundle.IK_pub),
           recipientSPKPub: b64ToUint8Array(recipientBundle.SPK_pub),
           recipientSPKSignature: b64ToUint8Array(recipientBundle.SPK_signature),
-          // ...other params as needed we need an OPK here
         });
 
         // 5. Encrypt the file key (DEK) with the shared secret
         const { ciphertext, nonce } = await encryptWithAESGCM(sharedSecret, fileKey);
 
         // 6. Request challenge for share_file
-        const challengeResp = await apiClient.post<{ nonce: string }>('/challenge', {
+        const challengeResp = await apiClient.post<{ status: string; nonce: string; detail?: string }>('/challenge', {
           username,
           operation: 'share_file'
         });
 
+        if (challengeResp.status !== 'challenge') {
+          throw new Error('Failed to get challenge for sharing');
+        }
+
         // 7. Sign the encrypted file key
-        const signature = await signChallenge(ciphertext, secretKey);
+        if (!secretKey) throw new Error('Secret key not available');
+        const shareSignature = await signChallenge(ciphertext, secretKey);
 
         // 8. Send /share_file request
         await apiClient.post('/share_file', {
           username,
           filename: file.name,
           recipient_username: recipientUsername,
-          EK_pub: ephemeralKeyPair.publicKey, // base64
-          IK_pub: myKeyBundle.IK_pub,         // base64
-          encrypted_file_key: btoa(String.fromCharCode(...ciphertext)),
+          EK_pub: btoa(String.fromCharCode.apply(null, Array.from(ephemeralKeyPair.publicKey))),
+          IK_pub: myKeyBundle.IK_pub,
+          encrypted_file_key: btoa(String.fromCharCode.apply(null, Array.from(ciphertext))),
           nonce: challengeResp.nonce,
-          signature: btoa(String.fromCharCode(...signature)) // base64
+          signature: btoa(String.fromCharCode.apply(null, Array.from(shareSignature)))
         });
       }
 

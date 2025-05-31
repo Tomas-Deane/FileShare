@@ -389,9 +389,9 @@ class UserDB:
         if not rows:
             return []
         if isinstance(rows[0], dict):
-            return [row['filename'] for row in rows]
+            return [{"filename": row['filename'], "id": row['id'], "created_at": row['created_at'].isoformat()} for row in rows]
         else:
-            return [row[0] for row in rows]
+            return [{"filename": row[0], "id": row[1], "created_at": row[2].isoformat()} for row in rows]
 
     def get_file(self, username, filename):
         self.ensure_connection()
