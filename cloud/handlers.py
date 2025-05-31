@@ -828,7 +828,7 @@ def opk_handler(req: GetOPKRequest, db: models.UserDB):
     if not opk:
         db.delete_challenge(requesting_user["user_id"])
         raise HTTPException(404, "No OPK available")
-    opk_id, raw_pre = opk["id"], opk["pre_key"]
+    opk_id, raw_pre = opk
     db.mark_opk_consumed(opk_id)
 
     # 6) done—return it
