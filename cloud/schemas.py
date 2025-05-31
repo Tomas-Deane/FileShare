@@ -131,11 +131,12 @@ class OPKResponse(BaseModel):
 
 class ShareFileRequest(BaseModel):
     username: str
-    filename: str
+    file_id: int
     recipient_username: str
     encrypted_file_key: str
     EK_pub: str
     IK_pub: str
+    OPK_ID: int
     nonce: str
     signature: str
 

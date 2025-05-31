@@ -1026,7 +1026,7 @@ const Dashboard: React.FC = () => {
       // 1. Get the DEK for this file
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
-        operation: 'retrieve_file_kek'
+        operation: 'retrieve_file_dek'
       });
 
       if (challengeResponse.status !== 'challenge') {
@@ -1037,19 +1037,19 @@ const Dashboard: React.FC = () => {
       const signature = await signChallenge(new TextEncoder().encode(file.name), secretKey!);
 
       // Get the encrypted DEK
-      const kekResponse = await apiClient.post<{ status: string; encrypted_dek: string; dek_nonce: string }>('/retrieve_file_kek', {
+      const dekResponse = await apiClient.post<{ status: string; encrypted_dek: string; dek_nonce: string }>('/retrieve_file_dek', {
         username,
         filename: file.name,
         nonce: challengeResponse.nonce,
         signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
       });
 
-      if (kekResponse.status !== 'ok') {
+      if (dekResponse.status !== 'ok') {
         throw new Error('Failed to retrieve file key');
       }
 
-      // Decrypt the file key using the KEK
-      const fileKey = await decryptFileKey(kekResponse.encrypted_dek, kek!, kekResponse.dek_nonce);
+      // Decrypt the file key using the KEK from our keyBundle
+      const fileKey = await decryptFileKey(dekResponse.encrypted_dek, kek!, dekResponse.dek_nonce);
       
       for (const recipientUsername of selectedRecipients) {
         // 2. Get recipient's verified pre-key bundle from local storage
@@ -1057,47 +1057,99 @@ const Dashboard: React.FC = () => {
         if (!myUsername) throw new Error('No current user found');
         const myKeyBundle = storage.getKeyBundle(myUsername);
         if (!myKeyBundle) throw new Error('Key bundle not found for current user');
-        const recipientBundle = myKeyBundle.recipients?.[recipientUsername]?.data;
-        if (!recipientBundle) throw new Error('Recipient bundle not found or not verified');
+        const storedRecipientBundle = myKeyBundle.recipients?.[recipientUsername]?.data;
+        if (!storedRecipientBundle) throw new Error('Recipient bundle not found or not verified');
 
-        // 3. Generate ephemeral X25519 key pair
+        // 3. Get fresh key bundle from server for TOFU check
+        const bundleChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+          username: myUsername,
+          operation: 'get_pre_key_bundle'
+        });
+
+        if (bundleChallengeResponse.status !== 'challenge') {
+          throw new Error('Failed to get challenge for key bundle');
+        }
+
+        const bundleSignature = await signChallenge(b64ToUint8Array(bundleChallengeResponse.nonce), secretKey!);
+        const freshBundleResponse = await apiClient.post<{ status: string; prekey_bundle: any }>('/get_pre_key_bundle', {
+          username: myUsername,
+          target_username: recipientUsername,
+          nonce: bundleChallengeResponse.nonce,
+          signature: btoa(String.fromCharCode.apply(null, Array.from(bundleSignature)))
+        });
+
+        if (freshBundleResponse.status !== 'ok') {
+          throw new Error('Failed to get fresh key bundle');
+        }
+
+        // 4. Compare stored bundle with fresh bundle for TOFU
+        const freshBundle = freshBundleResponse.prekey_bundle;
+        if (freshBundle.IK_pub !== storedRecipientBundle.IK_pub ||
+            freshBundle.SPK_pub !== storedRecipientBundle.SPK_pub ||
+            freshBundle.SPK_signature !== storedRecipientBundle.SPK_signature) {
+          throw new Error('Key bundle mismatch - possible security issue');
+        }
+
+        // 5. Get OPK for recipient
+        const opkChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+          username: recipientUsername,
+          operation: 'get_opk'
+        });
+
+        if (opkChallengeResponse.status !== 'challenge') {
+          throw new Error('Failed to get challenge for OPK');
+        }
+
+        const opkSignature = await signChallenge(b64ToUint8Array(opkChallengeResponse.nonce), secretKey!);
+        const opkResponse = await apiClient.post<{ status: string; opk_id: number; pre_key: string }>('/opk', {
+          username: recipientUsername,
+          nonce: opkChallengeResponse.nonce,
+          signature: btoa(String.fromCharCode.apply(null, Array.from(opkSignature)))
+        });
+
+        if (opkResponse.status !== 'ok') {
+          throw new Error('Failed to get OPK');
+        }
+
+        // 6. Generate ephemeral X25519 key pair
         const ephemeralKeyPair = await generateEphemeralKeyPair();
 
-        // 4. Derive X3DH shared secret
+        // 7. Derive X3DH shared secret
         const sharedSecret = await deriveX3DHSharedSecret({
           myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
           myEKPriv: ephemeralKeyPair.privateKey,
-          recipientIKPub: b64ToUint8Array(recipientBundle.IK_pub),
-          recipientSPKPub: b64ToUint8Array(recipientBundle.SPK_pub),
-          recipientSPKSignature: b64ToUint8Array(recipientBundle.SPK_signature),
+          recipientIKPub: b64ToUint8Array(freshBundle.IK_pub),
+          recipientSPKPub: b64ToUint8Array(freshBundle.SPK_pub),
+          recipientSPKSignature: b64ToUint8Array(freshBundle.SPK_signature),
         });
 
-        // 5. Encrypt the file key (DEK) with the shared secret
+        // 8. Encrypt the file key (DEK) with the shared secret
         const { ciphertext, nonce } = await encryptWithAESGCM(sharedSecret, fileKey);
 
-        // 6. Request challenge for share_file
-        const challengeResp = await apiClient.post<{ status: string; nonce: string; detail?: string }>('/challenge', {
+        // 9. Request challenge for share_file
+        const shareChallengeResponse = await apiClient.post<{ status: string; nonce: string; detail?: string }>('/challenge', {
           username,
           operation: 'share_file'
         });
 
-        if (challengeResp.status !== 'challenge') {
+        if (shareChallengeResponse.status !== 'challenge') {
           throw new Error('Failed to get challenge for sharing');
         }
 
-        // 7. Sign the encrypted file key
+        // 10. Sign the encrypted file key
         if (!secretKey) throw new Error('Secret key not available');
         const shareSignature = await signChallenge(ciphertext, secretKey);
 
-        // 8. Send /share_file request
+        // 11. Send /share_file request with OPK
         await apiClient.post('/share_file', {
           username,
-          filename: file.name,
+          file_id: selectedFile,
           recipient_username: recipientUsername,
           EK_pub: btoa(String.fromCharCode.apply(null, Array.from(ephemeralKeyPair.publicKey))),
           IK_pub: myKeyBundle.IK_pub,
           encrypted_file_key: btoa(String.fromCharCode.apply(null, Array.from(ciphertext))),
-          nonce: challengeResp.nonce,
+          OPK_ID: opkResponse.opk_id,
+          nonce: shareChallengeResponse.nonce,
           signature: btoa(String.fromCharCode.apply(null, Array.from(shareSignature)))
         });
       }

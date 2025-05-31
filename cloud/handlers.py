@@ -319,32 +319,45 @@ def download_file_handler(req: DownloadFileRequest, db: models.UserDB):
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
     
-def retrieve_file_kek_handler(req: RetrieveFileKEKRequest, db: models.UserDB):
-    logging.debug(f"RetrieveFileKEK: {req.model_dump_json()}")
+def retrieve_file_dek_handler(req: RetrieveFileKEKRequest, db: models.UserDB):
+    logging.debug(f"RetrieveFileDEK: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
-        logging.warning(f"Unknown user '{req.username}' at retrieve_file_kek")
+        logging.warning(f"Unknown user '{req.username}' at retrieve_file_dek")
         raise HTTPException(status_code=404, detail="Unknown user")
 
     user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(user_id, "retrieve_file_kek")
+    stored = db.get_pending_challenge(user_id, "retrieve_file_dek")
     if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (retrieve_file_kek)")
+        logging.warning(f"No valid pending challenge for user_id={user_id} (retrieve_file_dek)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
 
     signature = base64.b64decode(req.signature)
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, provided)
-        kek = db.get_file_kek(user_id, req.filename)
-        if not kek:
-            logging.warning(f"No KEK found for user_id={user_id} and filename={req.filename}")
-            raise HTTPException(status_code=404, detail="KEK not found")
+        
+        # Get file ID from filename
+        file_id = db.get_file_id(req.username, req.filename)
+        if not file_id:
+            logging.warning(f"No file found for user_id={user_id} and filename={req.filename}")
+            raise HTTPException(status_code=404, detail="File not found")
+            
+        # Get the DEK
+        dek_data = db.retrieve_file_dek(file_id)
+        if not dek_data:
+            logging.warning(f"No DEK found for file_id={file_id}")
+            raise HTTPException(status_code=404, detail="DEK not found")
+            
         db.delete_challenge(user_id)
-        return {"status": "ok", "kek": base64.b64encode(kek).decode()}
+        return {
+            "status": "ok", 
+            "encrypted_dek": base64.b64encode(dek_data['encrypted_dek']).decode(),
+            "dek_nonce": base64.b64encode(dek_data['dek_nonce']).decode()
+        }
     except InvalidSignature:
-        logging.warning(f"Bad signature for retrieve_file_kek of user_id={user_id}")
+        logging.warning(f"Bad signature for retrieve_file_dek of user_id={user_id}")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
@@ -625,9 +638,7 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
         raise HTTPException(401, "Bad signature")
 
     # 3) lookup file and recipient
-    file_id = db.get_file_id(req.username, req.filename)
-    if file_id is None:
-        raise HTTPException(404, "File not found")
+    file_id = req.file_id  # Use file_id directly
     recipient = db.get_user(req.recipient_username)
     if not recipient:
         raise HTTPException(404, "Recipient not found")
