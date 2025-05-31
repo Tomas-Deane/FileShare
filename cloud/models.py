@@ -504,7 +504,11 @@ class UserDB:
             WHERE s.shared_with = ?
             ORDER BY f.created_at DESC
         """
-        return self.conn.execute(query, (username,)).fetchall()
+        cursor = self.conn.cursor()
+        try:
+            return cursor.execute(query, (username,)).fetchall()
+        finally:
+            cursor.close()
 
     def get_shared_file_details(self, share_id):
         self.ensure_connection()
