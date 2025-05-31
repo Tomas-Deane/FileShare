@@ -497,16 +497,22 @@ class UserDB:
 
     def get_shared_files(self, username: str) -> List[Tuple]:
         """Get all files shared with the given user."""
+        # First get the user's ID
+        user_id = self._get_user_id(username)
+        if user_id is None:
+            return []
+        
         query = """
-            SELECT s.share_id, f.id, f.filename, f.owner_id, f.created_at
+            SELECT s.share_id, f.id, f.filename, u.username as shared_by, f.created_at
             FROM shared_files s
             JOIN files f ON s.file_id = f.id
+            JOIN users u ON f.owner_id = u.user_id
             WHERE s.recipient_id = %s
             ORDER BY f.created_at DESC
         """
         cursor = self.conn.cursor()
         try:
-            cursor.execute(query, (username,))
+            cursor.execute(query, (user_id,))
             return cursor.fetchall()
         finally:
             cursor.close()

@@ -1457,7 +1457,9 @@ const Dashboard: React.FC = () => {
                 </DashboardCard>
               </>
             ) : activeTab === 'files' ? (
-              <DashboardCard>
+              <>
+                {/* My Files Card */}
+                <DashboardCard sx={{ mb: 3 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
                   <Typography
                     variant="h6"
@@ -1466,7 +1468,7 @@ const Dashboard: React.FC = () => {
                       textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
                     }}
                   >
-                    Your Files
+                      My Files
                   </Typography>
                   <CyberButton
                     startIcon={<UploadIcon />}
@@ -1477,7 +1479,6 @@ const Dashboard: React.FC = () => {
                   </CyberButton>
                 </Box>
 
-                {/* Your Files Section */}
                 {loading ? (
                   <Box sx={{ textAlign: 'center', py: 4 }}>
                     <Typography sx={{ color: '#00ff00' }}>Loading files...</Typography>
@@ -1546,9 +1547,10 @@ const Dashboard: React.FC = () => {
                       ))}
                   </List>
                 )}
+                </DashboardCard>
 
-                {/* Shared Files Section */}
-                <Box sx={{ mt: 4 }}>
+                {/* Shared Files Card */}
+                <DashboardCard>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                     <Typography
                       variant="h6"
@@ -1621,8 +1623,8 @@ const Dashboard: React.FC = () => {
                         ))}
                     </List>
                   )}
-                </Box>
               </DashboardCard>
+              </>
             ) : activeTab === 'users' ? (
               <DashboardCard>
                 <Box sx={{ mb: 3 }}>
