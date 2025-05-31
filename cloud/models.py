@@ -503,10 +503,10 @@ class UserDB:
             return []
         
         query = """
-            SELECT s.share_id, f.id, f.filename, u.username as shared_by, f.created_at
+            SELECT s.share_id, f.id, f.filename, um.username as shared_by, f.created_at
             FROM shared_files s
             JOIN files f ON s.file_id = f.id
-            JOIN users u ON f.owner_id = u.user_id
+            JOIN username_map um ON f.owner_id = um.user_id
             WHERE s.recipient_id = %s
             ORDER BY f.created_at DESC
         """
