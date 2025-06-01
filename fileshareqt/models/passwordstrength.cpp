@@ -5,9 +5,27 @@
 #include <QNetworkReply>
 #include <QEventLoop>
 #include <QUrl>
+#include <QSslConfiguration>
+#include <QFile>
+#include <QDir>
+
+// HIBP API certificate pin
+const char* HIBP_CERT_PIN = "sha256/47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="; // HIBP's Let's Encrypt cert
 
 PasswordStrength::PasswordStrength()
-    : networkManager(new QNetworkAccessManager()) {}
+    : networkManager(new QNetworkAccessManager()) {
+    // Load CA bundle
+    QFile caFile("ssl/ca-bundle.crt");
+    if (!caFile.open(QIODevice::ReadOnly)) {
+        qWarning() << "Failed to open CA bundle for HIBP API";
+        return;
+    }
+    QSslConfiguration sslConfig = QSslConfiguration::defaultConfiguration();
+    sslConfig.setCaCertificates(QSslCertificate::fromDevice(&caFile));
+    sslConfig.setPeerVerifyMode(QSslSocket::VerifyPeer);
+    sslConfig.setPeerVerifyDepth(2);
+    QSslConfiguration::setDefaultConfiguration(sslConfig);
+}
 
 StrengthResult PasswordStrength::evaluate(const QString &password)
 {
@@ -76,9 +94,22 @@ bool PasswordStrength::isBreached(const QString &password, QString *reason)
     QString prefix = QString::fromUtf8(hash.left(5));
     QByteArray suffix = hash.mid(5);
 
-    // 2. Query the HIBP range API
+    // 2. Query the HIBP range API with certificate pinning
     QNetworkRequest req(QUrl("https://api.pwnedpasswords.com/range/" + prefix));
     req.setHeader(QNetworkRequest::UserAgentHeader, "FileShareQt");
+    
+    // Configure SSL with certificate pinning
+    QSslConfiguration sslConfig = QSslConfiguration::defaultConfiguration();
+    sslConfig.setPeerVerifyMode(QSslSocket::VerifyPeer);
+    sslConfig.setPeerVerifyDepth(2);
+    
+    // Add certificate pinning
+    QList<QSslCertificate> pinnedCerts;
+    pinnedCerts.append(QSslCertificate::fromData(QByteArray::fromBase64(HIBP_CERT_PIN)));
+    sslConfig.setCaCertificates(pinnedCerts);
+    
+    req.setSslConfiguration(sslConfig);
+
     QNetworkReply *reply = networkManager->get(req);
 
     // 3. Wait synchronously (blocking) for-demo; you can make this async if you like
@@ -90,13 +121,25 @@ bool PasswordStrength::isBreached(const QString &password, QString *reason)
     loop.exec();
 
     if (reply->error() != QNetworkReply::NoError) {
-        // on network error, choose to allow or reject; here we *allow* but log
-        qWarning() << "HIBP lookup failed:" << reply->errorString();
+        // Log the specific SSL error if it's an SSL error
+        if (reply->error() == QNetworkReply::SslHandshakeFailedError) {
+            qWarning() << "HIBP SSL verification failed:" << reply->errorString();
+        } else {
+            qWarning() << "HIBP lookup failed:" << reply->errorString();
+        }
         reply->deleteLater();
         return false;
     }
 
-    // 4. Parse lines “<suffix>:<count>\r\n…”
+    // Verify the certificate chain
+    QSslCertificate cert = reply->sslConfiguration().peerCertificate();
+    if (cert.isNull()) {
+        qWarning() << "HIBP API returned no certificate";
+        reply->deleteLater();
+        return false;
+    }
+
+    // 4. Parse lines "<suffix>:<count>\r\n…"
     const QByteArray body = reply->readAll();
     reply->deleteLater();
     for (auto line : body.split('\n')) {
