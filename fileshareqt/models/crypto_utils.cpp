@@ -62,12 +62,15 @@ QByteArray CryptoUtils::encryptSecretKey(const QByteArray &secretKey,
     nonce = randomBytes(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
     Logger::log("Generated nonce for encryption");
 
+    // Create AAD that binds the ciphertext to its context
+    const char* aad = "secret_key_encryption";
     QByteArray out(secretKey.size() + crypto_aead_xchacha20poly1305_ietf_ABYTES, 0);
     unsigned long long clen;
     crypto_aead_xchacha20poly1305_ietf_encrypt(
         reinterpret_cast<unsigned char*>(out.data()), &clen,
         reinterpret_cast<const unsigned char*>(secretKey.constData()), secretKey.size(),
-        nullptr, 0, nullptr,
+        reinterpret_cast<const unsigned char*>(aad), strlen(aad),
+        nullptr,
         reinterpret_cast<const unsigned char*>(nonce.constData()),
         reinterpret_cast<const unsigned char*>(pdk.constData())
         );
@@ -80,13 +83,15 @@ QByteArray CryptoUtils::decryptSecretKey(const QByteArray &encryptedSK,
                                          const QByteArray &pdk,
                                          const QByteArray &nonce)
 {
+    // Create AAD that binds the ciphertext to its context
+    const char* aad = "secret_key_encryption";
     QByteArray out(encryptedSK.size(), 0);
     unsigned long long plen;
     if (crypto_aead_xchacha20poly1305_ietf_decrypt(
             reinterpret_cast<unsigned char*>(out.data()), &plen,
             nullptr,
             reinterpret_cast<const unsigned char*>(encryptedSK.constData()), encryptedSK.size(),
-            nullptr, 0,
+            reinterpret_cast<const unsigned char*>(aad), strlen(aad),
             reinterpret_cast<const unsigned char*>(nonce.constData()),
             reinterpret_cast<const unsigned char*>(pdk.constData())
             ) != 0) {

@@ -97,10 +97,12 @@ export async function encryptPrivateKey(
 ): Promise<EncryptedPrivateKey> {
   try {
     await initSodium();
+    // Create AAD that binds the ciphertext to its context
+    const aad = new TextEncoder().encode("private_key_encryption");
     const encrypted = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
       privateKey,
-      null, // No additional data
-      null, // No additional data
+      aad,
+      null,
       nonce,
       pdk
     );
@@ -120,10 +122,12 @@ export async function decryptPrivateKey(
 ): Promise<Uint8Array> {
   try {
     await initSodium();
+    // Create AAD that binds the ciphertext to its context
+    const aad = new TextEncoder().encode("private_key_encryption");
     return sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
-      null, // No additional data
+      null,
       encryptedPrivateKey,
-      null, // No additional data
+      aad,
       nonce,
       pdk
     );
@@ -139,10 +143,12 @@ export async function encryptKEK(
 ): Promise<EncryptedPrivateKey> {
   try {
     await initSodium();
+    // Create AAD that binds the ciphertext to its context
+    const aad = new TextEncoder().encode("kek_encryption");
     const encrypted = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
       kek,
-      null, // No additional data
-      null, // No additional data
+      aad,
+      null,
       nonce,
       pdk
     );
@@ -162,10 +168,12 @@ export async function decryptKEK(
 ): Promise<Uint8Array> {
   try {
     await initSodium();
+    // Create AAD that binds the ciphertext to its context
+    const aad = new TextEncoder().encode("kek_encryption");
     return sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
-      null, // No additional data
+      null,
       encryptedKek,
-      null, // No additional data
+      aad,
       nonce,
       pdk
     );
@@ -197,12 +205,13 @@ export async function encryptFile(
   key: Uint8Array,
   nonce: Uint8Array
 ): Promise<Uint8Array> {
-  // Use libsodium's crypto_aead_xchacha20poly1305_ietf_encrypt
   await sodium.ready;
+  // Create AAD that binds the ciphertext to its context
+  const aad = new TextEncoder().encode("file_encryption");
   return sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
     data,
-    null, // no additional data
-    null, // no additional data
+    aad,
+    null,
     nonce,
     key
   );
@@ -214,10 +223,12 @@ export async function decryptFile(
   nonce: Uint8Array
 ): Promise<Uint8Array> {
   await sodium.ready;
+  // Create AAD that binds the ciphertext to its context
+  const aad = new TextEncoder().encode("file_encryption");
   return sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
-    null, // no additional data
+    null,
     encrypted,
-    null, // no additional data
+    aad,
     nonce,
     key
   );
