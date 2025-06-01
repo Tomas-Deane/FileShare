@@ -5,6 +5,7 @@ import pymysql as connector
 import logging
 import datetime
 import secrets
+import re
 
 # Database connection parameters (will use env variables)
 DB_USER     = os.environ.get('DB_USER',     'nrmc')
@@ -12,6 +13,28 @@ DB_PASSWORD = os.environ.get('DB_PASSWORD', 'nrmc')
 DB_HOST     = os.environ.get('DB_HOST',     '127.0.0.1')
 DB_PORT     = int(os.environ.get('DB_PORT', '3306'))
 DB_NAME     = os.environ.get('DB_NAME',     'nrmc')
+
+def sanitize_log_message(message: str) -> str:
+    """
+    Sanitize a message for logging by:
+    1. Removing newlines and carriage returns
+    2. Truncating to a reasonable length
+    3. Escaping any remaining special characters
+    """
+    # Remove newlines and carriage returns
+    message = re.sub(r'[\r\n]', ' ', message)
+    # Truncate to 1000 characters
+    message = message[:1000]
+    # Escape any remaining special characters
+    message = message.replace('%', '%%')
+    return message
+
+def safe_log(level: int, message: str, *args, **kwargs):
+    """
+    Safely log a message by sanitizing it first.
+    """
+    sanitized_message = sanitize_log_message(message)
+    logging.log(level, sanitized_message, *args, **kwargs)
 
 def init_db():
     """
@@ -304,17 +327,17 @@ class UserDB:
         self.cursor.execute(sql, (user_id, operation, expiry_seconds))
         row = self.cursor.fetchone()
         if not row:
-            logging.debug(f"No challenge found for user_id={user_id} operation={operation}")
+            safe_log(logging.DEBUG, f"No challenge found for user_id={user_id} operation={operation}")
             return None
         
         challenge = row['challenge'] if isinstance(row, dict) else row[0]
         created_at = row['created_at'] if isinstance(row, dict) else row[1]
         nonce = row['nonce'] if isinstance(row, dict) else row[2]
         
-        logging.debug(f"Found challenge for user_id={user_id} operation={operation}")
-        logging.debug(f"Challenge created at: {created_at}")
-        logging.debug(f"Current time: {datetime.datetime.utcnow()}")
-        logging.debug(f"Challenge age: {(datetime.datetime.utcnow() - created_at).total_seconds()} seconds")
+        safe_log(logging.DEBUG, f"Found challenge for user_id={user_id} operation={operation}")
+        safe_log(logging.DEBUG, f"Challenge created at: {created_at}")
+        safe_log(logging.DEBUG, f"Current time: {datetime.datetime.utcnow()}")
+        safe_log(logging.DEBUG, f"Challenge age: {(datetime.datetime.utcnow() - created_at).total_seconds()} seconds")
         
         # Return both challenge and nonce
         return {

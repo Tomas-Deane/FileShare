@@ -3,6 +3,7 @@
 import base64
 import secrets
 import logging
+import re
 from fastapi import HTTPException
 from schemas import (
     SignupRequest,
@@ -38,6 +39,28 @@ import datetime
 
 import models
 
+def sanitize_log_message(message: str) -> str:
+    """
+    Sanitize a message for logging by:
+    1. Removing newlines and carriage returns
+    2. Truncating to a reasonable length
+    3. Escaping any remaining special characters
+    """
+    # Remove newlines and carriage returns
+    message = re.sub(r'[\r\n]', ' ', message)
+    # Truncate to 1000 characters
+    message = message[:1000]
+    # Escape any remaining special characters
+    message = message.replace('%', '%%')
+    return message
+
+def safe_log(level: int, message: str, *args, **kwargs):
+    """
+    Safely log a message by sanitizing it first.
+    """
+    sanitized_message = sanitize_log_message(message)
+    logging.log(level, sanitized_message, *args, **kwargs)
+
 def verify_signature(username: str, nonce: str, signature: str) -> bool:
     """Verify a signature for a given username and nonce."""
     user = models.UserDB().get_user(username)
@@ -53,17 +76,17 @@ def verify_signature(username: str, nonce: str, signature: str) -> bool:
 
 # --- CHALLENGE HANDLER --------------------------------------------
 def challenge_handler(req: ChallengeRequest, db: models.UserDB):
-    logging.debug(f"Challenge: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"Challenge: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
-        logging.warning(f"Unknown user '{req.username}' at challenge")
+        safe_log(logging.WARNING, f"Unknown user '{req.username}' at challenge")
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
     user_id = user["user_id"]
     challenge = secrets.token_bytes(32)
     db.add_challenge(user_id, req.operation, challenge)
-    logging.debug(f"Stored challenge for user_id={user_id} op={req.operation}: {base64.b64encode(challenge).decode()}")
-    logging.debug(f"Challenge timestamp: {datetime.datetime.utcnow()}")
+    safe_log(logging.DEBUG, f"Stored challenge for user_id={user_id} op={req.operation}: {base64.b64encode(challenge).decode()}")
+    safe_log(logging.DEBUG, f"Challenge timestamp: {datetime.datetime.utcnow()}")
 
     return {
         "status": "challenge",
@@ -72,10 +95,10 @@ def challenge_handler(req: ChallengeRequest, db: models.UserDB):
 
 # --- LOGIN CONTINUATION ------------------------------------------------
 def login_handler_continue(req: LoginRequest, db: models.UserDB, b64_nonce: str):
-    logging.debug(f"Login continuation: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"Login continuation: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
-        logging.warning(f"Unknown user '{req.username}' in login continuation")
+        safe_log(logging.WARNING, f"Unknown user '{req.username}' in login continuation")
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
     # Only return the challenge nonce, not the sensitive data
@@ -86,9 +109,9 @@ def login_handler_continue(req: LoginRequest, db: models.UserDB, b64_nonce: str)
 
 # --- SIGNUP ------------------------------------------------------------
 def signup_handler(req: SignupRequest, db: models.UserDB):
-    logging.debug(f"Signup: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"Signup: {req.model_dump_json()}")
     if db.get_user(req.username):
-        logging.warning(f"User '{req.username}' already exists")
+        safe_log(logging.WARNING, f"User '{req.username}' already exists")
         raise HTTPException(status_code=400, detail="User already exists")
 
     # 1) create the user row
@@ -116,28 +139,28 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
     opk_bytes = [base64.b64decode(k) for k in req.one_time_pre_keys]
     db.add_opks(user_id, opk_bytes)
 
-    logging.info(f"Signup successful (and X3DH keys stored) for '{req.username}'")
+    safe_log(logging.INFO, f"Signup successful (and X3DH keys stored) for '{req.username}'")
     return {"status": "ok"}
 
 # --- AUTHENTICATE (LOGIN COMPLETE) --------------------------------------
 def authenticate_handler(req: AuthenticateRequest, db: models.UserDB):
-    logging.debug(f"Authenticate: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"Authenticate: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
-        logging.warning(f"Unknown user '{req.username}' at authenticate")
+        safe_log(logging.WARNING, f"Unknown user '{req.username}' at authenticate")
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
     user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
     stored = db.get_pending_challenge(user_id, "login")
     if stored is None or provided != stored['challenge']:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (login)")
+        safe_log(logging.WARNING, f"No valid pending challenge for user_id={user_id} (login)")
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
     # Verify the challenge hasn't expired
     challenge_age = (datetime.datetime.utcnow() - stored['timestamp']).total_seconds()
     if challenge_age > 30:  # 30 second expiry
-        logging.warning(f"Challenge expired for user_id={user_id} (login) - age: {challenge_age}s")
+        safe_log(logging.WARNING, f"Challenge expired for user_id={user_id} (login) - age: {challenge_age}s")
         raise HTTPException(status_code=400, detail="Challenge expired")
 
     signature = base64.b64decode(req.signature)
@@ -146,7 +169,7 @@ def authenticate_handler(req: AuthenticateRequest, db: models.UserDB):
         message = provided + stored['nonce']
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, message)
-        logging.info(f"Signature valid for user_id={user_id} (login)")
+        safe_log(logging.INFO, f"Signature valid for user_id={user_id} (login)")
         db.delete_challenge(user_id)
         
         # Only return sensitive data after successful authentication
@@ -162,23 +185,23 @@ def authenticate_handler(req: AuthenticateRequest, db: models.UserDB):
             "kek_nonce": base64.b64encode(user["kek_nonce"]).decode()
         }
     except InvalidSignature:
-        logging.warning(f"Bad signature for user_id={user_id} (login)")
+        safe_log(logging.WARNING, f"Bad signature for user_id={user_id} (login)")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
 # --- CHANGE USERNAME ------------------------------------------------------
 def change_username_handler(req: ChangeUsernameRequest, db: models.UserDB):
-    logging.debug(f"ChangeUsername: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"ChangeUsername: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
-        logging.warning(f"Unknown user '{req.username}' at change_username")
+        safe_log(logging.WARNING, f"Unknown user '{req.username}' at change_username")
         raise HTTPException(status_code=404, detail="Unknown user")
 
     user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
     stored = db.get_pending_challenge(user_id, "change_username")
     if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (change_username)")
+        safe_log(logging.WARNING, f"No valid pending challenge for user_id={user_id} (change_username)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
 
     signature = base64.b64decode(req.signature)
@@ -186,27 +209,27 @@ def change_username_handler(req: ChangeUsernameRequest, db: models.UserDB):
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, req.new_username.encode())
         db.update_username(req.username, req.new_username)
-        logging.info(f"Username changed from '{req.username}' to '{req.new_username}'")
+        safe_log(logging.INFO, f"Username changed from '{req.username}' to '{req.new_username}'")
         db.delete_challenge(user_id)
         return {"status": "ok", "message": "username changed"}
     except InvalidSignature:
-        logging.warning(f"Bad signature for change_username of user_id={user_id}")
+        safe_log(logging.WARNING, f"Bad signature for change_username of user_id={user_id}")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
 # --- CHANGE PASSWORD ------------------------------------------------------
 def change_password_handler(req: ChangePasswordRequest, db: models.UserDB):
-    logging.debug(f"ChangePassword: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"ChangePassword: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
-        logging.warning(f"Unknown user '{req.username}' at change_password")
+        safe_log(logging.WARNING, f"Unknown user '{req.username}' at change_password")
         raise HTTPException(status_code=404, detail="Unknown user")
 
     user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
     stored = db.get_pending_challenge(user_id, "change_password")
     if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (change_password)")
+        safe_log(logging.WARNING, f"No valid pending challenge for user_id={user_id} (change_password)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
 
     encrypted_privkey = base64.b64decode(req.encrypted_privkey)
@@ -225,27 +248,27 @@ def change_password_handler(req: ChangePasswordRequest, db: models.UserDB):
             encrypted_kek,
             base64.b64decode(req.kek_nonce)
         )
-        logging.info(f"Password changed for user_id={user_id}")
+        safe_log(logging.INFO, f"Password changed for user_id={user_id}")
         db.delete_challenge(user_id)
         return {"status": "ok", "message": "password changed"}
     except InvalidSignature:
-        logging.warning(f"Bad signature for change_password of user_id={user_id}")
+        safe_log(logging.WARNING, f"Bad signature for change_password of user_id={user_id}")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
 # --- FILE UPLOAD ------------------------------------------------------
 def upload_file_handler(req: UploadRequest, db: models.UserDB):
-    logging.debug(f"UploadFile: {req.model_dump_json(exclude={'encrypted_file'})}")
+    safe_log(logging.DEBUG, f"UploadFile: {req.model_dump_json(exclude={'encrypted_file'})}")
     user = db.get_user(req.username)
     if not user:
-        logging.warning(f"Unknown user '{req.username}' at upload_file")
+        safe_log(logging.WARNING, f"Unknown user '{req.username}' at upload_file")
         raise HTTPException(status_code=404, detail="Unknown user")
 
     user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
     stored  = db.get_pending_challenge(user_id, "upload_file")
     if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (upload_file)")
+        safe_log(logging.WARNING, f"No valid pending challenge for user_id={user_id} (upload_file)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
 
     encrypted_dek = base64.b64decode(req.encrypted_dek)
@@ -261,27 +284,27 @@ def upload_file_handler(req: UploadRequest, db: models.UserDB):
             encrypted_dek,
             base64.b64decode(req.dek_nonce)
         )
-        logging.info(f"File '{req.filename}' uploaded for user_id={user_id}")
+        safe_log(logging.INFO, f"File '{req.filename}' uploaded for user_id={user_id}")
         db.delete_challenge(user_id)
         return {"status": "ok", "message": "file uploaded"}
     except InvalidSignature:
-        logging.warning(f"Bad signature for upload_file of user_id={user_id}")
+        safe_log(logging.WARNING, f"Bad signature for upload_file of user_id={user_id}")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
 # --- LIST FILES ------------------------------------------------------
 def list_files_handler(req: ListFilesRequest, db: models.UserDB):
-    logging.debug(f"ListFiles: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"ListFiles: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
-        logging.warning(f"Unknown user '{req.username}' at list_files")
+        safe_log(logging.WARNING, f"Unknown user '{req.username}' at list_files")
         raise HTTPException(status_code=404, detail="Unknown user")
 
     user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
     stored  = db.get_pending_challenge(user_id, "list_files")
     if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (list_files)")
+        safe_log(logging.WARNING, f"No valid pending challenge for user_id={user_id} (list_files)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
 
     signature = base64.b64decode(req.signature)
@@ -292,23 +315,23 @@ def list_files_handler(req: ListFilesRequest, db: models.UserDB):
         db.delete_challenge(user_id)
         return {"status": "ok", "files": files}
     except InvalidSignature:
-        logging.warning(f"Bad signature for list_files of user_id={user_id}")
+        safe_log(logging.WARNING, f"Bad signature for list_files of user_id={user_id}")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
 # --- DOWNLOAD FILE ------------------------------------------------------
 def download_file_handler(req: DownloadFileRequest, db: models.UserDB):
-    logging.debug(f"DownloadFile: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"DownloadFile: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
-        logging.warning(f"Unknown user '{req.username}' at download_file")
+        safe_log(logging.WARNING, f"Unknown user '{req.username}' at download_file")
         raise HTTPException(status_code=404, detail="Unknown user")
 
     user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
     stored  = db.get_pending_challenge(user_id, "download_file")
     if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (download_file)")
+        safe_log(logging.WARNING, f"No valid pending challenge for user_id={user_id} (download_file)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
 
     signature = base64.b64decode(req.signature)
@@ -317,7 +340,7 @@ def download_file_handler(req: DownloadFileRequest, db: models.UserDB):
             .verify(signature, req.filename.encode())
         record = db.get_file(req.username, req.filename)
         if not record:
-            logging.warning(f"File '{req.filename}' not found for user_id={user_id}")
+            safe_log(logging.WARNING, f"File '{req.filename}' not found for user_id={user_id}")
             raise HTTPException(status_code=404, detail="File not found")
         db.delete_challenge(user_id)
         return {
@@ -328,23 +351,23 @@ def download_file_handler(req: DownloadFileRequest, db: models.UserDB):
             "dek_nonce":       base64.b64encode(record["dek_nonce"]).decode()
         }
     except InvalidSignature:
-        logging.warning(f"Bad signature for download_file of user_id={user_id}")
+        safe_log(logging.WARNING, f"Bad signature for download_file of user_id={user_id}")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
 # --- DELETE FILE ------------------------------------------------------
 def delete_file_handler(req: DeleteFileRequest, db: models.UserDB):
-    logging.debug(f"DeleteFile: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"DeleteFile: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
-        logging.warning(f"Unknown user '{req.username}' at delete_file")
+        safe_log(logging.WARNING, f"Unknown user '{req.username}' at delete_file")
         raise HTTPException(status_code=404, detail="Unknown user")
 
     user_id  = user["user_id"]
     provided = base64.b64decode(req.nonce)
     stored   = db.get_pending_challenge(user_id, "delete_file")
     if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (delete_file)")
+        safe_log(logging.WARNING, f"No valid pending challenge for user_id={user_id} (delete_file)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
 
     signature = base64.b64decode(req.signature)
@@ -353,17 +376,17 @@ def delete_file_handler(req: DeleteFileRequest, db: models.UserDB):
             .verify(signature, req.filename.encode())
 
         db.delete_file(req.username, req.filename)
-        logging.info(f"File '{req.filename}' deleted for user_id={user_id}")
+        safe_log(logging.INFO, f"File '{req.filename}' deleted for user_id={user_id}")
         db.delete_challenge(user_id)
         return {"status": "ok", "message": "file deleted"}
     except InvalidSignature:
-        logging.warning(f"Bad signature for delete_file of user_id={user_id}")
+        safe_log(logging.WARNING, f"Bad signature for delete_file of user_id={user_id}")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
 # --- BACKUP TOFU KEYS ------------------------------------------------------
 def backup_tofu_keys_handler(req: BackupTOFURequest, db: models.UserDB):
-    logging.debug(f"BackupTOFU: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"BackupTOFU: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
         raise HTTPException(status_code=404, detail="Unknown user")
@@ -394,7 +417,7 @@ def backup_tofu_keys_handler(req: BackupTOFURequest, db: models.UserDB):
 
 # --- GET BACKUP TOFU KEYS ------------------------------------------------------
 def get_backup_tofu_keys_handler(req: GetBackupTOFURequest, db: models.UserDB):
-    logging.debug(f"GetBackupTOFU: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"GetBackupTOFU: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
         raise HTTPException(status_code=404, detail="Unknown user")
@@ -414,7 +437,7 @@ def get_backup_tofu_keys_handler(req: GetBackupTOFURequest, db: models.UserDB):
         if not backup:
             raise HTTPException(status_code=404, detail="No TOFU backup found")
         
-        logging.debug(f"Found backup: {backup is not None}")
+        safe_log(logging.DEBUG, f"Found backup: {backup is not None}")
         return {
             "status": "ok",
             "encrypted_backup": base64.b64encode(backup["encrypted_data"]).decode(),
@@ -426,23 +449,23 @@ def get_backup_tofu_keys_handler(req: GetBackupTOFURequest, db: models.UserDB):
 
 # --- PREKEY BUNDLE ------------------------------------------------------
 def get_prekey_bundle_handler(req: GetPreKeyBundleRequest, db: models.UserDB):
-    logging.debug(f"GetPreKeyBundle: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"GetPreKeyBundle: {req.model_dump_json()}")
     
     # First verify the requesting user and their challenge
     requester = db.get_user(req.username)
     if not requester:
-        logging.warning(f"Unknown requester '{req.username}' at get_pre_key_bundle")
+        safe_log(logging.WARNING, f"Unknown requester '{req.username}' at get_pre_key_bundle")
         raise HTTPException(status_code=404, detail="Unknown requester")
     
     requester_id = requester["user_id"]
     provided = base64.b64decode(req.nonce)
     stored = db.get_pending_challenge(requester_id, "get_pre_key_bundle")
-    logging.debug(f"Challenge verification - Requester ID: {requester_id}, Operation: get_pre_key_bundle")
-    logging.debug(f"Provided nonce: {base64.b64encode(provided).decode()}")
-    logging.debug(f"Stored challenge: {base64.b64encode(stored).decode() if stored else 'None'}")
+    safe_log(logging.DEBUG, f"Challenge verification - Requester ID: {requester_id}, Operation: get_pre_key_bundle")
+    safe_log(logging.DEBUG, f"Provided nonce: {base64.b64encode(provided).decode()}")
+    safe_log(logging.DEBUG, f"Stored challenge: {base64.b64encode(stored).decode() if stored else 'None'}")
     
     if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for requester_id={requester_id} (get_pre_key_bundle)")
+        safe_log(logging.WARNING, f"No valid pending challenge for requester_id={requester_id} (get_pre_key_bundle)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
     
     signature = base64.b64decode(req.signature)
@@ -453,7 +476,7 @@ def get_prekey_bundle_handler(req: GetPreKeyBundleRequest, db: models.UserDB):
         # Now get the target user's prekey bundle
         target = db.get_user(req.target_username)
         if not target:
-            logging.warning(f"Unknown target user '{req.target_username}' at get_pre_key_bundle")
+            safe_log(logging.WARNING, f"Unknown target user '{req.target_username}' at get_pre_key_bundle")
             raise HTTPException(status_code=404, detail="Target user not found")
         
         target_id = target["user_id"]
@@ -476,7 +499,7 @@ def get_prekey_bundle_handler(req: GetPreKeyBundleRequest, db: models.UserDB):
 
 #add prekey bundle
 def add_prekey_bundle_handler(req: AddPreKeyBundleRequest, db: models.UserDB):
-    logging.debug(f"AddPreKeyBundle: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"AddPreKeyBundle: {req.model_dump_json()}")
     try:
         user = db.get_user(req.username)
         if not user:
@@ -499,34 +522,34 @@ def add_prekey_bundle_handler(req: AddPreKeyBundleRequest, db: models.UserDB):
                 SPK_pub = base64.b64decode(req.SPK_pub)
                 SPK_signature = base64.b64decode(req.SPK_signature)
                 
-                logging.debug(f"Decoded data lengths - IK_pub: {len(IK_pub)}, SPK_pub: {len(SPK_pub)}, SPK_signature: {len(SPK_signature)}")
+                safe_log(logging.DEBUG, f"Decoded data lengths - IK_pub: {len(IK_pub)}, SPK_pub: {len(SPK_pub)}, SPK_signature: {len(SPK_signature)}")
                 
                 db.add_pre_key_bundle(user_id, IK_pub, SPK_pub, SPK_signature)
                 db.delete_challenge(user_id)
                 return {"status": "ok", "message": "Prekey bundle added"}
             except Exception as e:
-                logging.error(f"Error processing prekey bundle data: {str(e)}")
+                safe_log(logging.error, f"Error processing prekey bundle data: {str(e)}")
                 raise HTTPException(status_code=500, detail=f"Error processing prekey bundle data: {str(e)}")
         except InvalidSignature:
             db.delete_challenge(user_id)
             raise HTTPException(status_code=401, detail="Bad signature")
     except Exception as e:
-        logging.error(f"Unexpected error in add_prekey_bundle_handler: {str(e)}")
+        safe_log(logging.error, f"Unexpected error in add_prekey_bundle_handler: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 def list_users_handler(req: ListUsersRequest, db: models.UserDB) -> ListUsersResponse:
     """List all users in the system."""
-    logging.debug(f"ListUsers: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"ListUsers: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
-        logging.warning(f"Unknown user '{req.username}' at list_users")
+        safe_log(logging.WARNING, f"Unknown user '{req.username}' at list_users")
         raise HTTPException(status_code=404, detail="Unknown user")
 
     user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
     stored = db.get_pending_challenge(user_id, "list_users")
     if stored is None or provided != stored:
-        logging.warning(f"No valid pending challenge for user_id={user_id} (list_users)")
+        safe_log(logging.WARNING, f"No valid pending challenge for user_id={user_id} (list_users)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
 
     signature = base64.b64decode(req.signature)
@@ -552,12 +575,12 @@ def list_users_handler(req: ListUsersRequest, db: models.UserDB) -> ListUsersRes
             ]
         )
     except InvalidSignature:
-        logging.warning(f"Bad signature for list_users of user_id={user_id}")
+        safe_log(logging.WARNING, f"Bad signature for list_users of user_id={user_id}")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
 
 def add_opks_handler(req: AddOPKsRequest, db: models.UserDB):
-    logging.debug(f"AddOPKs: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"AddOPKs: {req.model_dump_json()}")
     user = db.get_user(req.username)
     if not user:
         raise HTTPException(status_code=404, detail="Unknown user")
@@ -580,7 +603,7 @@ def add_opks_handler(req: AddOPKsRequest, db: models.UserDB):
             db.delete_challenge(user_id)
             return {"status": "ok", "message": "OPKs added"}
         except Exception as e:
-            logging.error(f"Error processing OPKs data: {str(e)}")
+            safe_log(logging.error, f"Error processing OPKs data: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error processing OPKs data: {str(e)}")
     except InvalidSignature:
         db.delete_challenge(user_id)
