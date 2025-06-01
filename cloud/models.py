@@ -6,6 +6,9 @@ import logging
 import datetime
 import secrets
 import re
+import subprocess
+import cryptsetup
+from pathlib import Path
 
 # Database connection parameters (will use env variables)
 DB_USER     = os.environ.get('DB_USER',     'nrmc')
@@ -13,6 +16,54 @@ DB_PASSWORD = os.environ.get('DB_PASSWORD', 'nrmc')
 DB_HOST     = os.environ.get('DB_HOST',     '127.0.0.1')
 DB_PORT     = int(os.environ.get('DB_PORT', '3306'))
 DB_NAME     = os.environ.get('DB_NAME',     'nrmc')
+
+# Disk encryption setup
+ENCRYPTED_DISK = os.environ.get('ENCRYPTED_DISK', '/dev/sdb1')
+MOUNT_POINT = os.environ.get('MOUNT_POINT', '/mnt/encrypted')
+KEY_FILE = os.environ.get('KEY_FILE', '/etc/fileshare/disk.key')
+
+def setup_encrypted_disk():
+    """Set up and mount the encrypted disk."""
+    try:
+        # Create mount point if it doesn't exist
+        Path(MOUNT_POINT).mkdir(parents=True, exist_ok=True)
+        
+        # Check if disk is already mounted
+        if not os.path.ismount(MOUNT_POINT):
+            # Open the encrypted device
+            subprocess.run(['cryptsetup', 'open', ENCRYPTED_DISK, 'fileshare_encrypted', '--key-file', KEY_FILE], check=True)
+            
+            # Mount the decrypted device
+            subprocess.run(['mount', '/dev/mapper/fileshare_encrypted', MOUNT_POINT], check=True)
+            
+            # Set up symlinks for database and logs
+            db_path = os.path.join(MOUNT_POINT, 'database')
+            log_path = os.path.join(MOUNT_POINT, 'logs')
+            
+            Path(db_path).mkdir(parents=True, exist_ok=True)
+            Path(log_path).mkdir(parents=True, exist_ok=True)
+            
+            # Create symlinks
+            if not os.path.exists('database'):
+                os.symlink(db_path, 'database')
+            if not os.path.exists('logs'):
+                os.symlink(log_path, 'logs')
+                
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to set up encrypted disk: {e}")
+        raise
+
+def cleanup_encrypted_disk():
+    """Unmount and close the encrypted disk."""
+    try:
+        # Unmount the decrypted device
+        subprocess.run(['umount', MOUNT_POINT], check=True)
+        
+        # Close the encrypted device
+        subprocess.run(['cryptsetup', 'close', 'fileshare_encrypted'], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to clean up encrypted disk: {e}")
+        raise
 
 def sanitize_log_message(message: str) -> str:
     """
@@ -41,6 +92,9 @@ def init_db():
     Ensure the users, username_map, pending_challenges, and files tables
     all exist. Any that are already there will be left intact.
     """
+    # Set up encrypted disk before initializing database
+    setup_encrypted_disk()
+    
     conn = connector.connect(
         user     = DB_USER,
         password = DB_PASSWORD,
@@ -207,7 +261,13 @@ class UserDB:
     with automatic reconnect on lost connection.
     """
     def __init__(self):
+        # Ensure encrypted disk is mounted
+        setup_encrypted_disk()
         self._connect()
+
+    def __del__(self):
+        # Clean up encrypted disk when done
+        cleanup_encrypted_disk()
 
     def _connect(self):
         self.conn = connector.connect(

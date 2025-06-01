@@ -42,7 +42,8 @@ from schemas import (
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
-LOG_FILE = os.path.join(os.path.dirname(__file__), 'server_debug.log')
+LOG_FILE = os.path.join('logs', 'server_debug.log')
+os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.DEBUG,
