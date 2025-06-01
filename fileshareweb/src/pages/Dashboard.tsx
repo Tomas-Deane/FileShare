@@ -165,7 +165,7 @@ interface PreKeyBundle {
 interface RecipientKeyBundle {
   data: PreKeyBundle;
   verified: boolean;
-  lastVerified?: string;
+  lastVerified: string;  // Add this property
 }
 
 interface SelectedUser {
@@ -545,7 +545,8 @@ const Dashboard: React.FC = () => {
       // Create the recipient key bundle with verified status
       const recipientKeyBundle: RecipientKeyBundle = {
         data: selectedUser.prekeyBundle,  // Store raw data directly
-        verified: true
+        verified: true,
+        lastVerified: new Date().toISOString()  // Add this property
       };
 
       // Update the key bundle with the new verified recipient
@@ -1351,6 +1352,23 @@ const Dashboard: React.FC = () => {
     await fetchSharedFiles();
   };
 
+  // First, add a new function to get verified users from session storage
+  const getVerifiedUsers = () => {
+    const myUsername = storage.getCurrentUser();
+    if (!myUsername) return [];
+    
+    const myKeyBundle = storage.getKeyBundle(myUsername);
+    // Check if keyBundle and recipients exist
+    if (!myKeyBundle || !myKeyBundle.recipients) return [];
+
+    return Object.entries(myKeyBundle.recipients)
+      .filter(([_, bundle]) => bundle.verified)
+      .map(([username, bundle]) => ({
+        username,
+        verifiedAt: myKeyBundle.lastVerified || new Date().toISOString()  // Use the lastVerified from the key bundle
+      }));
+  };
+
   return (
     <>
       <MatrixBackground />
@@ -1692,88 +1710,160 @@ const Dashboard: React.FC = () => {
               </DashboardCard>
               </>
             ) : activeTab === 'users' ? (
-              <DashboardCard>
-                <Box sx={{ mb: 3 }}>
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      color: '#00ffff',
-                      textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
-                      mb: 2,
-                    }}
-                  >
-                    Users
-                  </Typography>
-                  <SearchField
-                    fullWidth
-                    placeholder="Search users..."
-                    value={userSearchQuery}
-                    onChange={(e) => setUserSearchQuery(e.target.value)}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <SearchIcon sx={{ color: '#00ff00' }} />
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                </Box>
-                {loadingUsers ? (
-                  <Box sx={{ textAlign: 'center', py: 4 }}>
-                    <Typography sx={{ color: '#00ff00' }}>Loading users...</Typography>
-                  </Box>
-                ) : userError ? (
-                  <Alert severity="error" sx={{ bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
-                    {userError}
-                  </Alert>
-                ) : users.length === 0 ? (
-                  <Box sx={{ textAlign: 'center', py: 4 }}>
-                    <Typography sx={{ color: '#00ff00' }}>No users found.</Typography>
-                  </Box>
-                ) : (
-                  <List>
-                    {users
-                      .filter(user => user.username.toLowerCase().includes(userSearchQuery.toLowerCase()))
-                      .map((user) => (
-                        <ListItem
-                          key={user.id}
-                          sx={{
-                            border: '1px solid rgba(0, 255, 0, 0.2)',
-                            borderRadius: 1,
-                            mb: 1,
-                            display: 'flex',
-                            alignItems: 'center',
-                            '&:hover': {
-                              border: '1px solid rgba(0, 255, 0, 0.4)',
-                              backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                            },
-                          }}
-                        >
-                          <ListItemIcon>
-                            <PersonIcon sx={{ color: '#00ff00' }} />
-                          </ListItemIcon>
-                          <ListItemText
-                            primary={user.username}
-                            primaryTypographyProps={{
-                              sx: { color: '#00ffff', fontWeight: 'bold' },
+              <Grid container spacing={3}>
+                {/* Search Users Card */}
+                <Grid item xs={12} md={6}>
+                  <DashboardCard>
+                    <Box sx={{ mb: 3 }}>
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          color: '#00ffff',
+                          textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                          mb: 2,
+                        }}
+                      >
+                        Search Users
+                      </Typography>
+                      <SearchField
+                        fullWidth
+                        placeholder="Search users..."
+                        value={userSearchQuery}
+                        onChange={(e) => setUserSearchQuery(e.target.value)}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <SearchIcon sx={{ color: '#00ff00' }} />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </Box>
+                    {loadingUsers ? (
+                      <Box sx={{ textAlign: 'center', py: 4 }}>
+                        <Typography sx={{ color: '#00ff00' }}>Loading users...</Typography>
+                      </Box>
+                    ) : userError ? (
+                      <Alert severity="error" sx={{ bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
+                        {userError}
+                      </Alert>
+                    ) : users.length === 0 ? (
+                      <Box sx={{ textAlign: 'center', py: 4 }}>
+                        <Typography sx={{ color: '#00ff00' }}>
+                          {userSearchQuery ? 'No users found.' : 'Start typing to search users...'}
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <List>
+                        {users.map((user) => (
+                          <ListItem
+                            key={user.id}
+                            sx={{
+                              border: '1px solid rgba(0, 255, 0, 0.2)',
+                              borderRadius: 1,
+                              mb: 1,
+                              display: 'flex',
+                              alignItems: 'center',
+                              '&:hover': {
+                                border: '1px solid rgba(0, 255, 0, 0.4)',
+                                backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                              },
                             }}
-                          />
-                          <Box sx={{ ml: 'auto' }}>
-                            <Button
-                              variant="contained"
-                              color="primary"
-                              onClick={() => handleVerifyClick({ id: user.id, username: user.username })}
-                              size="small"
-                              sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+                          >
+                            <ListItemIcon>
+                              <PersonIcon sx={{ color: '#00ff00' }} />
+                            </ListItemIcon>
+                            <ListItemText
+                              primary={user.username}
+                              primaryTypographyProps={{
+                                sx: { color: '#00ffff', fontWeight: 'bold' },
+                              }}
+                            />
+                            <Box sx={{ ml: 'auto' }}>
+                              <Button
+                                variant="contained"
+                                color="primary"
+                                onClick={() => handleVerifyClick({ id: user.id, username: user.username })}
+                                size="small"
+                                sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+                              >
+                                Verify
+                              </Button>
+                            </Box>
+                          </ListItem>
+                        ))}
+                      </List>
+                    )}
+                  </DashboardCard>
+                </Grid>
+
+                {/* Verified Users Card */}
+                <Grid item xs={12} md={6}>
+                  <DashboardCard>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          color: '#00ffff',
+                          textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                        }}
+                      >
+                        Verified Users
+                      </Typography>
+                      <IconButton 
+                        onClick={() => {
+                          // Force a re-render of verified users
+                          setUsers([...users]);
+                        }} 
+                        sx={{ color: '#00ff00' }}
+                      >
+                        <RefreshIcon />
+                      </IconButton>
+                    </Box>
+                    {(() => {
+                      const verifiedUsers = getVerifiedUsers();
+                      return verifiedUsers.length === 0 ? (
+                        <Box sx={{ textAlign: 'center', py: 4 }}>
+                          <Typography sx={{ color: '#00ff00' }}>
+                            No verified users yet. Search and verify users to start sharing files.
+                          </Typography>
+                        </Box>
+                      ) : (
+                        <List>
+                          {verifiedUsers.map((user) => (
+                            <ListItem
+                              key={user.username}
+                              sx={{
+                                border: '1px solid rgba(0, 255, 0, 0.2)',
+                                borderRadius: 1,
+                                mb: 1,
+                                '&:hover': {
+                                  border: '1px solid rgba(0, 255, 0, 0.4)',
+                                  backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                                },
+                              }}
                             >
-                              Verify
-                            </Button>
-                          </Box>
-                        </ListItem>
-                      ))}
-                  </List>
-                )}
-              </DashboardCard>
+                              <ListItemIcon>
+                                <VerifiedUserIcon sx={{ color: '#00ff00' }} />
+                              </ListItemIcon>
+                              <ListItemText
+                                primary={user.username}
+                                secondary={`Verified on ${new Date(user.verifiedAt).toLocaleDateString()}`}
+                                primaryTypographyProps={{
+                                  sx: { color: '#00ffff', fontWeight: 'bold' },
+                                }}
+                                secondaryTypographyProps={{
+                                  sx: { color: 'rgba(0, 255, 0, 0.7)' },
+                                }}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      );
+                    })()}
+                  </DashboardCard>
+                </Grid>
+              </Grid>
             ) : (
               <DashboardCard>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
@@ -2089,7 +2179,7 @@ const Dashboard: React.FC = () => {
                         primaryTypographyProps={{
                           sx: { color: '#00ffff', fontWeight: 'bold' },
                         }}
-                        secondary={`Verified on ${new Date(bundle.lastVerified || '').toLocaleDateString()}`}
+                        secondary={`Verified on ${new Date(bundle.lastVerified).toLocaleDateString()}`}
                         secondaryTypographyProps={{
                           sx: { color: 'rgba(0, 255, 0, 0.7)' },
                         }}
