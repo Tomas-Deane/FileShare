@@ -4,6 +4,8 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QStringList>
+#include <QFile>
+#include <QDir>
 
 // POSIX sockets
 #include <netdb.h>
@@ -30,7 +32,27 @@ void NetworkManager::initOpenSSL()
     ssl_ctx = SSL_CTX_new(TLS_client_method());
     if (!ssl_ctx) {
         Logger::log("Failed to create SSL_CTX");
+        return;
     }
+
+    // Enable certificate verification
+    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, nullptr);
+    SSL_CTX_set_verify_depth(ssl_ctx, 4);
+
+    // Load CA bundle
+    QString caPath = QDir::currentPath() + "/ssl/ca-bundle.crt";
+    if (!QFile::exists(caPath)) {
+        Logger::log("CA bundle not found at: " + caPath);
+        return;
+    }
+
+    if (!SSL_CTX_load_verify_locations(ssl_ctx, caPath.toUtf8().constData(), nullptr)) {
+        Logger::log("Failed to load CA bundle");
+        return;
+    }
+
+    // Set minimum TLS version to 1.2
+    SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_2_VERSION);
 }
 
 void NetworkManager::cleanupOpenSSL()
@@ -79,15 +101,50 @@ SSL *NetworkManager::openSslConnection(const QString &host,
     }
 
     SSL *ssl = SSL_new(ssl_ctx);
-    SSL_set_fd(ssl, sock);
-    if (SSL_connect(ssl) <= 0) {
-        SSL_free(ssl);
+    if (!ssl) {
+        errorMsg = "Failed to create SSL structure";
         ::close(sock);
-        errorMsg = "SSL handshake failed";
         emit connectionStatusChanged(false);
         return nullptr;
     }
 
+    // Set the hostname for SNI
+    SSL_set_tlsext_host_name(ssl, host.toUtf8().constData());
+    
+    SSL_set_fd(ssl, sock);
+    if (SSL_connect(ssl) <= 0) {
+        unsigned long err = ERR_get_error();
+        char err_buf[256];
+        ERR_error_string_n(err, err_buf, sizeof(err_buf));
+        errorMsg = QString("SSL handshake failed: %1").arg(err_buf);
+        SSL_free(ssl);
+        ::close(sock);
+        emit connectionStatusChanged(false);
+        return nullptr;
+    }
+
+    // Verify the certificate
+    X509 *cert = SSL_get_peer_certificate(ssl);
+    if (!cert) {
+        errorMsg = "No peer certificate";
+        SSL_free(ssl);
+        ::close(sock);
+        emit connectionStatusChanged(false);
+        return nullptr;
+    }
+
+    long verify_result = SSL_get_verify_result(ssl);
+    if (verify_result != X509_V_OK) {
+        errorMsg = QString("Certificate verification failed: %1")
+            .arg(X509_verify_cert_error_string(verify_result));
+        X509_free(cert);
+        SSL_free(ssl);
+        ::close(sock);
+        emit connectionStatusChanged(false);
+        return nullptr;
+    }
+
+    X509_free(cert);
     sockOut = sock;
     emit connectionStatusChanged(true);
     return ssl;
