@@ -17,8 +17,10 @@ import { CyberButton, MatrixBackground } from '../components';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../utils/apiClient';
-import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
+import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode, derivePDK } from '../utils/crypto';
 import { storage, KeyBundle } from '../utils/storage';
+import sodium from 'libsodium-wrappers';
+import { base64 } from 'utils/base64';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -163,6 +165,7 @@ const logDebug = (message: string, data?: any) => {
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { setAuthData } = useAuth();
   const [activeTab, setActiveTab] = useState<'home'|'files'|'users'|'profile'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [userSearchQuery, setUserSearchQuery] = useState('');
@@ -190,12 +193,18 @@ const Dashboard: React.FC = () => {
   const [users, setUsers] = useState<UserData[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   // Get current user and their key bundle
   const currentUsername = storage.getCurrentUser();
   const keyBundle = React.useMemo(() => {
     if (!currentUsername) return null;
-    return storage.getKeyBundle(currentUsername);
+    const bundle = storage.getKeyBundle(currentUsername);
+    if (!bundle) return null;
+    return bundle;
   }, [currentUsername]);
 
   const username = keyBundle?.username;
@@ -860,6 +869,229 @@ const Dashboard: React.FC = () => {
   const refreshUsers = () => {
     if (username && secretKey) {
       fetchUsers();
+    }
+  };
+
+  const handleUsernameChange = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      logDebug('Starting username change', { newUsername });
+
+      // Step 1: Request challenge
+      logDebug('Requesting challenge for username change');
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'change_username'
+      }, { timeout: 30000 }); // 30 second timeout
+      logDebug('Username change challenge received', {
+        status: challengeResponse.status,
+        hasNonce: !!challengeResponse.nonce
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+
+      // Step 2: Sign the new username
+      logDebug('Signing new username');
+      const signature = await signChallenge(new TextEncoder().encode(newUsername), secretKey!);
+      logDebug('New username signed', {
+        signatureLength: signature.length
+      });
+
+      // Step 3: Send change request
+      logDebug('Sending username change request');
+      const changeResponse = await apiClient.post<UploadResponse>('/change_username', {
+        username,
+        new_username: newUsername,
+        nonce: challengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+      }, { timeout: 30000 }); // 30 second timeout
+      logDebug('Username change response received', changeResponse);
+
+      if (changeResponse.status !== 'ok') {
+        throw new Error(changeResponse.detail || 'Failed to change username');
+      }
+
+      // Step 4: Update TOFU backup with new username
+      logDebug('Updating TOFU backup with new username');
+      const updatedKeyBundle = {
+        ...keyBundle,
+        username: newUsername,
+        IK_pub: keyBundle?.IK_pub || '',
+        SPK_pub: keyBundle?.SPK_pub || '',
+        SPK_signature: keyBundle?.SPK_signature || '',
+        OPKs: keyBundle?.OPKs || [],
+        IK_priv: keyBundle?.IK_priv || '',
+        SPK_priv: keyBundle?.SPK_priv || '',
+        OPKs_priv: keyBundle?.OPKs_priv || [],
+        secretKey: keyBundle?.secretKey || '',
+        pdk: keyBundle?.pdk || '',
+        kek: keyBundle?.kek || '',
+        verified: keyBundle?.verified || false,
+        lastVerified: keyBundle?.lastVerified || new Date().toISOString()
+      };
+      storage.saveKeyBundle(updatedKeyBundle);
+      storage.setCurrentUser(newUsername);
+
+      // Update local state
+      setProfileData(prev => ({ ...prev, username: newUsername }));
+      setNewUsername('');
+      setOpenProfileSettings(false);
+    } catch (err: any) {
+      logDebug('Error in handleUsernameChange', {
+        errorType: err.constructor.name,
+        message: err.message,
+        hasResponse: !!err.response,
+        responseData: err.response?.data
+      });
+      setError(err.message || 'Failed to change username');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasswordChange = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      setPasswordError(null);
+      logDebug('Starting password change');
+
+      if (newPassword !== confirmPassword) {
+        setPasswordError('Passwords do not match');
+        return;
+      }
+
+      // Step 1: Request challenge
+      logDebug('Requesting challenge for password change');
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'change_password'
+      });
+      logDebug('Password change challenge received', {
+        status: challengeResponse.status,
+        hasNonce: !!challengeResponse.nonce
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+
+      // Generate new salt and use server-provided Argon2 parameters
+      const salt = sodium.randombytes_buf(16);
+      const opsLimit = 3; // OPSLIMIT_MODERATE
+      const memLimit = 67108864; // MEMLIMIT_MODERATE (64MB)
+
+      logDebug('Generated new salt and parameters', {
+        saltLength: salt.length,
+        opsLimit,
+        memLimit
+      });
+
+      // Derive new PDK using Argon2id13
+      logDebug('Deriving new PDK');
+      const newPdk = await derivePDK(
+        newPassword,
+        salt,
+        opsLimit,
+        memLimit
+      );
+      logDebug('New PDK derived', {
+        pdkLength: newPdk.length
+      });
+
+      // Re-encrypt secrets with new PDK
+      logDebug('Preparing to re-encrypt secrets');
+      const privKeyNonce = sodium.randombytes_buf(24);
+      const kekNonce = sodium.randombytes_buf(24);
+      logDebug('Generated nonces', {
+        privKeyNonceLength: privKeyNonce.length,
+        kekNonceLength: kekNonce.length
+      });
+
+      // Re-encrypt the private key with new PDK
+      logDebug('Encrypting private key');
+      const encryptedPrivKey = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+        secretKey!,
+        null,
+        null,
+        privKeyNonce,
+        newPdk
+      );
+      logDebug('Private key encrypted', {
+        encryptedPrivKeyLength: encryptedPrivKey.length
+      });
+
+      // Re-encrypt the KEK with new PDK
+      logDebug('Encrypting KEK');
+      const encryptedKekNew = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+        kek!,
+        null,
+        null,
+        kekNonce,
+        newPdk
+      );
+      logDebug('KEK encrypted', {
+        encryptedKekLength: encryptedKekNew.length
+      });
+
+      // Step 2: Sign the encrypted private key
+      logDebug('Signing encrypted private key');
+      const signature = await signChallenge(encryptedPrivKey, secretKey!);
+      logDebug('Encrypted private key signed', {
+        signatureLength: signature.length
+      });
+
+      // Step 3: Send change request
+      logDebug('Sending password change request');
+      const changeResponse = await apiClient.post<UploadResponse>('/change_password', {
+        username,
+        salt: btoa(String.fromCharCode.apply(null, Array.from(salt))),
+        argon2_opslimit: opsLimit,
+        argon2_memlimit: memLimit,
+        encrypted_privkey: btoa(String.fromCharCode.apply(null, Array.from(encryptedPrivKey))),
+        privkey_nonce: btoa(String.fromCharCode.apply(null, Array.from(privKeyNonce))),
+        encrypted_kek: btoa(String.fromCharCode.apply(null, Array.from(encryptedKekNew))),
+        kek_nonce: btoa(String.fromCharCode.apply(null, Array.from(kekNonce))),
+        nonce: challengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+      });
+      logDebug('Password change response received', {
+        status: changeResponse.status,
+        message: changeResponse.message,
+        detail: changeResponse.detail
+      });
+
+      if (changeResponse.status !== 'ok') {
+        throw new Error(changeResponse.detail || 'Failed to change password');
+      }
+
+      // Update local auth data
+      if (username) {
+        setAuthData({
+          username,
+          secretKey: secretKey!,
+          pdk: newPdk,
+          kek: kek!
+        });
+      }
+
+      // Clear form and close dialog
+      setNewPassword('');
+      setConfirmPassword('');
+      setOpenProfileSettings(false);
+    } catch (err: any) {
+      logDebug('Error in handlePasswordChange', {
+        errorType: err.constructor.name,
+        message: err.message,
+        hasResponse: !!err.response,
+        responseData: err.response?.data
+      });
+      setError(err.message || 'Failed to change password');
+    } finally {
+      setLoading(false);
     }
   };
 
