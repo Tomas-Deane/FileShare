@@ -10,6 +10,10 @@
 #include <QProgressBar>
 #include <QLabel>
 #include "passwordstrength.h"
+#include "controllers/authcontroller.h"
+#include "controllers/filecontroller.h"
+#include "controllers/profilecontroller.h"
+#include "models/response.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -92,6 +96,15 @@ private:
     void updatePasswordStrength(const QString &text,
                                 QProgressBar *bar,
                                 QLabel *label);
+
+    // Helper methods for HTML escaping
+    void updateLoggedInState(const QString& username);
+    void handleLoggedOut();
+    void updateServerConnectionStatus(const QString& status);
+    void updateFileInfo(const QString& path);
+    void updateDownloadFileInfo(const QString& name);
+    void showError(const QString& reason);
+    void showResponse(const Response& res);
 };
 
 #endif // MAINWINDOW_H

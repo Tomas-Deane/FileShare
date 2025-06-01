@@ -12,6 +12,11 @@
 #include <QFileInfo>
 #include <QMimeDatabase>
 #include <QFile>
+#include <QMessageBox>
+#include <QInputDialog>
+#include <QDateTime>
+#include <QDebug>
+#include <QTextDocument>  // For HTML escaping
 
 MainWindow::MainWindow(AuthController* authCtrl,
                        FileController* fileCtrl,
@@ -124,8 +129,10 @@ void MainWindow::on_logOutButton_clicked()
 
 void MainWindow::handleLoggedIn(const QString &username)
 {
-    ui->loggedInLabel->setText("Logged in as " + username);
-    ui->usernameLabel->setText("Username: " + username);
+    // Escape HTML special characters to prevent injection
+    QString escapedUsername = Qt::escape(username);
+    ui->loggedInLabel->setText("Logged in as " + escapedUsername);
+    ui->usernameLabel->setText("Username: " + escapedUsername);
 }
 
 void MainWindow::handleLoggedOut()
@@ -442,4 +449,45 @@ void MainWindow::updatePasswordStrength(const QString &text,
     } else {
         label->setText(res.description);
     }
+}
+
+void MainWindow::updateLoggedInState(const QString& username) {
+    // Escape HTML special characters to prevent injection
+    QString escapedUsername = Qt::escape(username);
+    ui->loggedInLabel->setText("Logged in as " + escapedUsername);
+    ui->usernameLabel->setText("Username: " + escapedUsername);
+}
+
+void MainWindow::handleLoggedOut() {
+    ui->loggedInLabel->setText("Not logged in");
+    ui->usernameLabel->setText("Username: ");
+    ui->downloadFileNameLabel->setText("No file selected");
+    ui->downloadFileTypeLabel->setText("-");
+}
+
+void MainWindow::updateServerConnectionStatus(const QString& status) {
+    ui->serverConnectionLabel->setText(Qt::escape(status));
+}
+
+void MainWindow::updateFileInfo(const QString& path) {
+    QFileInfo fi(path);
+    ui->fileNameLabel->setText(Qt::escape(fi.fileName()));
+    ui->fileTypeLabel->setText(Qt::escape(fi.suffix()));
+}
+
+void MainWindow::updateDownloadFileInfo(const QString& name) {
+    ui->downloadFileNameLabel->setText(Qt::escape(name));
+    ui->downloadFileTypeLabel->setText(Qt::escape(QFileInfo(name).suffix()));
+}
+
+void MainWindow::showError(const QString& reason) {
+    QLabel* label = new QLabel(this);
+    label->setText(Qt::escape(reason));
+    // ... rest of error handling ...
+}
+
+void MainWindow::showResponse(const Response& res) {
+    QLabel* label = new QLabel(this);
+    label->setText(Qt::escape(res.description));
+    // ... rest of response handling ...
 }
