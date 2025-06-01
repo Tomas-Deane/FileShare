@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 import os
 import logging
+import time
 from contextlib import asynccontextmanager
+from collections import defaultdict
+from datetime import datetime, timedelta
 
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.exceptions import HTTPException as StarletteHTTPException
@@ -45,6 +48,57 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s: %(message)s'
 )
 logger = logging.getLogger("fileshare")
+
+# ─── Rate Limiting Setup ───────────────────────────────────────────────────────
+class RateLimiter:
+    def __init__(self):
+        self.ip_attempts = defaultdict(list)  # IP -> list of timestamps
+        self.user_attempts = defaultdict(list)  # username -> list of timestamps
+        self.max_attempts = 5  # Maximum attempts per window
+        self.window_seconds = 300  # 5 minute window
+        self.backoff_base = 2  # Base for exponential backoff
+        self.max_backoff = 3600  # Maximum backoff of 1 hour
+
+    def _clean_old_attempts(self, attempts_list):
+        now = time.time()
+        return [ts for ts in attempts_list if now - ts < self.window_seconds]
+
+    def _get_backoff_seconds(self, attempt_count):
+        backoff = min(self.backoff_base ** attempt_count, self.max_backoff)
+        return backoff
+
+    def check_rate_limit(self, identifier: str, is_ip: bool = True):
+        now = time.time()
+        attempts_dict = self.ip_attempts if is_ip else self.user_attempts
+        
+        # Clean old attempts
+        attempts_dict[identifier] = self._clean_old_attempts(attempts_dict[identifier])
+        
+        # Check if rate limit exceeded
+        if len(attempts_dict[identifier]) >= self.max_attempts:
+            backoff = self._get_backoff_seconds(len(attempts_dict[identifier]))
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many attempts. Please try again in {backoff} seconds."
+            )
+        
+        # Add new attempt
+        attempts_dict[identifier].append(now)
+
+rate_limiter = RateLimiter()
+
+async def rate_limit_ip(request: Request):
+    client_ip = request.client.host
+    rate_limiter.check_rate_limit(client_ip, is_ip=True)
+
+async def rate_limit_user(request: Request):
+    try:
+        body = await request.json()
+        username = body.get("username")
+        if username:
+            rate_limiter.check_rate_limit(username, is_ip=False)
+    except:
+        pass  # If we can't get the username, just continue
 
 # ─── Ensure database tables exist ────────────────────────────────────────────────
 models.init_db()
@@ -120,14 +174,24 @@ async def signup(req: SignupRequest, db: models.UserDB = Depends(get_db)):
     return resp
 
 @app.post("/challenge")
-async def challenge(req: ChallengeRequest, db: models.UserDB = Depends(get_db)):
+async def challenge(
+    req: ChallengeRequest,
+    db: models.UserDB = Depends(get_db),
+    _: None = Depends(rate_limit_ip),
+    __: None = Depends(rate_limit_user)
+):
     logger.debug(f"ChallengeRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.challenge_handler, req, db)
     logger.debug(f"Challenge response: {resp}")
     return resp
 
 @app.post("/login")
-async def login(req: LoginRequest, db: models.UserDB = Depends(get_db)):
+async def login(
+    req: LoginRequest,
+    db: models.UserDB = Depends(get_db),
+    _: None = Depends(rate_limit_ip),
+    __: None = Depends(rate_limit_user)
+):
     logger.debug(f"LoginRequest body: {req.model_dump_json()}")
     # Step 1: generate challenge
     challenge_req = ChallengeRequest(username=req.username, operation="login")
@@ -138,7 +202,12 @@ async def login(req: LoginRequest, db: models.UserDB = Depends(get_db)):
     return full
 
 @app.post("/authenticate")
-async def authenticate(req: AuthenticateRequest, db: models.UserDB = Depends(get_db)):
+async def authenticate(
+    req: AuthenticateRequest,
+    db: models.UserDB = Depends(get_db),
+    _: None = Depends(rate_limit_ip),
+    __: None = Depends(rate_limit_user)
+):
     logger.debug(f"AuthenticateRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.authenticate_handler, req, db)
     logger.debug(f"Authenticate response: {resp}")

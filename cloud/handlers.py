@@ -78,16 +78,10 @@ def login_handler_continue(req: LoginRequest, db: models.UserDB, b64_nonce: str)
         logging.warning(f"Unknown user '{req.username}' in login continuation")
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
+    # Only return the challenge nonce, not the sensitive data
     return {
         "status": "challenge",
-        "nonce": b64_nonce,
-        "salt": base64.b64encode(user["salt"]).decode(),
-        "argon2_opslimit": user["argon2_opslimit"],
-        "argon2_memlimit": user["argon2_memlimit"],
-        "encrypted_privkey": base64.b64encode(user["encrypted_privkey"]).decode(),
-        "privkey_nonce": base64.b64encode(user["privkey_nonce"]).decode(),
-        "encrypted_kek": base64.b64encode(user["encrypted_kek"]).decode(),
-        "kek_nonce": base64.b64encode(user["kek_nonce"]).decode()
+        "nonce": b64_nonce
     }
 
 # --- SIGNUP ------------------------------------------------------------
@@ -146,7 +140,19 @@ def authenticate_handler(req: AuthenticateRequest, db: models.UserDB):
             .verify(signature, provided)
         logging.info(f"Signature valid for user_id={user_id} (login)")
         db.delete_challenge(user_id)
-        return {"status": "ok", "message": "login successful"}
+        
+        # Only return sensitive data after successful authentication
+        return {
+            "status": "ok",
+            "message": "login successful",
+            "salt": base64.b64encode(user["salt"]).decode(),
+            "argon2_opslimit": user["argon2_opslimit"],
+            "argon2_memlimit": user["argon2_memlimit"],
+            "encrypted_privkey": base64.b64encode(user["encrypted_privkey"]).decode(),
+            "privkey_nonce": base64.b64encode(user["privkey_nonce"]).decode(),
+            "encrypted_kek": base64.b64encode(user["encrypted_kek"]).decode(),
+            "kek_nonce": base64.b64encode(user["kek_nonce"]).decode()
+        }
     except InvalidSignature:
         logging.warning(f"Bad signature for user_id={user_id} (login)")
         db.delete_challenge(user_id)
