@@ -1152,6 +1152,16 @@ const Dashboard: React.FC = () => {
                 </ListItemIcon>
                 <ListItemText primary="Users" sx={{ color: '#00ff00' }} />
               </ListItem>
+              <ListItem
+                button
+                selected={activeTab === 'profile'}
+                onClick={() => setActiveTab('profile')}
+              >
+                <ListItemIcon>
+                  <PersonIcon sx={{ color: '#00ff00' }} />
+                </ListItemIcon>
+                <ListItemText primary="Profile" sx={{ color: '#00ff00' }} />
+              </ListItem>
               <ListItem button onClick={() => navigate('/login')}>
                 <ListItemIcon>
                   <LockIcon sx={{ color: '#00ff00' }} />
@@ -1160,17 +1170,6 @@ const Dashboard: React.FC = () => {
               </ListItem>
             </List>
             <Divider sx={{ borderColor: 'rgba(0, 255, 0, 0.2)' }} />
-            <List>
-              <ListItem component="div" onClick={() => setActiveTab('profile')}>
-                <ListItemIcon>
-                  <PersonIcon sx={{ color: '#00ff00' }} />
-                </ListItemIcon>
-                <ListItemText 
-                  primary="Profile" 
-                  sx={{ color: '#00ff00' }}
-                />
-              </ListItem>
-            </List>
           </Box>
         </NavDrawer>
 
