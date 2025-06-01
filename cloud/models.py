@@ -4,6 +4,7 @@ import os
 import pymysql as connector
 import logging
 import datetime
+import secrets
 
 # Database connection parameters (will use env variables)
 DB_USER     = os.environ.get('DB_USER',     'nrmc')
@@ -61,6 +62,7 @@ def init_db():
         operation           VARCHAR(64)         NOT NULL,
         challenge           VARBINARY(32)       NOT NULL,
         created_at          DATETIME            NOT NULL,
+        nonce               BLOB                NOT NULL,
         PRIMARY KEY (user_id, operation),
         CONSTRAINT fk_pc_user
           FOREIGN KEY (user_id)
@@ -69,6 +71,12 @@ def init_db():
           ON UPDATE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
+
+    # Add nonce column if it doesn't exist
+    try:
+        cursor.execute("SELECT nonce FROM pending_challenges LIMIT 1")
+    except:
+        cursor.execute("ALTER TABLE pending_challenges ADD COLUMN nonce BLOB NOT NULL AFTER created_at")
 
     # 4) files
     cursor.execute("""
@@ -267,22 +275,26 @@ class UserDB:
 
     def add_challenge(self, user_id, operation, challenge: bytes):
         self.ensure_connection()
+        # Delete any existing challenges for this user/operation
         self.cursor.execute(
             "DELETE FROM pending_challenges WHERE user_id = %s AND operation = %s",
             (user_id, operation)
         )
+        # Add timestamp and nonce to the challenge data
+        timestamp = datetime.datetime.utcnow()
+        nonce = secrets.token_bytes(16)  # Add a random nonce
         sql = """
             INSERT INTO pending_challenges
-                (user_id, operation, challenge, created_at)
-            VALUES (%s, %s, %s, UTC_TIMESTAMP())
+                (user_id, operation, challenge, created_at, nonce)
+            VALUES (%s, %s, %s, %s, %s)
         """
-        self.cursor.execute(sql, (user_id, operation, challenge))
+        self.cursor.execute(sql, (user_id, operation, challenge, timestamp, nonce))
         self.conn.commit()
 
-    def get_pending_challenge(self, user_id, operation, expiry_seconds=300):
+    def get_pending_challenge(self, user_id, operation, expiry_seconds=30):  # Reduced from 300 to 30 seconds
         self.ensure_connection()
         sql = """
-            SELECT challenge, created_at
+            SELECT challenge, created_at, nonce
             FROM pending_challenges
             WHERE user_id = %s
               AND operation = %s
@@ -297,11 +309,19 @@ class UserDB:
         
         challenge = row['challenge'] if isinstance(row, dict) else row[0]
         created_at = row['created_at'] if isinstance(row, dict) else row[1]
+        nonce = row['nonce'] if isinstance(row, dict) else row[2]
+        
         logging.debug(f"Found challenge for user_id={user_id} operation={operation}")
         logging.debug(f"Challenge created at: {created_at}")
         logging.debug(f"Current time: {datetime.datetime.utcnow()}")
         logging.debug(f"Challenge age: {(datetime.datetime.utcnow() - created_at).total_seconds()} seconds")
-        return challenge
+        
+        # Return both challenge and nonce
+        return {
+            'challenge': challenge,
+            'nonce': nonce,
+            'timestamp': created_at
+        }
 
     def delete_challenge(self, user_id):
         self.ensure_connection()

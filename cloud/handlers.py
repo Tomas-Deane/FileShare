@@ -130,14 +130,22 @@ def authenticate_handler(req: AuthenticateRequest, db: models.UserDB):
     user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
     stored = db.get_pending_challenge(user_id, "login")
-    if stored is None or provided != stored:
+    if stored is None or provided != stored['challenge']:
         logging.warning(f"No valid pending challenge for user_id={user_id} (login)")
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
+    # Verify the challenge hasn't expired
+    challenge_age = (datetime.datetime.utcnow() - stored['timestamp']).total_seconds()
+    if challenge_age > 30:  # 30 second expiry
+        logging.warning(f"Challenge expired for user_id={user_id} (login) - age: {challenge_age}s")
+        raise HTTPException(status_code=400, detail="Challenge expired")
+
     signature = base64.b64decode(req.signature)
     try:
+        # Sign both challenge and nonce to prevent replay attacks
+        message = provided + stored['nonce']
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
-            .verify(signature, provided)
+            .verify(signature, message)
         logging.info(f"Signature valid for user_id={user_id} (login)")
         db.delete_challenge(user_id)
         
