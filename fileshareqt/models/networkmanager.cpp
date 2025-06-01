@@ -7,6 +7,10 @@
 #include <QFile>
 #include <QDir>
 #include <QUrl>
+#include <QNetworkAccessManager>
+#include <QNetworkRequest>
+#include <QNetworkReply>
+#include <QEventLoop>
 
 // POSIX sockets
 #include <netdb.h>
@@ -17,6 +21,7 @@
 NetworkManager::NetworkManager(QObject *parent)
     : INetworkManager(parent)
     , ssl_ctx(nullptr)
+    , m_networkManager(new QNetworkAccessManager(this))
 {
     initOpenSSL();
 }
@@ -161,83 +166,51 @@ QByteArray NetworkManager::postJson(const QString &host,
     ok = false;
     Logger::log(QString("postJson to https://%1:%2%3").arg(host).arg(port).arg(path));
 
-    int sock = -1;
-    QString err;
-    SSL *ssl = openSslConnection(host, port, sock, err);
-    if (!ssl) {
-        emit networkError(err);
-        return {};
-    }
+    // Construct URL safely using Qt's URL handling
+    QUrl url;
+    url.setScheme("https");
+    url.setHost(host);
+    url.setPort(port);
+    url.setPath(path);
 
-    // URL encode the path to prevent header injection
-    QByteArray encodedPath = QUrl::toPercentEncoding(path, "", "/");
-    if (encodedPath.isEmpty()) {
-        encodedPath = "/";
-    }
+    // Create request with proper headers
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    request.setHeader(QNetworkRequest::UserAgentHeader, "FileShareQt");
 
-    // Validate host to prevent header injection
-    QByteArray encodedHost = host.toUtf8();
-    if (encodedHost.contains('\r') || encodedHost.contains('\n')) {
-        message = "Invalid host header";
-        emit networkError(message);
-        return {};
-    }
-
+    // Send request
     QByteArray body = QJsonDocument(obj).toJson(QJsonDocument::Compact);
-    QByteArray req =
-        "POST " + encodedPath + " HTTP/1.1\r\n"
-        "Host: " + encodedHost + "\r\n"
-        "Content-Type: application/json\r\n"
-        "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
-        "Connection: close\r\n\r\n" + body;
+    QNetworkReply *reply = m_networkManager->post(request, body);
 
-    if (SSL_write(ssl, req.constData(), req.size()) <= 0) {
-        SSL_shutdown(ssl);
-        SSL_free(ssl);
-        ::close(sock);
-        message = "Failed to send HTTP request";
-        emit connectionStatusChanged(false);
+    // Wait for response
+    QEventLoop loop;
+    connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    // Handle response
+    if (reply->error() != QNetworkReply::NoError) {
+        message = reply->errorString();
         emit networkError(message);
+        reply->deleteLater();
         return {};
     }
 
-    QByteArray resp;
-    char buf[4096];
-    int len;
-    while ((len = SSL_read(ssl, buf, sizeof(buf))) > 0) {
-        resp.append(buf, len);
-    }
+    QByteArray response = reply->readAll();
+    reply->deleteLater();
 
-    SSL_shutdown(ssl);
-    SSL_free(ssl);
-    ::close(sock);
-
-    int header_end = resp.indexOf("\r\n\r\n");
-    if (header_end < 0) {
-        message = "Invalid HTTP response";
-        emit networkError(message);
-        return {};
-    }
-
-    QByteArray header = resp.left(header_end);
-    QList<QByteArray> lines = header.split('\n');
-    QStringList parts = QString::fromUtf8(lines[0].trimmed()).split(' ');
-    int statusCode = parts.size() > 1 ? parts[1].toInt() : -1;
-    QByteArray bodyResp = resp.mid(header_end + 4);
-
-    if (statusCode < 200 || statusCode >= 300) {
-        QJsonDocument j = QJsonDocument::fromJson(bodyResp);
-        if (j.isObject() && j.object().contains("detail")) {
-            message = j.object().value("detail").toString();
-        } else {
-            message = QString("HTTP error %1").arg(statusCode);
+    // Parse response
+    QJsonDocument doc = QJsonDocument::fromJson(response);
+    if (doc.isObject()) {
+        QJsonObject obj = doc.object();
+        if (obj.contains("status") && obj["status"].toString() == "ok") {
+            ok = true;
+            message = obj["message"].toString();
+        } else if (obj.contains("detail")) {
+            message = obj["detail"].toString();
         }
-        return {};
     }
 
-    ok = true;
-    message = QString::fromUtf8(bodyResp);
-    return bodyResp;
+    return response;
 }
 
 void NetworkManager::signup(const QJsonObject &payload)
