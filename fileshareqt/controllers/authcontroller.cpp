@@ -56,10 +56,10 @@ void AuthController::signup(const QString &username, const QString &password)
     // generate salt
     QByteArray salt = cryptoService->randomBytes(16);
 
-    // derive PDK
+    // derive PDK with high security parameters
     sessionPdk = cryptoService->deriveKey(password, salt,
-                                          ICryptoService::OPSLIMIT_MODERATE,
-                                          ICryptoService::MEMLIMIT_MODERATE);
+                                          ICryptoService::OPSLIMIT_HIGH,
+                                          ICryptoService::MEMLIMIT_HIGH);
 
     // generate keypair
     QByteArray pubKey, secKey;
@@ -84,8 +84,8 @@ void AuthController::signup(const QString &username, const QString &password)
     QJsonObject req{
         { "username",           username },
         { "salt",               QString::fromUtf8(salt.toBase64()) },
-        { "argon2_opslimit",    int(ICryptoService::OPSLIMIT_MODERATE) },
-        { "argon2_memlimit",    int(ICryptoService::MEMLIMIT_MODERATE) },
+        { "argon2_opslimit",    int(ICryptoService::OPSLIMIT_HIGH) },
+        { "argon2_memlimit",    int(ICryptoService::MEMLIMIT_HIGH) },
         { "public_key",         QString::fromUtf8(pubKey.toBase64()) },
         { "encrypted_privkey",  QString::fromUtf8(encryptedSK.toBase64()) },
         { "privkey_nonce",      QString::fromUtf8(skNonce.toBase64()) },

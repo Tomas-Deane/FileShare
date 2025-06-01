@@ -10,9 +10,9 @@ class ICryptoService
 public:
     virtual ~ICryptoService() = default;
 
-    // default Argon2id parameters (matches libsodiums moderate settings)
-    const static quint64 OPSLIMIT_MODERATE = 3;
-    const static quint64 MEMLIMIT_MODERATE = 268435456; // 256 MiB
+    // High security Argon2id parameters (matches libsodium's high settings)
+    const static quint64 OPSLIMIT_HIGH = 4;  // Increased from 3
+    const static quint64 MEMLIMIT_HIGH = 1073741824; // 1 GiB (increased from 256 MiB)
 
     // Derive a key (e.g. PDK) from password+salt
     virtual QByteArray deriveKey(const QString &password,
@@ -30,7 +30,6 @@ public:
     // Get a fresh random AEAD key of length 32 bytes
     virtual QByteArray generateAeadKey() = 0;
 
-
     // Symmetric encryption (AEAD)
     virtual QByteArray encrypt(const QByteArray &plaintext,
                                const QByteArray &key,
@@ -47,7 +46,6 @@ public:
 
     // Securely zero-out sensitive data
     virtual void secureZeroMemory(QByteArray &data) = 0;
-
 };
 
 #endif // ICRYPTOSERVICE_H

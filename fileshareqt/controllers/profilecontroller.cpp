@@ -1,5 +1,6 @@
 #include "profilecontroller.h"
 #include "authcontroller.h"
+#include "logger.h"
 
 ProfileController::ProfileController(INetworkManager *netMgr,
                                      AuthController  *authController,
@@ -39,10 +40,10 @@ void ProfileController::changePassword(const QString &newPassword)
     }
     m_pendingNewPassword = newPassword;
 
-    // generate new salt + Argon2 params
+    // generate new salt + Argon2 params with high security settings
     m_pendingSalt     = m_cryptoService->randomBytes(16);
-    m_pendingOpsLimit = ICryptoService::OPSLIMIT_MODERATE;
-    m_pendingMemLimit = ICryptoService::MEMLIMIT_MODERATE;
+    m_pendingOpsLimit = ICryptoService::OPSLIMIT_HIGH;
+    m_pendingMemLimit = ICryptoService::MEMLIMIT_HIGH;
 
     // derive a brand‐new PDK
     QByteArray newPdk = m_cryptoService->deriveKey(
@@ -53,7 +54,7 @@ void ProfileController::changePassword(const QString &newPassword)
         );
 
     // re-encrypt both the long-term secrets under that new PDK
-    //    first, the user’s private signing key
+    //    first, the user's private signing key
     m_pendingEncryptedSK = m_cryptoService->encrypt(
         m_authController->getSessionSecretKey(),
         newPdk,
