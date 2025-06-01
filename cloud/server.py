@@ -67,7 +67,8 @@ def safe_request_log(req: Any) -> Dict[str, Any]:
         'encrypted_file', 'encrypted_file_key', 'encrypted_data',
         'challenge', 'signature', 'pre_key', 'IK_pub', 'SPK_pub',
         'SPK_signature', 'EK_pub', 'backup_nonce', 'file_nonce',
-        'dek_nonce', 'kek_nonce', 'privkey_nonce'
+        'dek_nonce', 'kek_nonce', 'privkey_nonce', 'encrypted_backup',
+        'encrypted_dek', 'encrypted_privkey', 'encrypted_kek'
     }
     
     # Create safe copy without sensitive data
@@ -79,6 +80,10 @@ def safe_request_log(req: Any) -> Dict[str, Any]:
             safe_data[key] = '[REDACTED]'
             
     return safe_data
+
+def safe_log(level: int, msg: str):
+    """Safely log a message at the specified level."""
+    logger.log(level, msg)
 
 # ─── Rate Limiting Setup ───────────────────────────────────────────────────────
 class RateLimiter:

@@ -18,6 +18,27 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
+QJsonObject safeRequestLog(const QJsonObject &obj) {
+    QJsonObject safe;
+    QStringList sensitiveFields = {
+        "password", "salt", "nonce", "encrypted_privkey", "encrypted_kek",
+        "encrypted_file", "encrypted_file_key", "encrypted_data",
+        "challenge", "signature", "pre_key", "IK_pub", "SPK_pub",
+        "SPK_signature", "EK_pub", "backup_nonce", "file_nonce",
+        "dek_nonce", "kek_nonce", "privkey_nonce", "encrypted_backup",
+        "encrypted_dek", "encrypted_privkey", "encrypted_kek"
+    };
+    
+    for (auto it = obj.begin(); it != obj.end(); ++it) {
+        if (sensitiveFields.contains(it.key())) {
+            safe[it.key()] = "[REDACTED]";
+        } else {
+            safe[it.key()] = it.value();
+        }
+    }
+    return safe;
+}
+
 NetworkManager::NetworkManager(QObject *parent)
     : INetworkManager(parent)
     , ssl_ctx(nullptr)
@@ -216,12 +237,11 @@ QByteArray NetworkManager::postJson(const QString &host,
 void NetworkManager::signup(const QJsonObject &payload)
 {
     Logger::log("Sending signup request: " +
-                QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+                QString::fromUtf8(QJsonDocument(safeRequestLog(payload)).toJson(QJsonDocument::Compact)));
 
     bool ok = false;
     QString message;
     QByteArray resp = postJson("gobbler.info", 3210, "/signup", payload, ok, message);
-
     Logger::log("Received signup response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit signupResult(false, message);
@@ -229,7 +249,7 @@ void NetworkManager::signup(const QJsonObject &payload)
     }
     auto obj = QJsonDocument::fromJson(resp).object();
     if (obj["status"].toString() == "ok") {
-        emit signupResult(true, obj["status"].toString());
+        emit signupResult(true, obj["message"].toString());
     } else {
         emit signupResult(false, obj["detail"].toString());
     }
@@ -237,15 +257,14 @@ void NetworkManager::signup(const QJsonObject &payload)
 
 void NetworkManager::login(const QString &username)
 {
-    QJsonObject req{{"username", username}};
     Logger::log("Sending login request for user '" + username + "'");
+    QJsonObject req{{"username", username}};
     Logger::log("Login request payload: " +
-                QString::fromUtf8(QJsonDocument(req).toJson(QJsonDocument::Compact)));
+                QString::fromUtf8(QJsonDocument(safeRequestLog(req)).toJson(QJsonDocument::Compact)));
 
     bool ok = false;
     QString message;
     QByteArray resp = postJson("gobbler.info", 3210, "/login", req, ok, message);
-
     Logger::log("Received login response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit loginResult(false, message);
@@ -275,7 +294,7 @@ void NetworkManager::requestChallenge(const QString &username,
     Logger::log(QString("Requesting challenge for '%1' op='%2'")
                     .arg(username).arg(operation));
     Logger::log("Challenge request payload: " +
-                QString::fromUtf8(QJsonDocument(req).toJson(QJsonDocument::Compact)));
+                QString::fromUtf8(QJsonDocument(safeRequestLog(req)).toJson(QJsonDocument::Compact)));
 
     bool ok = false;
     QString message;
@@ -308,7 +327,7 @@ void NetworkManager::authenticate(const QString &username,
     };
     Logger::log("Sending authenticate request for user '" + username + "'");
     Logger::log("Authenticate request payload: " +
-                QString::fromUtf8(QJsonDocument(req).toJson(QJsonDocument::Compact)));
+                QString::fromUtf8(QJsonDocument(safeRequestLog(req)).toJson(QJsonDocument::Compact)));
 
     bool ok = false;
     QString message;
