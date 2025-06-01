@@ -21,7 +21,11 @@ import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, g
 import { storage } from '../utils/storage';
 import sodium from 'libsodium-wrappers-sumo';
 import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithAESGCM } from '../utils/crypto';
-
+// add the new, modular dashboard parts
+import { HomeTab } from '../components/dashboard/HomeTab';
+import { FilesTab } from '../components/dashboard/FilesTab';
+import { UsersTab } from '../components/dashboard/UsersTab';
+import { ProfileTab } from '../components/dashboard/ProfileTab';
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
   background: 'rgba(0, 0, 0, 0.8)',
@@ -1466,502 +1470,48 @@ const Dashboard: React.FC = () => {
             </Box>
 
             {/* Content Area */}
-            {activeTab === 'home' ? (
-              <>
-                {/* Verified Users Section */}
-                <DashboardCard sx={{ mb: 3 }}>
-                  <Typography variant="h6" sx={{ color: '#00ffff', mb: 2 }}>
-                    Users
-                  </Typography>
-                  <Grid container spacing={2}>
-                    {users
-                      .slice(0, 6)
-                      .map((user) => (
-                        <Grid item xs={4} sm={2} key={user.id}>
-                          <Paper
-                            sx={{
-                              p: 2,
-                              textAlign: 'center',
-                              background: 'rgba(0,0,0,0.6)',
-                            }}
-                          >
-                            <PersonIcon sx={{ fontSize: 32, color: '#00ff00' }} />
-                            <Typography
-                              sx={{ mt: 1, color: '#00ffff', fontSize: '0.875rem' }}
-                            >
-                              {user.username}
-                            </Typography>
-                          </Paper>
-                        </Grid>
-                      ))}
-                  </Grid>
-                </DashboardCard>
+            {activeTab === 'home' && (
+              <HomeTab
+                users={users}
+                files={files}
+              />
+            )}
 
-                {/* Recent Files Section */}
-                <DashboardCard>
-                  <Typography variant="h6" sx={{ color: '#00ffff', mb: 2 }}>
-                    Recent Files
-                  </Typography>
-                  <List sx={{ maxHeight: 400, overflowY: 'auto' }}>
-                    {files
-                      .slice()
-                      .sort((a, b) => b.date.getTime() - a.date.getTime())
-                      .slice(0, 10)
-                      .map((f) => (
-                        <ListItem
-                          key={f.id}
-                          sx={{
-                            mb: 1,
-                            border: '1px solid rgba(0,255,0,0.2)',
-                            borderRadius: 1,
-                            transition: 'all 0.3s ease',
-                            '&:hover': {
-                              border: '1px solid rgba(0,255,0,0.4)',
-                              backgroundColor: 'rgba(0,255,0,0.05)',
-                              boxShadow: '0 0 20px rgba(0,255,0,0.2)',
-                            },
-                          }}
-                        >
-                          <ListItemIcon>
-                            <FolderIcon sx={{ color: '#00ff00' }} />
-                          </ListItemIcon>
-                          <ListItemText
-                            primary={f.name}
-                            secondary={`${f.type.toUpperCase()} • ${f.size} • ${f.date.toLocaleDateString('en-GB')} ${f.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
-                            primaryTypographyProps={{
-                              sx: { color: '#00ffff', fontWeight: 'bold' },
-                            }}
-                            secondaryTypographyProps={{
-                              sx: { color: 'rgba(0,255,0,0.7)' },
-                            }}
-                          />
-                        </ListItem>
-                      ))}
-                  </List>
-                </DashboardCard>
-              </>
-            ) : activeTab === 'files' ? (
-              <>
-                {/* My Files Card */}
-                <DashboardCard sx={{ mb: 3 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      color: '#00ffff',
-                      textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
-                    }}
-                  >
-                      My Files
-                  </Typography>
-                  <CyberButton
-                    startIcon={<UploadIcon />}
-                    onClick={() => setOpenUpload(true)}
-                    sx={{ width: 180, fontSize: '1rem', height: 48, px: 0 }}
-                  >
-                    Upload File
-                  </CyberButton>
-                </Box>
+            {activeTab === 'files' && (
+              <FilesTab
+                files={files}
+                sharedFiles={sharedFiles}
+                loading={loading}
+                loadingSharedFiles={loadingSharedFiles}
+                error={error}
+                searchQuery={searchQuery}
+                onUpload={() => setOpenUpload(true)}
+                onShare={handleShare}
+                onDownload={handleDownload}
+                onDelete={handleDelete}
+                onPreview={handlePreview}
+                onRefreshSharedFiles={refreshSharedFiles}
+              />
+            )}
 
-                {loading ? (
-                  <Box sx={{ textAlign: 'center', py: 4 }}>
-                    <Typography sx={{ color: '#00ff00' }}>Loading files...</Typography>
-                  </Box>
-                ) : error ? (
-                  <Alert severity="error" sx={{ bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
-                    {error}
-                  </Alert>
-                ) : files.length === 0 ? (
-                  <Box sx={{ textAlign: 'center', py: 4 }}>
-                    <Typography sx={{ color: '#00ff00' }}>No files found. Upload your first file!</Typography>
-                  </Box>
-                ) : (
-                  <List>
-                    {files
-                      .filter(file => file.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                      .map((file) => (
-                        <ListItem
-                          key={file.id}
-                          sx={{
-                            border: '1px solid rgba(0, 255, 0, 0.2)',
-                            borderRadius: 1,
-                            mb: 1,
-                            '&:hover': {
-                              border: '1px solid rgba(0, 255, 0, 0.4)',
-                              backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                            },
-                          }}
-                        >
-                          <ListItemIcon>
-                            <FolderIcon sx={{ color: '#00ff00' }} />
-                          </ListItemIcon>
-                          <ListItemText
-                            primary={file.name}
-                            secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
-                            primaryTypographyProps={{
-                              sx: { color: '#00ffff', fontWeight: 'bold' },
-                            }}
-                            secondaryTypographyProps={{
-                              sx: { color: 'rgba(0, 255, 0, 0.7)' },
-                            }}
-                          />
-                          <Box sx={{ display: 'flex', gap: 1 }}>
-                            <Tooltip title="Share">
-                              <IconButton onClick={() => handleShare(file.id)} sx={{ color: '#00ff00' }}>
-                                <ShareIcon />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Download">
-                              <IconButton onClick={() => handleDownload(file.id, false)} sx={{ color: '#00ff00' }}>
-                                <DownloadIcon />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Delete">
-                              <IconButton onClick={() => handleDelete(file.id)} sx={{ color: '#00ff00' }}>
-                                <DeleteIcon />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Preview">
-                              <IconButton onClick={() => handlePreview(file.id)} sx={{ color: '#00ff00' }}>
-                                <VisibilityIcon />
-                              </IconButton>
-                            </Tooltip>
-                          </Box>
-                        </ListItem>
-                      ))}
-                  </List>
-                )}
-                </DashboardCard>
+            {activeTab === 'users' && (
+              <UsersTab
+                users={users}
+                verifiedUsers={getVerifiedUsers()}
+                loadingUsers={loadingUsers}
+                userError={userError}
+                userSearchQuery={userSearchQuery}
+                onUserSearchChange={setUserSearchQuery}
+                onVerifyClick={handleVerifyClick}
+                onRefreshVerifiedUsers={refreshUsers}
+              />
+            )}
 
-                {/* Shared Files Card */}
-                <DashboardCard>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                    <Typography
-                      variant="h6"
-                      sx={{
-                        color: '#00ffff',
-                        textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
-                      }}
-                    >
-                      Files Shared With You
-                    </Typography>
-                    <IconButton 
-                      onClick={refreshSharedFiles} 
-                      sx={{ color: '#00ff00' }}
-                      disabled={loadingSharedFiles}
-                    >
-                      <RefreshIcon />
-                    </IconButton>
-                  </Box>
-                  {loadingSharedFiles ? (
-                    <Box sx={{ textAlign: 'center', py: 4 }}>
-                      <Typography sx={{ color: '#00ff00' }}>Loading shared files...</Typography>
-                    </Box>
-                  ) : sharedFiles.length === 0 ? (
-                    <Box sx={{ textAlign: 'center', py: 4 }}>
-                      <Typography sx={{ color: '#00ff00' }}>No files have been shared with you yet.</Typography>
-                    </Box>
-                  ) : (
-                    <List>
-                      {sharedFiles
-                        .filter(file => file.filename.toLowerCase().includes(searchQuery.toLowerCase()))
-                        .map((file) => (
-                          <ListItem
-                            key={file.id}
-                            sx={{
-                              border: '1px solid rgba(0, 255, 0, 0.2)',
-                              borderRadius: 1,
-                              mb: 1,
-                              '&:hover': {
-                                border: '1px solid rgba(0, 255, 0, 0.4)',
-                                backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                              },
-                            }}
-                          >
-                            <ListItemIcon>
-                              <FolderIcon sx={{ color: '#00ff00' }} />
-                            </ListItemIcon>
-                            <ListItemText
-                              primary={file.filename}
-                              secondary={`Shared by ${file.shared_by} • ${new Date(file.created_at).toLocaleDateString()}`}
-                              primaryTypographyProps={{
-                                sx: { color: '#00ffff', fontWeight: 'bold' },
-                              }}
-                              secondaryTypographyProps={{
-                                sx: { color: 'rgba(0, 255, 0, 0.7)' },
-                              }}
-                            />
-                            <Box sx={{ display: 'flex', gap: 1 }}>
-                              <Tooltip title="Download">
-                                <IconButton onClick={() => handleDownload(file.id, true)} sx={{ color: '#00ff00' }}>
-                                  <DownloadIcon />
-                                </IconButton>
-                              </Tooltip>
-                              <Tooltip title="Preview">
-                                <IconButton onClick={() => handlePreview(file.id)} sx={{ color: '#00ff00' }}>
-                                  <VisibilityIcon />
-                                </IconButton>
-                              </Tooltip>
-                            </Box>
-                          </ListItem>
-                        ))}
-                    </List>
-                  )}
-              </DashboardCard>
-              </>
-            ) : activeTab === 'users' ? (
-              <Grid container spacing={3}>
-                {/* Search Users Card */}
-                <Grid item xs={12} md={6}>
-                  <DashboardCard>
-                    <Box sx={{ mb: 3 }}>
-                      <Typography
-                        variant="h6"
-                        sx={{
-                          color: '#00ffff',
-                          textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
-                          mb: 2,
-                        }}
-                      >
-                        Search Users
-                      </Typography>
-                      <SearchField
-                        fullWidth
-                        placeholder="Search users..."
-                        value={userSearchQuery}
-                        onChange={(e) => setUserSearchQuery(e.target.value)}
-                        InputProps={{
-                          startAdornment: (
-                            <InputAdornment position="start">
-                              <SearchIcon sx={{ color: '#00ff00' }} />
-                            </InputAdornment>
-                          ),
-                        }}
-                      />
-                    </Box>
-                    {loadingUsers ? (
-                      <Box sx={{ textAlign: 'center', py: 4 }}>
-                        <Typography sx={{ color: '#00ff00' }}>Loading users...</Typography>
-                      </Box>
-                    ) : userError ? (
-                      <Alert severity="error" sx={{ bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
-                        {userError}
-                      </Alert>
-                    ) : users.length === 0 ? (
-                      <Box sx={{ textAlign: 'center', py: 4 }}>
-                        <Typography sx={{ color: '#00ff00' }}>
-                          {userSearchQuery ? 'No users found.' : 'Start typing to search users...'}
-                        </Typography>
-                      </Box>
-                    ) : (
-                      <List>
-                        {users.map((user) => (
-                          <ListItem
-                            key={user.id}
-                            sx={{
-                              border: '1px solid rgba(0, 255, 0, 0.2)',
-                              borderRadius: 1,
-                              mb: 1,
-                              display: 'flex',
-                              alignItems: 'center',
-                              '&:hover': {
-                                border: '1px solid rgba(0, 255, 0, 0.4)',
-                                backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                              },
-                            }}
-                          >
-                            <ListItemIcon>
-                              <PersonIcon sx={{ color: '#00ff00' }} />
-                            </ListItemIcon>
-                            <ListItemText
-                              primary={user.username}
-                              primaryTypographyProps={{
-                                sx: { color: '#00ffff', fontWeight: 'bold' },
-                              }}
-                            />
-                            <Box sx={{ ml: 'auto' }}>
-                              <Button
-                                variant="contained"
-                                color="primary"
-                                onClick={() => handleVerifyClick({ id: user.id, username: user.username })}
-                                size="small"
-                                sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
-                              >
-                                Verify
-                              </Button>
-                            </Box>
-                          </ListItem>
-                        ))}
-                      </List>
-                    )}
-                  </DashboardCard>
-                </Grid>
-
-                {/* Verified Users Card */}
-                <Grid item xs={12} md={6}>
-                  <DashboardCard>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                      <Typography
-                        variant="h6"
-                        sx={{
-                          color: '#00ffff',
-                          textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
-                        }}
-                      >
-                        Verified Users
-                      </Typography>
-                      <IconButton 
-                        onClick={() => {
-                          // Force a re-render of verified users
-                          setUsers([...users]);
-                        }} 
-                        sx={{ color: '#00ff00' }}
-                      >
-                        <RefreshIcon />
-                      </IconButton>
-                    </Box>
-                    {(() => {
-                      const verifiedUsers = getVerifiedUsers();
-                      return verifiedUsers.length === 0 ? (
-                        <Box sx={{ textAlign: 'center', py: 4 }}>
-                          <Typography sx={{ color: '#00ff00' }}>
-                            No verified users yet. Search and verify users to start sharing files.
-                          </Typography>
-                        </Box>
-                      ) : (
-                        <List>
-                          {verifiedUsers.map((user) => (
-                            <ListItem
-                              key={user.username}
-                              sx={{
-                                border: '1px solid rgba(0, 255, 0, 0.2)',
-                                borderRadius: 1,
-                                mb: 1,
-                                '&:hover': {
-                                  border: '1px solid rgba(0, 255, 0, 0.4)',
-                                  backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                                },
-                              }}
-                            >
-                              <ListItemIcon>
-                                <VerifiedUserIcon sx={{ color: '#00ff00' }} />
-                              </ListItemIcon>
-                              <ListItemText
-                                primary={user.username}
-                                secondary={`Verified on ${new Date(user.verifiedAt).toLocaleDateString()}`}
-                                primaryTypographyProps={{
-                                  sx: { color: '#00ffff', fontWeight: 'bold' },
-                                }}
-                                secondaryTypographyProps={{
-                                  sx: { color: 'rgba(0, 255, 0, 0.7)' },
-                                }}
-                              />
-                            </ListItem>
-                          ))}
-                        </List>
-                      );
-                    })()}
-                  </DashboardCard>
-                </Grid>
-              </Grid>
-            ) : (
-              <DashboardCard>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      color: '#00ffff',
-                      textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
-                    }}
-                  >
-                    Profile
-                  </Typography>
-                  <CyberButton
-                    startIcon={<SettingsIcon />}
-                    onClick={() => setOpenProfileSettings(true)}
-                  >
-                    Settings
-                  </CyberButton>
-                </Box>
-
-                <Grid container spacing={3}>
-                  <Grid item xs={12} md={6}>
-                    <Paper
-                      sx={{
-                        p: 2,
-                        background: 'rgba(0, 0, 0, 0.5)',
-                        border: '1px solid rgba(0, 255, 0, 0.2)',
-                        borderRadius: 1,
-                      }}
-                    >
-                      <Typography
-                        sx={{
-                          color: '#00ffff',
-                          mb: 1,
-                          fontFamily: 'monospace',
-                        }}
-                      >
-                        Storage Usage
-                      </Typography>
-                      <Box sx={{ mb: 1 }}>
-                        <Typography
-                          sx={{
-                            color: '#00ff00',
-                            fontFamily: 'monospace',
-                          }}
-                        >
-                          {profileData.storageUsed} / {profileData.storageLimit}
-                        </Typography>
-                      </Box>
-                      <Box
-                        sx={{
-                          height: 8,
-                          background: 'rgba(0, 255, 0, 0.1)',
-                          borderRadius: 4,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <Box
-                          sx={{
-                            height: '100%',
-                            width: '25%',
-                            background: 'linear-gradient(90deg, #00ff00, #00ffff)',
-                            borderRadius: 4,
-                          }}
-                        />
-                      </Box>
-                    </Paper>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <Paper
-                      sx={{
-                        p: 2,
-                        background: 'rgba(0, 0, 0, 0.5)',
-                        border: '1px solid rgba(0, 255, 0, 0.2)',
-                        borderRadius: 1,
-                      }}
-                    >
-                      <Typography
-                        sx={{
-                          color: '#00ffff',
-                          mb: 1,
-                          fontFamily: 'monospace',
-                        }}
-                      >
-                        Last Login
-                      </Typography>
-                      <Typography
-                        sx={{
-                          color: '#00ff00',
-                          fontFamily: 'monospace',
-                        }}
-                      >
-                        {profileData.lastLogin}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                </Grid>
-              </DashboardCard>
+            {activeTab === 'profile' && (
+              <ProfileTab
+                profileData={profileData}
+                onSettingsClick={() => setOpenProfileSettings(true)}
+              />
             )}
           </Container>
         </Box>
