@@ -5,6 +5,7 @@ import time
 from contextlib import asynccontextmanager
 from collections import defaultdict
 from datetime import datetime, timedelta
+from typing import Any, Dict
 
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.exceptions import HTTPException as StarletteHTTPException
@@ -48,6 +49,36 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s: %(message)s'
 )
 logger = logging.getLogger("fileshare")
+
+def safe_request_log(req: Any) -> Dict[str, Any]:
+    """
+    Safely log request data by excluding sensitive fields.
+    Returns a dict with only non-sensitive fields for logging.
+    """
+    if not req:
+        return {}
+        
+    # Convert to dict if it's a Pydantic model
+    data = req.model_dump() if hasattr(req, 'model_dump') else req
+    
+    # Fields that should never be logged
+    sensitive_fields = {
+        'password', 'salt', 'nonce', 'encrypted_privkey', 'encrypted_kek',
+        'encrypted_file', 'encrypted_file_key', 'encrypted_data',
+        'challenge', 'signature', 'pre_key', 'IK_pub', 'SPK_pub',
+        'SPK_signature', 'EK_pub', 'backup_nonce', 'file_nonce',
+        'dek_nonce', 'kek_nonce', 'privkey_nonce'
+    }
+    
+    # Create safe copy without sensitive data
+    safe_data = {}
+    for key, value in data.items():
+        if key not in sensitive_fields:
+            safe_data[key] = value
+        else:
+            safe_data[key] = '[REDACTED]'
+            
+    return safe_data
 
 # ─── Rate Limiting Setup ───────────────────────────────────────────────────────
 class RateLimiter:
@@ -168,9 +199,9 @@ async def health():
 # ─── Async endpoints ───────────────────────────────────────────────────────────
 @app.post("/signup")
 async def signup(req: SignupRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"SignupRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"Signup request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.signup_handler, req, db)
-    logger.debug(f"Signup response: {resp}")
+    safe_log(logging.DEBUG, f"Signup response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/challenge")
@@ -180,9 +211,9 @@ async def challenge(
     _: None = Depends(rate_limit_ip),
     __: None = Depends(rate_limit_user)
 ):
-    logger.debug(f"ChallengeRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"Challenge request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.challenge_handler, req, db)
-    logger.debug(f"Challenge response: {resp}")
+    safe_log(logging.DEBUG, f"Challenge response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/login")
@@ -192,13 +223,13 @@ async def login(
     _: None = Depends(rate_limit_ip),
     __: None = Depends(rate_limit_user)
 ):
-    logger.debug(f"LoginRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"Login request: {safe_request_log(req)}")
     # Step 1: generate challenge
     challenge_req = ChallengeRequest(username=req.username, operation="login")
     chal = await run_in_threadpool(handlers.challenge_handler, challenge_req, db)
     # Step 2: continue login
     full = await run_in_threadpool(handlers.login_handler_continue, req, db, chal["nonce"])
-    logger.debug(f"Login response: {full}")
+    safe_log(logging.DEBUG, f"Login response: {safe_request_log(full)}")
     return full
 
 @app.post("/authenticate")
@@ -208,140 +239,136 @@ async def authenticate(
     _: None = Depends(rate_limit_ip),
     __: None = Depends(rate_limit_user)
 ):
-    logger.debug(f"AuthenticateRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"Authenticate request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.authenticate_handler, req, db)
-    logger.debug(f"Authenticate response: {resp}")
+    safe_log(logging.DEBUG, f"Authenticate response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/change_username")
 async def change_username(req: ChangeUsernameRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"ChangeUsernameRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"ChangeUsername request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.change_username_handler, req, db)
-    logger.debug(f"ChangeUsername response: {resp}")
+    safe_log(logging.DEBUG, f"ChangeUsername response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/change_password")
 async def change_password(req: ChangePasswordRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"ChangePasswordRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"ChangePassword request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.change_password_handler, req, db)
-    logger.debug(f"ChangePassword response: {resp}")
+    safe_log(logging.DEBUG, f"ChangePassword response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/upload_file")
 async def upload_file(req: UploadRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"UploadRequest body: {req.model_dump_json(exclude={'encrypted_file'})}")
+    safe_log(logging.DEBUG, f"Upload request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.upload_file_handler, req, db)
-    logger.debug(f"UploadFile response: {resp}")
+    safe_log(logging.DEBUG, f"Upload response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/list_files")
 async def list_files(req: ListFilesRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"ListFilesRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"ListFiles request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.list_files_handler, req, db)
-    logger.debug(f"ListFiles response: {resp}")
+    safe_log(logging.DEBUG, f"ListFiles response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/download_file")
 async def download_file(req: DownloadFileRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"DownloadFileRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"Download request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.download_file_handler, req, db)
-    safe_resp = resp.copy()
-    safe_resp.pop("encrypted_file", None)
-    logger.debug(f"DownloadFile response: {safe_resp}")
+    safe_resp = safe_request_log(resp)
+    safe_log(logging.DEBUG, f"Download response: {safe_resp}")
     return resp
 
 @app.post("/delete_file")
 async def delete_file(req: DeleteFileRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"DeleteFileRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"Delete request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.delete_file_handler, req, db)
-    logger.debug(f"DeleteFile response: {resp}")
+    safe_log(logging.DEBUG, f"Delete response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/get_pre_key_bundle")
 async def get_prekey_bundle(req: GetPreKeyBundleRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"GetPreKeyBundleRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"GetPreKeyBundle request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.get_prekey_bundle_handler, req, db)
-    logger.debug(f"PreKeyBundle response: {resp}")
+    safe_log(logging.DEBUG, f"PreKeyBundle response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/add_pre_key_bundle")
 async def add_prekey_bundle(req: AddPreKeyBundleRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"AddPreKeyBundleRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"AddPreKeyBundle request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.add_prekey_bundle_handler, req, db)
-    logger.debug(f"AddPreKeyBundle response: {resp}")
+    safe_log(logging.DEBUG, f"AddPreKeyBundle response: {safe_request_log(resp)}")
     return resp
-
 
 @app.post("/opk")
 async def opk(req: GetOPKRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"GetOPKRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"GetOPK request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.opk_handler, req, db)
-    logger.debug(f"OPK response: {resp}")
+    safe_log(logging.DEBUG, f"OPK response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/add_opks")
 async def add_opks(req: AddOPKsRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"AddOPKsRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"AddOPKs request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.add_opks_handler, req, db)
-    logger.debug(f"AddOPKs response: {resp}")
+    safe_log(logging.DEBUG, f"AddOPKs response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/share_file")
 async def share_file(req: ShareFileRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"ShareFileRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"ShareFile request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.share_file_handler, req, db)
-    logger.debug(f"ShareFile response: {resp}")
+    safe_log(logging.DEBUG, f"ShareFile response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/remove_shared_file")
 async def remove_shared_file(req: RemoveSharedFileRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"RemoveSharedFileRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"RemoveSharedFile request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.remove_shared_file_handler, req, db)
-    logger.debug(f"RemoveSharedFile response: {resp}")
+    safe_log(logging.DEBUG, f"RemoveSharedFile response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/list_shared_files")
 async def list_shared_files(req: ListSharedFilesRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"ListSharedFilesRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"ListSharedFiles request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.list_shared_files_handler, req, db)
-    logger.debug(f"ListSharedFiles response: {resp}")
+    safe_log(logging.DEBUG, f"ListSharedFiles response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/backup_tofu")
 async def backup_tofu(req: BackupTOFURequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"BackupTOFURequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"BackupTOFU request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.backup_tofu_keys_handler, req, db)
-    logger.debug(f"BackupTOFU response: {resp}")
+    safe_log(logging.DEBUG, f"BackupTOFU response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/get_backup_tofu")
 async def get_backup_tofu(req: GetBackupTOFURequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"GetBackupTOFURequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"GetBackupTOFU request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.get_backup_tofu_keys_handler, req, db)
-    logger.debug(f"GetBackupTOFU response: {resp}")
+    safe_log(logging.DEBUG, f"GetBackupTOFU response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/list_users")
 async def list_users(req: ListUsersRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"ListUsersRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"ListUsers request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.list_users_handler, req, db)
-    logger.debug(f"ListUsers response: {resp}")
+    safe_log(logging.DEBUG, f"ListUsers response: {safe_request_log(resp)}")
     return resp
 
-# New: list the files I have shared *to* a given user
 @app.post("/list_shared_to")
 async def list_shared_to(req: ListSharedToRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"ListSharedToRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"ListSharedTo request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.list_shared_to_handler, req, db)
-    logger.debug(f"ListSharedTo response: {resp}")
+    safe_log(logging.DEBUG, f"ListSharedTo response: {safe_request_log(resp)}")
     return resp
 
-# New: list the files shared *to me* *from* a given user
 @app.post("/list_shared_from")
 async def list_shared_from(req: ListSharedFromRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"ListSharedFromRequest body: {req.model_dump_json()}")
+    safe_log(logging.DEBUG, f"ListSharedFrom request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.list_shared_from_handler, req, db)
-    logger.debug(f"ListSharedFrom response: {resp}")
+    safe_log(logging.DEBUG, f"ListSharedFrom response: {safe_request_log(resp)}")
     return resp
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
