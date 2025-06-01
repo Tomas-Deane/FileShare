@@ -272,15 +272,16 @@ void NetworkManager::login(const QString &username)
     }
     auto obj = QJsonDocument::fromJson(resp).object();
     if (obj["status"].toString() == "challenge") {
+        // Only emit challenge with nonce, salt and parameters are stored locally
         emit loginChallenge(
             QByteArray::fromBase64(obj["nonce"].toString().toUtf8()),
-            QByteArray::fromBase64(obj["salt"].toString().toUtf8()),
-            obj["argon2_opslimit"].toInt(),
-            obj["argon2_memlimit"].toInt(),
-            QByteArray::fromBase64(obj["encrypted_privkey"].toString().toUtf8()),
-            QByteArray::fromBase64(obj["privkey_nonce"].toString().toUtf8()),
-            QByteArray::fromBase64(obj["encrypted_kek"].toString().toUtf8()),
-            QByteArray::fromBase64(obj["kek_nonce"].toString().toUtf8())
+            QByteArray(),  // Salt is stored locally
+            0,  // Opslimit is stored locally
+            0,  // Memlimit is stored locally
+            QByteArray(),  // Encrypted privkey is stored locally
+            QByteArray(),  // Privkey nonce is stored locally
+            QByteArray(),  // Encrypted KEK is stored locally
+            QByteArray()   // KEK nonce is stored locally
             );
     } else {
         emit loginResult(false, obj["detail"].toString());
@@ -340,6 +341,7 @@ void NetworkManager::authenticate(const QString &username,
     }
     auto obj = QJsonDocument::fromJson(resp).object();
     if (obj["status"].toString() == "ok") {
+        // Use locally stored data for login
         emit loginResult(true, obj["message"].toString());
     } else {
         emit loginResult(false, obj["detail"].toString());

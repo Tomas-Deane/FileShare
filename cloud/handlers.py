@@ -155,13 +155,7 @@ def authenticate_handler(req: AuthenticateRequest, db: models.UserDB):
     stored = db.get_pending_challenge(user_id, "login")
     if stored is None or provided != stored['challenge']:
         safe_log(logging.WARNING, f"No valid pending challenge for user_id={user_id} (login)")
-        raise HTTPException(status_code=400, detail="Invalid credentials")
-
-    # Verify the challenge hasn't expired
-    challenge_age = (datetime.datetime.utcnow() - stored['timestamp']).total_seconds()
-    if challenge_age > 30:  # 30 second expiry
-        safe_log(logging.WARNING, f"Challenge expired for user_id={user_id} (login) - age: {challenge_age}s")
-        raise HTTPException(status_code=400, detail="Challenge expired")
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
 
     signature = base64.b64decode(req.signature)
     try:
@@ -172,17 +166,10 @@ def authenticate_handler(req: AuthenticateRequest, db: models.UserDB):
         safe_log(logging.INFO, f"Signature valid for user_id={user_id} (login)")
         db.delete_challenge(user_id)
         
-        # Only return sensitive data after successful authentication
+        # Only return success message, no sensitive data
         return {
             "status": "ok",
-            "message": "login successful",
-            "salt": base64.b64encode(user["salt"]).decode(),
-            "argon2_opslimit": user["argon2_opslimit"],
-            "argon2_memlimit": user["argon2_memlimit"],
-            "encrypted_privkey": base64.b64encode(user["encrypted_privkey"]).decode(),
-            "privkey_nonce": base64.b64encode(user["privkey_nonce"]).decode(),
-            "encrypted_kek": base64.b64encode(user["encrypted_kek"]).decode(),
-            "kek_nonce": base64.b64encode(user["kek_nonce"]).decode()
+            "message": "login successful"
         }
     except InvalidSignature:
         safe_log(logging.WARNING, f"Bad signature for user_id={user_id} (login)")
