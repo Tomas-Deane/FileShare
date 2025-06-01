@@ -6,6 +6,7 @@
 #include <QStringList>
 #include <QFile>
 #include <QDir>
+#include <QUrl>
 
 // POSIX sockets
 #include <netdb.h>
@@ -168,13 +169,27 @@ QByteArray NetworkManager::postJson(const QString &host,
         return {};
     }
 
+    // URL encode the path to prevent header injection
+    QByteArray encodedPath = QUrl::toPercentEncoding(path, "", "/");
+    if (encodedPath.isEmpty()) {
+        encodedPath = "/";
+    }
+
+    // Validate host to prevent header injection
+    QByteArray encodedHost = host.toUtf8();
+    if (encodedHost.contains('\r') || encodedHost.contains('\n')) {
+        message = "Invalid host header";
+        emit networkError(message);
+        return {};
+    }
+
     QByteArray body = QJsonDocument(obj).toJson(QJsonDocument::Compact);
     QByteArray req =
-        "POST " + path.toUtf8() + " HTTP/1.1\r\n"
-                                  "Host: " + host.toUtf8() + "\r\n"
-                          "Content-Type: application/json\r\n"
-                          "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
-                                            "Connection: close\r\n\r\n" + body;
+        "POST " + encodedPath + " HTTP/1.1\r\n"
+        "Host: " + encodedHost + "\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
+        "Connection: close\r\n\r\n" + body;
 
     if (SSL_write(ssl, req.constData(), req.size()) <= 0) {
         SSL_shutdown(ssl);
