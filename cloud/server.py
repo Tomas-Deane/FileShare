@@ -89,6 +89,7 @@ class RateLimiter:
         self.window_seconds = 300  # 5 minute window
         self.backoff_base = 2  # Base for exponential backoff
         self.max_backoff = 3600  # Maximum backoff of 1 hour
+        self.min_backoff = 30  # Minimum backoff of 30 seconds
 
     def _clean_old_attempts(self, attempts_list):
         now = time.time()
@@ -96,7 +97,7 @@ class RateLimiter:
 
     def _get_backoff_seconds(self, attempt_count):
         backoff = min(self.backoff_base ** attempt_count, self.max_backoff)
-        return backoff
+        return max(backoff, self.min_backoff)
 
     def check_rate_limit(self, identifier: str, is_ip: bool = True):
         now = time.time()
@@ -239,7 +240,12 @@ async def health():
 
 # ─── Async endpoints ───────────────────────────────────────────────────────────
 @app.post("/signup")
-async def signup(req: SignupRequest, db: models.UserDB = Depends(get_db)):
+async def signup(
+    req: SignupRequest,
+    db: models.UserDB = Depends(get_db),
+    _: None = Depends(rate_limit_ip),
+    __: None = Depends(rate_limit_user)
+):
     safe_log(logging.DEBUG, f"Signup request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.signup_handler, req, db)
     safe_log(logging.DEBUG, f"Signup response: {safe_request_log(resp)}")
@@ -286,14 +292,24 @@ async def authenticate(
     return resp
 
 @app.post("/change_username")
-async def change_username(req: ChangeUsernameRequest, db: models.UserDB = Depends(get_db)):
+async def change_username(
+    req: ChangeUsernameRequest,
+    db: models.UserDB = Depends(get_db),
+    _: None = Depends(rate_limit_ip),
+    __: None = Depends(rate_limit_user)
+):
     safe_log(logging.DEBUG, f"ChangeUsername request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.change_username_handler, req, db)
     safe_log(logging.DEBUG, f"ChangeUsername response: {safe_request_log(resp)}")
     return resp
 
 @app.post("/change_password")
-async def change_password(req: ChangePasswordRequest, db: models.UserDB = Depends(get_db)):
+async def change_password(
+    req: ChangePasswordRequest,
+    db: models.UserDB = Depends(get_db),
+    _: None = Depends(rate_limit_ip),
+    __: None = Depends(rate_limit_user)
+):
     safe_log(logging.DEBUG, f"ChangePassword request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.change_password_handler, req, db)
     safe_log(logging.DEBUG, f"ChangePassword response: {safe_request_log(resp)}")
