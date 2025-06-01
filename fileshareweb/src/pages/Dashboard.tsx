@@ -996,6 +996,12 @@ const Dashboard: React.FC = () => {
 
   // Add function to fetch users
   const fetchUsers = async () => {
+    // Don't fetch if there's no search query
+    if (!userSearchQuery.trim()) {
+      setUsers([]);
+      return;
+    }
+
     try {
       setLoadingUsers(true);
       setUserError(null);
@@ -1003,7 +1009,7 @@ const Dashboard: React.FC = () => {
       // Step 1: Request challenge
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
-        operation: 'list_users'
+        operation: 'list_matching_users'
       });
 
       if (challengeResponse.status !== 'challenge') {
@@ -1014,11 +1020,12 @@ const Dashboard: React.FC = () => {
       const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
       const signature = await signChallenge(nonce, secretKey!);
 
-      // Step 3: Get user list
-      const listResponse = await apiClient.post<{ status: string; users: UserData[] }>('/list_users', {
+      // Step 3: Get matching users
+      const listResponse = await apiClient.post<{ status: string; users: UserData[] }>('/list_matching_users', {
         username,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature))),
+        search_query: userSearchQuery
       });
 
       if (listResponse.status === 'ok') {
@@ -1033,12 +1040,20 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // Update useEffect to fetch users when needed
+  // Update the useEffect to only trigger when there's a search query
   useEffect(() => {
-    if (activeTab === 'users' && username && secretKey && !loadingUsers && !users.length) {
-      fetchUsers();
+    if (activeTab === 'users' && username && secretKey && userSearchQuery.trim()) {
+      // Add a small delay to prevent too many API calls while typing
+      const timeoutId = setTimeout(() => {
+        fetchUsers();
+      }, 300); // 300ms delay
+
+      return () => clearTimeout(timeoutId);
+    } else if (activeTab === 'users' && !userSearchQuery.trim()) {
+      // Clear users when search is empty
+      setUsers([]);
     }
-  }, [activeTab]); // Only depend on activeTab changes
+  }, [activeTab, userSearchQuery]); // Keep userSearchQuery as a dependency
 
   // Add a function to manually refresh users
   const refreshUsers = () => {
