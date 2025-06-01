@@ -1388,7 +1388,17 @@ const Dashboard: React.FC = () => {
                 </ListItemIcon>
                 <ListItemText primary="Users" sx={{ color: '#00ff00' }} />
               </ListItem>
-              <ListItem button onClick={() => navigate('/login')}>
+              <ListItem
+                button
+                onClick={() => {
+                  const currentUser = storage.getCurrentUser();
+                  if (currentUser) {
+                    storage.removeKeyBundle(currentUser);
+                  }
+                  storage.clearStorage();
+                  navigate('/login');
+                }}
+              >
                 <ListItemIcon>
                   <LockIcon sx={{ color: '#00ff00' }} />
                 </ListItemIcon>
