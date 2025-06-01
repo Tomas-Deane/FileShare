@@ -37,6 +37,7 @@ from schemas import (
     ListSharedFromRequest,
     RetrieveFileDEKRequest,
     DownloadSharedFileRequest,
+    ListMatchingUsersRequest,
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -293,6 +294,13 @@ async def list_shared_from(req: ListSharedFromRequest, db: models.UserDB = Depen
 
 # TODO: Implement download_shared_file endpoint
 # @app.post("/download_shared_file")
+
+@app.post("/list_matching_users")
+async def list_matching_users(req: ListMatchingUsersRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListMatchingUsersRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.list_matching_users_handler, req, db)
+    logger.debug(f"ListMatchingUsers response: {resp}")
+    return resp
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":

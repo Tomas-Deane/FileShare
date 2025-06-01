@@ -33,6 +33,7 @@ from schemas import (
     GetOPKRequest,
     RetrieveFileDEKRequest,
     DownloadSharedFileRequest,
+    ListMatchingUsersRequest,
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
@@ -871,3 +872,49 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
         "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
         "OPK_id": shared_file["OPK_id"]
     }
+
+def list_matching_users_handler(req: ListMatchingUsersRequest, db: models.UserDB) -> ListUsersResponse:
+    """List all users whose usernames match the given search query."""
+    logging.debug(f"ListMatchingUsers: {req.model_dump_json()}")
+    
+    # Verify the requesting user
+    user = db.get_user(req.username)
+    if not user:
+        logging.warning(f"Unknown user '{req.username}' at list_matching_users")
+        raise HTTPException(status_code=404, detail="Unknown user")
+
+    # Verify the challenge
+    user_id = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(user_id, "list_matching_users")
+    if stored is None or provided != stored:
+        logging.warning(f"No valid pending challenge for user_id={user_id} (list_matching_users)")
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+
+    # Verify the signature
+    signature = base64.b64decode(req.signature)
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(signature, provided)
+        
+        # Get matching users
+        users = db.get_matching_users(req.search_query)
+        
+        # Delete the challenge after successful verification
+        db.delete_challenge(user_id)
+        
+        # Return user list - handle both tuple and dict results
+        return ListUsersResponse(
+            status="ok",
+            users=[
+                UserData(
+                    id=user[0] if isinstance(user, tuple) else user["id"],
+                    username=user[1] if isinstance(user, tuple) else user["username"]
+                )
+                for user in users
+            ]
+        )
+    except InvalidSignature:
+        logging.warning(f"Bad signature for list_matching_users of user_id={user_id}")
+        db.delete_challenge(user_id)
+        raise HTTPException(status_code=401, detail="Bad signature")
