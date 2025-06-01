@@ -946,7 +946,12 @@ const Dashboard: React.FC = () => {
         hasResponse: !!err.response,
         responseData: err.response?.data
       });
-      setError(err.message || 'Failed to change username');
+      // Add more specific error message handling
+      if (err.response?.data?.detail === 'Username already exists') {
+        setError('This username is already taken. Please choose a different one.');
+      } else {
+        setError(err.message || 'Failed to change username');
+      }
     } finally {
       setLoading(false);
     }

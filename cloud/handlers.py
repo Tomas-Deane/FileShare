@@ -160,6 +160,11 @@ def change_username_handler(req: ChangeUsernameRequest, db: models.UserDB):
         logging.warning(f"Unknown user '{req.username}' at change_username")
         raise HTTPException(status_code=404, detail="Unknown user")
 
+    # Add check for existing username
+    if db.get_user(req.new_username):
+        logging.warning(f"Username '{req.new_username}' already exists")
+        raise HTTPException(status_code=400, detail="Username already exists")
+
     user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
     stored = db.get_pending_challenge(user_id, "change_username")
@@ -171,10 +176,14 @@ def change_username_handler(req: ChangeUsernameRequest, db: models.UserDB):
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, req.new_username.encode())
-        db.update_username(req.username, req.new_username)
-        logging.info(f"Username changed from '{req.username}' to '{req.new_username}'")
-        db.delete_challenge(user_id)
-        return {"status": "ok", "message": "username changed"}
+        try:
+            db.update_username(req.username, req.new_username)
+            logging.info(f"Username changed from '{req.username}' to '{req.new_username}'")
+            db.delete_challenge(user_id)
+            return {"status": "ok", "message": "username changed"}
+        except Exception as e:
+            logging.error(f"Database error while changing username: {str(e)}")
+            raise HTTPException(status_code=400, detail="Username already exists")
     except InvalidSignature:
         logging.warning(f"Bad signature for change_username of user_id={user_id}")
         db.delete_challenge(user_id)
