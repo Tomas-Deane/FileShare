@@ -91,9 +91,18 @@ class RateLimiter:
         self.max_backoff = 3600  # Maximum backoff of 1 hour
         self.min_backoff = 30  # Minimum backoff of 30 seconds
 
+        # File upload specific limits
+        self.upload_attempts = defaultdict(list)  # username -> list of timestamps
+        self.max_uploads = 10  # Maximum uploads per hour
+        self.upload_window = 3600  # 1 hour window
+
     def _clean_old_attempts(self, attempts_list):
         now = time.time()
         return [ts for ts in attempts_list if now - ts < self.window_seconds]
+
+    def _clean_old_uploads(self, uploads_list):
+        now = time.time()
+        return [ts for ts in uploads_list if now - ts < self.upload_window]
 
     def _get_backoff_seconds(self, attempt_count):
         backoff = min(self.backoff_base ** attempt_count, self.max_backoff)
@@ -117,6 +126,21 @@ class RateLimiter:
         # Add new attempt
         attempts_dict[identifier].append(now)
 
+    def check_upload_limit(self, username: str):
+        now = time.time()
+        # Clean old uploads
+        self.upload_attempts[username] = self._clean_old_uploads(self.upload_attempts[username])
+        
+        # Check if upload limit exceeded
+        if len(self.upload_attempts[username]) >= self.max_uploads:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Upload limit exceeded. Maximum {self.max_uploads} uploads per hour."
+            )
+        
+        # Add new upload
+        self.upload_attempts[username].append(now)
+
 rate_limiter = RateLimiter()
 
 async def rate_limit_ip(request: Request):
@@ -129,6 +153,15 @@ async def rate_limit_user(request: Request):
         username = body.get("username")
         if username:
             rate_limiter.check_rate_limit(username, is_ip=False)
+    except:
+        pass  # If we can't get the username, just continue
+
+async def rate_limit_upload(request: Request):
+    try:
+        body = await request.json()
+        username = body.get("username")
+        if username:
+            rate_limiter.check_upload_limit(username)
     except:
         pass  # If we can't get the username, just continue
 
@@ -316,7 +349,13 @@ async def change_password(
     return resp
 
 @app.post("/upload_file")
-async def upload_file(req: UploadRequest, db: models.UserDB = Depends(get_db)):
+async def upload_file(
+    req: UploadRequest, 
+    db: models.UserDB = Depends(get_db),
+    _: None = Depends(rate_limit_ip),
+    __: None = Depends(rate_limit_user),
+    ___: None = Depends(rate_limit_upload)
+):
     safe_log(logging.DEBUG, f"Upload request: {safe_request_log(req)}")
     resp = await run_in_threadpool(handlers.upload_file_handler, req, db)
     safe_log(logging.DEBUG, f"Upload response: {safe_request_log(resp)}")

@@ -2,8 +2,29 @@
 """
 Common request schemas for FileShare API (shared between server and handlers).
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
+import re
+import base64
 
+# Maximum file size (100MB)
+MAX_FILE_SIZE = 100 * 1024 * 1024
+
+# Allowed file extensions and their MIME types
+ALLOWED_EXTENSIONS = {
+    'txt': 'text/plain',
+    'pdf': 'application/pdf',
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'gif': 'image/gif',
+    'doc': 'application/msword',
+    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'xls': 'application/vnd.ms-excel',
+    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'zip': 'application/zip',
+    'rar': 'application/x-rar-compressed',
+    '7z': 'application/x-7z-compressed'
+}
 
 class SignupRequest(BaseModel):
     username: str
@@ -65,6 +86,25 @@ class UploadRequest(BaseModel):
     dek_nonce: str
     nonce: str
     signature: str
+
+    @validator('filename')
+    def validate_filename(cls, v):
+        # Check file extension
+        ext = v.split('.')[-1].lower() if '.' in v else ''
+        if ext not in ALLOWED_EXTENSIONS:
+            raise ValueError(f"File type not allowed. Allowed types: {', '.join(ALLOWED_EXTENSIONS.keys())}")
+        return v
+
+    @validator('encrypted_file')
+    def validate_file_size(cls, v):
+        # Decode base64 and check size
+        try:
+            file_data = base64.b64decode(v)
+            if len(file_data) > MAX_FILE_SIZE:
+                raise ValueError(f"File too large. Maximum size is {MAX_FILE_SIZE/1024/1024}MB")
+        except Exception as e:
+            raise ValueError(f"Invalid base64 encoding: {str(e)}")
+        return v
 
 
 class ListFilesRequest(BaseModel):
