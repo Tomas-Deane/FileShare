@@ -725,4 +725,28 @@ class UserDB:
         columns = [col[0] for col in self.cursor.description]
         return dict(zip(columns, row))
 
+    def get_matching_users(self, search_query: str) -> list:
+        """Get all users whose usernames match the given search query."""
+        self.ensure_connection()
+        
+        # Sanitize the search query by removing any special regex characters
+        # and escape any remaining special characters
+        sanitized_query = search_query.replace('%', '\\%').replace('_', '\\_')
+        
+        # Use LIKE with wildcards for a more user-friendly search
+        sql = """
+            SELECT u.id, m.username
+            FROM users u
+            JOIN username_map m ON u.id = m.user_id
+            WHERE m.username LIKE %s
+            ORDER BY m.username
+            LIMIT 50
+        """
+        
+        # Add wildcards to make the search more flexible
+        search_pattern = f"%{sanitized_query}%"
+        
+        self.cursor.execute(sql, (search_pattern,))
+        return self.cursor.fetchall()
+
 

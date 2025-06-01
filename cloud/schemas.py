@@ -232,3 +232,9 @@ class DownloadSharedFileRequest(BaseModel):
     share_id: int
     nonce: str
     signature: str
+
+class ListMatchingUsersRequest(BaseModel):
+    username: str  # The user making the request
+    nonce: str     # Challenge nonce
+    signature: str # Signature of the nonce
+    search_query: str  # The search query from the user
