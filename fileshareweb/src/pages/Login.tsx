@@ -170,19 +170,19 @@ const Login: React.FC = () => {
         );
         console.log('Signed TOFU challenge');
 
-        const tofuBackupResponse = await apiClient.post<GetBackupTOFUResponse>('/get_backup_tofu_keys', {
+        const tofuBackupResponse: GetBackupTOFUResponse = await apiClient.post<GetBackupTOFUResponse>('/get_backup_tofu', {
             username: trimmedUsername,
             nonce: tofuChallengeResponse.nonce,
             signature: btoa(String.fromCharCode.apply(null, Array.from(tofuSignature)))
         });
         console.log('Received TOFU backup from server');
 
-        const backupKey = await derivePDK(formData.password, salt, 3, 67108864);
-        const encryptedBackup = Uint8Array.from(atob(tofuBackupResponse.encrypted_backup), c => c.charCodeAt(0));
-        const backupNonce = Uint8Array.from(atob(tofuBackupResponse.backup_nonce), c => c.charCodeAt(0));
+        const backupKey: Uint8Array = await derivePDK(formData.password, salt, 3, 67108864);
+        const encryptedBackup: Uint8Array = Uint8Array.from(atob(tofuBackupResponse.encrypted_backup), c => c.charCodeAt(0));
+        const backupNonce: Uint8Array = Uint8Array.from(atob(tofuBackupResponse.backup_nonce), c => c.charCodeAt(0));
         
         console.log('Decrypting TOFU backup...');
-        const decryptedBackup = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
+        const decryptedBackup: Uint8Array = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
             null,
             encryptedBackup,
             null,

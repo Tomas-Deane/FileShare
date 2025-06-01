@@ -237,7 +237,7 @@ const Signup: React.FC = () => {
             privateKey
         );
 
-        await apiClient.post('/backup_tofu_keys', {
+        await apiClient.post('/backup_tofu', {
             username: trimmedUsername,
             encrypted_backup: btoa(String.fromCharCode.apply(null, Array.from(encryptedBackup))),
             backup_nonce: btoa(String.fromCharCode.apply(null, Array.from(backupNonce))),
