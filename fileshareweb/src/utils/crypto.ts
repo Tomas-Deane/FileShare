@@ -195,18 +195,18 @@ export async function generateFileKey(): Promise<Uint8Array> {
 
 export async function encryptFile(
   data: Uint8Array,
-  key: Uint8Array,
-  nonce: Uint8Array
-): Promise<Uint8Array> {
-  // Use libsodium's crypto_aead_xchacha20poly1305_ietf_encrypt
+  key: Uint8Array
+): Promise<{ encrypted: Uint8Array; nonce: Uint8Array }> {
   await sodium.ready;
-  return sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+  const nonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+  const encrypted = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
     data,
     null, // no additional data
     null, // no additional data
     nonce,
     key
   );
+  return { encrypted, nonce };
 }
 
 export async function decryptFile(
@@ -380,10 +380,10 @@ export async function deriveX3DHSharedSecret({
     });
 
     // 3. Perform DHs
-    const DH1 = sodium.crypto_scalarmult(myIKPriv_x, recipientSPKPub_x);
-    const DH2 = sodium.crypto_scalarmult(myEKPriv_x, recipientIKPub_x);
-    const DH3 = sodium.crypto_scalarmult(myEKPriv_x, recipientSPKPub_x);
-    const DH4 = sodium.crypto_scalarmult(myEKPriv_x, recipientOPKPub_x);
+    const DH1 = sodium.crypto_scalarmult(myIKPriv_x, recipientSPKPub_x);  // IK * SPK
+    const DH2 = sodium.crypto_scalarmult(myEKPriv_x, recipientIKPub_x);  // EK * IK
+    const DH3 = sodium.crypto_scalarmult(myEKPriv_x, recipientSPKPub_x);  // EK * SPK
+    const DH4 = sodium.crypto_scalarmult(myEKPriv_x, recipientOPKPub_x);  // EK * OPK
 
     console.log('Sender - DH results:', {
       DH1: {
@@ -440,45 +440,24 @@ export async function deriveX3DHSharedSecret({
 export async function deriveX3DHSharedSecretRecipient({
   senderEKPub,
   senderIKPub,
+  senderSPKPub,
   myIKPriv,
   mySPKPriv,
   myOPKPriv,
 }: {
   senderEKPub: Uint8Array,
   senderIKPub: Uint8Array,
+  senderSPKPub: Uint8Array,
   myIKPriv: Uint8Array,
   mySPKPriv: Uint8Array,
   myOPKPriv: Uint8Array
-}) {
-  await sodium.ready;  
-
-  console.log('Recipient - Input keys:', {
-    senderEKPub: {
-      length: senderEKPub.length,
-      hex: Array.from(senderEKPub).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-    },
-    senderIKPub: {
-      length: senderIKPub.length,
-      hex: Array.from(senderIKPub).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-    },
-    myIKPriv: {
-      length: myIKPriv.length,
-      hex: Array.from(myIKPriv).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-    },
-    mySPKPriv: {
-      length: mySPKPriv.length,
-      hex: Array.from(mySPKPriv).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-    },
-    myOPKPriv: {
-      length: myOPKPriv.length,
-      hex: Array.from(myOPKPriv).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-    }
-  });
-
+}): Promise<Uint8Array> {
   try {
-    // Convert all Ed25519 keys to X25519
+    // Convert Ed25519 keys to X25519
     const senderEKPub_x = sodium.crypto_sign_ed25519_pk_to_curve25519(senderEKPub);
     const senderIKPub_x = sodium.crypto_sign_ed25519_pk_to_curve25519(senderIKPub);
+    const senderSPKPub_x = sodium.crypto_sign_ed25519_pk_to_curve25519(senderSPKPub);
+    
     const myIKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(myIKPriv);
     const mySPKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(mySPKPriv);
     const myOPKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(myOPKPriv);
@@ -491,6 +470,10 @@ export async function deriveX3DHSharedSecretRecipient({
       senderIKPub_x: {
         length: senderIKPub_x.length,
         hex: Array.from(senderIKPub_x).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
+      },
+      senderSPKPub_x: {
+        length: senderSPKPub_x.length,
+        hex: Array.from(senderSPKPub_x).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
       },
       myIKPriv_x: {
         length: myIKPriv_x.length,
@@ -506,11 +489,11 @@ export async function deriveX3DHSharedSecretRecipient({
       }
     });
 
-    // DH computations
-    const DH1 = sodium.crypto_scalarmult(mySPKPriv_x, senderIKPub_x);
-    const DH2 = sodium.crypto_scalarmult(myIKPriv_x, senderEKPub_x);
-    const DH3 = sodium.crypto_scalarmult(mySPKPriv_x, senderEKPub_x);
-    const DH4 = sodium.crypto_scalarmult(myOPKPriv_x, senderEKPub_x);
+    // DH computations - matching sender's operations exactly
+    const DH1 = sodium.crypto_scalarmult(mySPKPriv_x, senderIKPub_x);    // SPK * IK (matches IK * SPK)
+    const DH2 = sodium.crypto_scalarmult(myIKPriv_x, senderEKPub_x);     // IK * EK (matches EK * IK)
+    const DH3 = sodium.crypto_scalarmult(mySPKPriv_x, senderEKPub_x);    // SPK * EK (matches EK * SPK)
+    const DH4 = sodium.crypto_scalarmult(myOPKPriv_x, senderEKPub_x);    // OPK * EK (matches EK * OPK)
 
     console.log('Recipient - DH results:', {
       DH1: {
@@ -539,34 +522,36 @@ export async function deriveX3DHSharedSecretRecipient({
       DH4_hex: Array.from(DH4).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
     });
 
-    const combined = new Uint8Array(DH1.length + DH2.length + DH3.length + DH4.length);
-    combined.set(DH1, 0);
-    combined.set(DH2, DH1.length);
-    combined.set(DH3, DH1.length + DH2.length);
-    combined.set(DH4, DH1.length + DH2.length + DH3.length);
+    // Concatenate DH results in the same order as sender
+    const concatenated = new Uint8Array(DH1.length + DH2.length + DH3.length + DH4.length);
+    concatenated.set(DH1, 0);
+    concatenated.set(DH2, DH1.length);
+    concatenated.set(DH3, DH1.length + DH2.length);
+    concatenated.set(DH4, DH1.length + DH2.length + DH3.length);
 
-    const sharedSecret = sodium.crypto_generichash(32, combined);
+    // Generate final shared secret
+    const sharedSecret = sodium.crypto_generichash(32, concatenated);
     console.log('Recipient - Final shared secret:', {
       length: sharedSecret.length,
       hex: Array.from(sharedSecret).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
     });
 
     return sharedSecret;
-
-  } catch (error: unknown) {
-    console.error('Recipient - Key conversion error:', error);
-    if (error instanceof Error) {
-      throw new Error(`Key conversion failed: ${error.message}`);
-    } else {
-      throw new Error('Key conversion failed: Unknown error');
-    }
+  } catch (error) {
+    console.error('Error in deriveX3DHSharedSecretRecipient:', error);
+    throw error;
   }
 }
 
-
 export async function encryptWithAESGCM(key: Uint8Array, data: Uint8Array) {
   await sodium.ready;
+  // Use the correct nonce length for XChaCha20-Poly1305 (24 bytes)
   const nonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+  console.log('Encryption inputs:', {
+    keyLength: key.length,
+    dataLength: data.length,
+    nonceLength: nonce.length
+  });
   const ciphertext = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
     data,
     null, // no additional data
@@ -574,6 +559,10 @@ export async function encryptWithAESGCM(key: Uint8Array, data: Uint8Array) {
     nonce,
     key
   );
+  console.log('Encryption outputs:', {
+    ciphertextLength: ciphertext.length,
+    nonceLength: nonce.length
+  });
   // Return both ciphertext and nonce, as both are needed for decryption
   return {
     ciphertext, // Uint8Array
@@ -594,7 +583,7 @@ export async function testX3DHKeyExchange() {
 
   console.log('Generated key bundles and ephemeral key');
 
-  // Alice (sender) derives shared secret
+  // Alice (sender) derives shared secret using deriveX3DHSharedSecret
   const aliceSharedSecret = await deriveX3DHSharedSecret({
     myIKPriv: aliceBundle.identity_key_private,
     myEKPriv: aliceEphemeral.privateKey,
@@ -609,10 +598,11 @@ export async function testX3DHKeyExchange() {
     hex: Array.from(new Uint8Array(aliceSharedSecret)).map(b => b.toString(16).padStart(2, '0')).join('')
   });
 
-  // Bob (recipient) derives shared secret
+  // Bob (recipient) derives shared secret using deriveX3DHSharedSecretRecipient
   const bobSharedSecret = await deriveX3DHSharedSecretRecipient({
     senderEKPub: aliceEphemeral.publicKey,
     senderIKPub: aliceBundle.identity_key,
+    senderSPKPub: bobBundle.signed_pre_key,
     myIKPriv: bobBundle.identity_key_private,
     mySPKPriv: bobBundle.signed_pre_key_private,
     myOPKPriv: bobBundle.one_time_pre_keys_private[0] // Using first OPK private key
@@ -627,6 +617,10 @@ export async function testX3DHKeyExchange() {
   const secretsMatch = sodium.memcmp(aliceSharedSecret, bobSharedSecret);
   console.log('Shared secrets match:', secretsMatch);
 
+  if (!secretsMatch) {
+    throw new Error('X3DH key exchange failed: Shared secrets do not match');
+  }
+
   // Test encryption/decryption with shared secrets
   const testMessage = new TextEncoder().encode('Hello, X3DH!');
   const { ciphertext, nonce } = await encryptWithAESGCM(aliceSharedSecret, testMessage);
@@ -636,13 +630,64 @@ export async function testX3DHKeyExchange() {
     const decryptedText = new TextDecoder().decode(decrypted);
     console.log('Test message decrypted successfully:', decryptedText);
     console.log('Original message matches decrypted:', decryptedText === 'Hello, X3DH!');
+    
+    if (decryptedText !== 'Hello, X3DH!') {
+      throw new Error('X3DH encryption/decryption test failed: Message mismatch');
+    }
   } catch (error) {
     console.error('Decryption failed:', error);
+    throw new Error('X3DH encryption/decryption test failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 
+  // Test with a larger message
+  const largeMessage = new TextEncoder().encode('This is a larger test message to verify X3DH works with bigger data. ' + 
+    'It includes multiple sentences and special characters: !@#$%^&*()_+{}[]|\\:;"\'<>,.?/~`');
+  const { ciphertext: largeCiphertext, nonce: largeNonce } = await encryptWithAESGCM(aliceSharedSecret, largeMessage);
+  
+  try {
+    const decryptedLarge = await decryptFile(largeCiphertext, bobSharedSecret, largeNonce);
+    const decryptedLargeText = new TextDecoder().decode(decryptedLarge);
+    console.log('Large message test passed:', decryptedLargeText === new TextDecoder().decode(largeMessage));
+    
+    if (decryptedLargeText !== new TextDecoder().decode(largeMessage)) {
+      throw new Error('X3DH large message test failed: Message mismatch');
+    }
+  } catch (error) {
+    console.error('Large message decryption failed:', error);
+    throw new Error('X3DH large message test failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+  }
+
+  console.log('All X3DH tests passed successfully!');
   return {
     secretsMatch,
     aliceSharedSecret,
     bobSharedSecret
   };
+}
+
+export async function encryptWithPublicKey(
+  data: Uint8Array,
+  recipientPublicKey: string
+): Promise<{ encrypted: Uint8Array; nonce: Uint8Array }> {
+  await sodium.ready;
+  const nonce = sodium.randombytes_buf(sodium.crypto_box_NONCEBYTES);
+  const publicKey = sodium.from_base64(recipientPublicKey);
+  
+  // Generate ephemeral key pair
+  const ephemeralKeyPair = sodium.crypto_box_keypair();
+  
+  // Encrypt the data
+  const encrypted = sodium.crypto_box_easy(
+    data,
+    nonce,
+    publicKey,
+    ephemeralKeyPair.privateKey
+  );
+  
+  // Combine ephemeral public key with encrypted data
+  const combined = new Uint8Array(ephemeralKeyPair.publicKey.length + encrypted.length);
+  combined.set(ephemeralKeyPair.publicKey);
+  combined.set(encrypted, ephemeralKeyPair.publicKey.length);
+  
+  return { encrypted: combined, nonce };
 }

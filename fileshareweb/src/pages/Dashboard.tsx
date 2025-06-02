@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box, Container, Typography, Button, Paper, Grid, List, ListItem, ListItemText,
   ListItemIcon, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
@@ -20,7 +20,7 @@ import { apiClient } from '../utils/apiClient';
 import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
 import { storage } from '../utils/storage';
 import sodium from 'libsodium-wrappers-sumo';
-import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithAESGCM, deriveX3DHSharedSecretRecipient } from '../utils/crypto';
+import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithAESGCM, deriveX3DHSharedSecretRecipient, encryptWithPublicKey } from '../utils/crypto';
 import { testX3DHKeyExchange } from '../utils/crypto';
 
 // Styled components for cyberpunk look
@@ -201,13 +201,27 @@ function b64ToUint8Array(b64: string | undefined | null): Uint8Array {
     console.error('Attempted to decode undefined or null base64 string');
     throw new Error('Invalid base64 string: value is undefined or null');
   }
+  
+  // Replace URL-safe characters back to standard base64
+  const standardB64 = b64.replace(/-/g, '+').replace(/_/g, '/');
+  
   // Add padding if needed
-  const paddedB64 = b64.padEnd(b64.length + (4 - (b64.length % 4)) % 4, '=');
-  return Uint8Array.from(atob(paddedB64), c => c.charCodeAt(0));
+  const paddedB64 = standardB64.padEnd(standardB64.length + (4 - (standardB64.length % 4)) % 4, '=');
+  
+  try {
+    return Uint8Array.from(atob(paddedB64), c => c.charCodeAt(0));
+  } catch (error) {
+    console.error('Base64 decoding error:', error);
+    console.error('Input string:', b64);
+    console.error('Padded string:', paddedB64);
+    throw new Error('Invalid base64 string: failed to decode');
+  }
 }
 
 function uint8ArrayToB64(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode.apply(null, Array.from(bytes)));
+  const standardB64 = btoa(String.fromCharCode.apply(null, Array.from(bytes)));
+  // Convert to URL-safe base64
+  return standardB64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 // Update the interface for the file list response
@@ -225,7 +239,8 @@ interface DownloadResponse {
   detail?: string;
   encrypted_file?: string;
   file_nonce?: string;
-  encrypted_file_key?: string;  // Changed from encrypted_dek
+  encrypted_file_key?: string;
+  file_key_nonce?: string;  // Add this field
   EK_pub?: string;
   IK_pub?: string;
   SPK_pub?: string;
@@ -411,6 +426,7 @@ const Dashboard: React.FC = () => {
       );
 
       // Step 3: Download file
+      console.log('Downloading file...', { isShared, fileId, filename });
       const downloadResponse = await apiClient.post<DownloadResponse>(
         isShared ? '/download_shared_file' : '/download_file',
         {
@@ -426,18 +442,18 @@ const Dashboard: React.FC = () => {
       }
 
       // Log the full response for debugging
-      console.log('Full download response:', {
+      console.log('Download response:', {
         status: downloadResponse.status,
         detail: downloadResponse.detail,
-        encrypted_file: downloadResponse.encrypted_file?.substring(0, 50) + '...',
-        file_nonce: downloadResponse.file_nonce,
-        encrypted_file_key: downloadResponse.encrypted_file_key?.substring(0, 50) + '...',
-        EK_pub: downloadResponse.EK_pub?.substring(0, 50) + '...',
-        IK_pub: downloadResponse.IK_pub?.substring(0, 50) + '...',
-        SPK_pub: downloadResponse.SPK_pub?.substring(0, 50) + '...',
-        SPK_signature: downloadResponse.SPK_signature?.substring(0, 50) + '...',
+        encrypted_file_length: downloadResponse.encrypted_file?.length,
+        file_nonce_length: downloadResponse.file_nonce?.length,
+        encrypted_file_key_length: downloadResponse.encrypted_file_key?.length,
+        EK_pub_length: downloadResponse.EK_pub?.length,
+        IK_pub_length: downloadResponse.IK_pub?.length,
+        SPK_pub_length: downloadResponse.SPK_pub?.length,
+        SPK_signature_length: downloadResponse.SPK_signature?.length,
         opk_id: downloadResponse.opk_id,
-        pre_key: downloadResponse.pre_key?.substring(0, 50) + '...'
+        pre_key_length: downloadResponse.pre_key?.length
       });
 
       // Step 4: Decrypt file
@@ -482,41 +498,39 @@ const Dashboard: React.FC = () => {
         });
 
         // Derive the shared secret using our private keys and sender's public keys
+        console.log('Deriving shared secret for decryption...');
         const sharedSecret = await deriveX3DHSharedSecretRecipient({
           senderEKPub: b64ToUint8Array(downloadResponse.EK_pub),
           senderIKPub: b64ToUint8Array(downloadResponse.IK_pub),
+          senderSPKPub: b64ToUint8Array(downloadResponse.SPK_pub),
           myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
           mySPKPriv: b64ToUint8Array(myKeyBundle.SPK_priv),
           myOPKPriv: b64ToUint8Array(privateOPK)
         });
-
-        console.log('Shared secret:', {
+        console.log('Derived shared secret for decryption:', {
           length: sharedSecret.length,
-          hex: Array.from(new Uint8Array(sharedSecret)).map(b => b.toString(16).padStart(2, '0')).join('')
+          hex: Array.from(sharedSecret).map(b => b.toString(16).padStart(2, '0')).join('')
         });
 
         // Decrypt the file key using the shared secret
         const encryptedFileKey = b64ToUint8Array(downloadResponse.encrypted_file_key);
+        const fileKeyNonce = b64ToUint8Array(downloadResponse.file_key_nonce); // Use the nonce from the response
         console.log('File key decryption inputs:', {
           encryptedFileKeyLength: encryptedFileKey.length,
           sharedSecretLength: sharedSecret.length,
-          fileNonceLength: fileNonce.length,
-          encryptedFileKeyB64: downloadResponse.encrypted_file_key,
-          fileNonceB64: downloadResponse.file_nonce
+          fileKeyNonceLength: fileKeyNonce.length
         });
-        const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileNonce);
-        console.log('Decrypted file key:', {
-          length: fileKey.length,
-          hex: Array.from(new Uint8Array(fileKey)).map(b => b.toString(16).padStart(2, '0')).join('')
-        });
+        const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileKeyNonce);
+        console.log('File key decrypted successfully, length:', fileKey.length);
 
         // Decrypt the file using the file key
-        decrypted = await decryptFile(encryptedFile, fileKey, fileNonce);
         console.log('File decryption inputs:', {
           encryptedFileLength: encryptedFile.length,
           fileKeyLength: fileKey.length,
           fileNonceLength: fileNonce.length
         });
+        decrypted = await decryptFile(encryptedFile, fileKey, fileNonce);
+        console.log('File decrypted successfully');
       } else {
         // For regular files, just decrypt the file key with our KEK
         if (!downloadResponse.encrypted_file_key || !downloadResponse.file_nonce) {
@@ -919,11 +933,8 @@ const TestButton = () => {
       // Step 2: Generate file key and encrypt file
       logDebug('Generating file key');
       const fileKey = await generateFileKey();
-      const fileNonce = new Uint8Array(24);
-      window.crypto.getRandomValues(fileNonce);
       logDebug('File key generated', {
-        keyLength: fileKey.length,
-        nonceLength: fileNonce.length
+        keyLength: fileKey.length
       });
 
       logDebug('Reading file data');
@@ -931,16 +942,15 @@ const TestButton = () => {
       logDebug('Encrypting file', {
         fileSize: fileData.byteLength
       });
-      const encryptedFile = await encryptFile(new Uint8Array(fileData), fileKey, fileNonce);
+      const { ciphertext: encryptedFile, nonce: fileNonce } = await encryptWithAESGCM(fileKey, new Uint8Array(fileData));
       logDebug('File encrypted', {
-        encryptedSize: encryptedFile.length
+        encryptedSize: encryptedFile.length,
+        nonceLength: fileNonce.length
       });
 
       // Step 3: Encrypt file key with KEK
       logDebug('Encrypting file key with KEK');
-      const kekNonce = new Uint8Array(24);
-      window.crypto.getRandomValues(kekNonce);
-      const encryptedDek = await encryptFile(fileKey, kek!, kekNonce);
+      const { ciphertext: encryptedDek, nonce: kekNonce } = await encryptWithAESGCM(kek!, fileKey);
       logDebug('File key encrypted', {
         encryptedDekLength: encryptedDek.length,
         kekNonceLength: kekNonce.length
@@ -1225,6 +1235,11 @@ const TestButton = () => {
       if (dekResponse.status !== 'ok') {
         throw new Error('Failed to retrieve file key');
       }
+      console.log('Retrieved encrypted DEK:', {
+        encrypted_dek_length: dekResponse.encrypted_dek.length,
+        dek_nonce_length: dekResponse.dek_nonce.length
+      });
+
       console.log('Retrieved encrypted DEK');
 
       // Decrypt the file key using the KEK from our keyBundle
@@ -1335,7 +1350,10 @@ const TestButton = () => {
         // 8. Encrypt the file key (DEK) with the shared secret
         console.log('Encrypting file key with shared secret...');
         const { ciphertext, nonce } = await encryptWithAESGCM(sharedSecret, fileKey);
-        console.log('Encrypted file key');
+        console.log('Encrypted file key:', {
+          ciphertext_length: ciphertext.length,
+          nonce_length: nonce.length
+        });
 
         // 9. Request challenge for share_file
         console.log('Requesting challenge for share_file...');
@@ -1363,7 +1381,7 @@ const TestButton = () => {
           EK_pub: uint8ArrayToB64(ephemeralKeyPair.publicKey),
           IK_pub: myKeyBundle.IK_pub,
           encrypted_file_key: uint8ArrayToB64(ciphertext),
-          file_key_nonce: uint8ArrayToB64(nonce),
+          file_key_nonce: uint8ArrayToB64(nonce), // Use the nonce from encryptWithAESGCM
           SPK_pub: myKeyBundle.SPK_pub,
           SPK_signature: myKeyBundle.SPK_signature,
           OPK_ID: opkResponse.opk_id,
