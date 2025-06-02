@@ -195,8 +195,18 @@ const logDebug = (message: string, data?: any) => {
   }
 };
 
-function b64ToUint8Array(b64: string): Uint8Array {
-  return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+function b64ToUint8Array(b64: string | undefined | null): Uint8Array {
+  if (!b64) {
+    console.error('Attempted to decode undefined or null base64 string');
+    throw new Error('Invalid base64 string: value is undefined or null');
+  }
+  // Add padding if needed
+  const paddedB64 = b64.padEnd(b64.length + (4 - (b64.length % 4)) % 4, '=');
+  return Uint8Array.from(atob(paddedB64), c => c.charCodeAt(0));
+}
+
+function uint8ArrayToB64(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode.apply(null, Array.from(bytes)));
 }
 
 // Update the interface for the file list response
@@ -207,6 +217,21 @@ interface FileListResponse {
     id: number;
     created_at: string;
   }>;
+}
+
+interface DownloadResponse {
+  status: string;
+  detail?: string;
+  encrypted_file?: string;
+  file_nonce?: string;
+  encrypted_dek?: string;
+  dek_nonce?: string;
+  pre_key?: string;
+  IK_pub?: string;
+  SPK_pub?: string;
+  SPK_signature?: string;
+  EK_pub?: string;
+  encrypted_file_key?: string;
 }
 
 const Dashboard: React.FC = () => {
@@ -321,7 +346,7 @@ const Dashboard: React.FC = () => {
         username,
         filename: file.name,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
       logDebug('Delete response received', {
         status: deleteResponse.status,
@@ -386,13 +411,13 @@ const Dashboard: React.FC = () => {
       );
 
       // Step 3: Download file
-      const downloadResponse = await apiClient.post<any>(
+      const downloadResponse = await apiClient.post<DownloadResponse>(
         isShared ? '/download_shared_file' : '/download_file',
         {
           username,
           ...(isShared ? { share_id: (file as SharedFileData).share_id } : { filename }),
           nonce: challengeResponse.nonce,
-          signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+          signature: uint8ArrayToB64(signature)
         }
       );
 
@@ -400,9 +425,43 @@ const Dashboard: React.FC = () => {
         throw new Error(downloadResponse.detail || 'Failed to download file');
       }
 
+      // Log the full response for debugging
+      console.log('Full download response:', {
+        status: downloadResponse.status,
+        detail: downloadResponse.detail,
+        encrypted_file: downloadResponse.encrypted_file?.substring(0, 50) + '...',
+        file_nonce: downloadResponse.file_nonce,
+        encrypted_dek: downloadResponse.encrypted_dek?.substring(0, 50) + '...',
+        dek_nonce: downloadResponse.dek_nonce,
+        pre_key: downloadResponse.pre_key?.substring(0, 50) + '...',
+        IK_pub: downloadResponse.IK_pub?.substring(0, 50) + '...',
+        SPK_pub: downloadResponse.SPK_pub?.substring(0, 50) + '...',
+        SPK_signature: downloadResponse.SPK_signature?.substring(0, 50) + '...',
+        EK_pub: downloadResponse.EK_pub?.substring(0, 50) + '...',
+        encrypted_file_key: downloadResponse.encrypted_file_key?.substring(0, 50) + '...'
+      });
+
+      // Log the response for debugging
+      console.log('Download response fields present:', {
+        hasEncryptedFile: !!downloadResponse.encrypted_file,
+        hasFileNonce: !!downloadResponse.file_nonce,
+        hasEncryptedFileKey: !!downloadResponse.encrypted_file_key,
+        hasDekNonce: !!downloadResponse.dek_nonce,
+        isShared,
+        hasPreKey: isShared ? !!downloadResponse.pre_key : undefined,
+        hasIKPub: isShared ? !!downloadResponse.IK_pub : undefined,
+        hasSPKPub: isShared ? !!downloadResponse.SPK_pub : undefined,
+        hasSPKSignature: isShared ? !!downloadResponse.SPK_signature : undefined,
+        hasEKPub: isShared ? !!downloadResponse.EK_pub : undefined
+      });
+
       // Step 4: Decrypt file
-      const encryptedFile = Uint8Array.from(atob(downloadResponse.encrypted_file), c => c.charCodeAt(0));
-      const fileNonce = Uint8Array.from(atob(downloadResponse.file_nonce), c => c.charCodeAt(0));
+      if (!downloadResponse.encrypted_file || !downloadResponse.file_nonce) {
+        throw new Error('Missing required encryption data from server');
+      }
+
+      const encryptedFile = b64ToUint8Array(downloadResponse.encrypted_file);
+      const fileNonce = b64ToUint8Array(downloadResponse.file_nonce);
       
       let decrypted: Uint8Array;
       if (isShared) {
@@ -417,6 +476,9 @@ const Dashboard: React.FC = () => {
 
         // Get the public OPK that was used for encryption (base64)
         const usedOPKPub = downloadResponse.pre_key;
+        if (!usedOPKPub) {
+          throw new Error('Missing pre_key in server response');
+        }
         console.log('Public OPK used for encryption:', usedOPKPub);
 
         // Find our private OPK that corresponds to this public key
@@ -435,24 +497,39 @@ const Dashboard: React.FC = () => {
 
         console.log('Found matching private OPK');
 
+        // Check for required fields with detailed error messages
+        const missingFields = [];
+        if (!downloadResponse.IK_pub) missingFields.push('IK_pub');
+        if (!downloadResponse.SPK_pub) missingFields.push('SPK_pub');
+        if (!downloadResponse.SPK_signature) missingFields.push('SPK_signature');
+        if (!downloadResponse.EK_pub) missingFields.push('EK_pub');
+        if (!downloadResponse.encrypted_file_key) missingFields.push('encrypted_file_key');
+
+        if (missingFields.length > 0) {
+          throw new Error(`Missing required key data from server: ${missingFields.join(', ')}`);
+        }
+
         // Derive the shared secret using our private keys and sender's public keys
         const sharedSecret = await deriveX3DHSharedSecret({
           myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
           myEKPriv: b64ToUint8Array(matchingPrivateOPK),
-          recipientIKPub: Uint8Array.from(atob(downloadResponse.IK_pub), c => c.charCodeAt(0)),
-          recipientSPKPub: Uint8Array.from(atob(downloadResponse.SPK_pub), c => c.charCodeAt(0)),
-          recipientSPKSignature: Uint8Array.from(atob(downloadResponse.SPK_signature), c => c.charCodeAt(0)),
-          recipientOPKPub: Uint8Array.from(atob(downloadResponse.EK_pub), c => c.charCodeAt(0))
+          recipientIKPub: b64ToUint8Array(downloadResponse.IK_pub),
+          recipientSPKPub: b64ToUint8Array(downloadResponse.SPK_pub),
+          recipientSPKSignature: b64ToUint8Array(downloadResponse.SPK_signature),
+          recipientOPKPub: b64ToUint8Array(downloadResponse.EK_pub)
         });
 
         // Decrypt the file key using the shared secret
-        const encryptedFileKey = Uint8Array.from(atob(downloadResponse.encrypted_file_key), c => c.charCodeAt(0));
+        const encryptedFileKey = b64ToUint8Array(downloadResponse.encrypted_file_key);
         const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileNonce);
 
         // Decrypt the file using the file key
         decrypted = await decryptFile(encryptedFile, fileKey, fileNonce);
       } else {
         // For regular files, just decrypt the file key with our KEK
+        if (!downloadResponse.encrypted_dek || !downloadResponse.dek_nonce) {
+          throw new Error('Missing required key data from server');
+        }
         const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
         decrypted = await decryptFile(encryptedFile, dek, fileNonce);
       }
@@ -524,7 +601,7 @@ const Dashboard: React.FC = () => {
         username: myUsername,
         target_username: user.username,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
 
       // Store the pre-key bundle temporarily in state for later use
@@ -626,10 +703,10 @@ const Dashboard: React.FC = () => {
       // Send the backup to the server
       await apiClient.post('/backup_tofu', {
         username: myUsername,
-        encrypted_backup: btoa(String.fromCharCode.apply(null, Array.from(encryptedBackup))),
-        backup_nonce: btoa(String.fromCharCode.apply(null, Array.from(encryptionNonce))),
+        encrypted_backup: uint8ArrayToB64(encryptedBackup),
+        backup_nonce: uint8ArrayToB64(encryptionNonce),
         nonce: backupChallengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(backupSignature)))
+        signature: uint8ArrayToB64(backupSignature)
       });
 
       // Close the verification dialog
@@ -688,7 +765,7 @@ const Dashboard: React.FC = () => {
       const listResponse = await apiClient.post<FileListResponse>('/list_files', {
         username,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
 
       logDebug('File list response received', {
@@ -868,12 +945,12 @@ const Dashboard: React.FC = () => {
       const uploadResponse = await apiClient.post<UploadResponse>('/upload_file', {
         username,
         filename: file.name,
-        encrypted_file: btoa(String.fromCharCode.apply(null, Array.from(encryptedFile))),
-        file_nonce: btoa(String.fromCharCode.apply(null, Array.from(fileNonce))),
-        encrypted_dek: btoa(String.fromCharCode.apply(null, Array.from(encryptedDek))),
-        dek_nonce: btoa(String.fromCharCode.apply(null, Array.from(kekNonce))),
+        encrypted_file: uint8ArrayToB64(encryptedFile),
+        file_nonce: uint8ArrayToB64(fileNonce),
+        encrypted_dek: uint8ArrayToB64(encryptedDek),
+        dek_nonce: uint8ArrayToB64(kekNonce),
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
       logDebug('Upload response received', {
         status: uploadResponse.status,
@@ -947,16 +1024,16 @@ const Dashboard: React.FC = () => {
         username,
         filename: file.name,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
       if (downloadResponse.status !== 'ok') {
         throw new Error(downloadResponse.detail || 'Failed to download file');
       }
       // Step 4: Decrypt file
-      const encryptedFile = Uint8Array.from(atob(downloadResponse.encrypted_file), c => c.charCodeAt(0));
-      const fileNonce = Uint8Array.from(atob(downloadResponse.file_nonce), c => c.charCodeAt(0));
+      const previewEncryptedFile = b64ToUint8Array(downloadResponse.encrypted_file);
+      const previewFileNonce = b64ToUint8Array(downloadResponse.file_nonce);
       const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
-      const decrypted = await decryptFile(encryptedFile, dek, fileNonce);
+      const decrypted = await decryptFile(previewEncryptedFile, dek, previewFileNonce);
 
       if (isTextFile(file.name)) {
         const text = new TextDecoder('utf-8').decode(decrypted);
@@ -1033,7 +1110,7 @@ const Dashboard: React.FC = () => {
       const listResponse = await apiClient.post<{ status: string; users: UserData[] }>('/list_users', {
         username,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
 
       if (listResponse.status === 'ok') {
@@ -1128,7 +1205,7 @@ const Dashboard: React.FC = () => {
         username,
         file_id: selectedFile,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
 
       if (dekResponse.status !== 'ok') {
@@ -1169,7 +1246,7 @@ const Dashboard: React.FC = () => {
           username: myUsername,
           target_username: recipientUsername,
           nonce: bundleChallengeResponse.nonce,
-          signature: btoa(String.fromCharCode.apply(null, Array.from(bundleSignature)))
+          signature: uint8ArrayToB64(bundleSignature)
         });
 
         if (freshBundleResponse.status !== 'ok') {
@@ -1203,7 +1280,7 @@ const Dashboard: React.FC = () => {
           username: myUsername,
           target_username: recipientUsername,
           nonce: opkChallengeResponse.nonce,
-          signature: btoa(String.fromCharCode.apply(null, Array.from(opkSignature)))
+          signature: uint8ArrayToB64(opkSignature)
         });
 
         // Add more detailed logging
@@ -1268,13 +1345,13 @@ const Dashboard: React.FC = () => {
           username,
           file_id: selectedFile,
           recipient_username: recipientUsername,
-          EK_pub: btoa(String.fromCharCode.apply(null, Array.from(ephemeralKeyPair.publicKey))),
+          EK_pub: uint8ArrayToB64(ephemeralKeyPair.publicKey),
           IK_pub: myKeyBundle.IK_pub,
-          encrypted_file_key: btoa(String.fromCharCode.apply(null, Array.from(ciphertext))),
-          file_key_nonce: btoa(String.fromCharCode.apply(null, Array.from(nonce))),
+          encrypted_file_key: uint8ArrayToB64(ciphertext),
+          file_key_nonce: uint8ArrayToB64(nonce),
           OPK_ID: opkResponse.opk_id,
           nonce: shareChallengeResponse.nonce,
-          signature: btoa(String.fromCharCode.apply(null, Array.from(shareSignature)))
+          signature: uint8ArrayToB64(shareSignature)
         });
         console.log('Share request sent successfully');
       }
@@ -1317,7 +1394,7 @@ const Dashboard: React.FC = () => {
       const response = await apiClient.post<{ status: string; files: SharedFileData[] }>('/list_shared_files', {
         username,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
 
       if (response.status === 'ok') {

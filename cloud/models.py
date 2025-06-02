@@ -727,4 +727,23 @@ class UserDB:
         columns = [col[0] for col in self.cursor.description]
         return dict(zip(columns, row))
 
+    def get_user_by_file_id(self, file_id: int):
+        """Get the user who owns a file by its ID."""
+        self.ensure_connection()
+        sql = """
+            SELECT u.*
+            FROM users u
+            JOIN files f ON f.owner_id = u.user_id
+            WHERE f.id = %s
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (file_id,))
+        row = self.cursor.fetchone()
+        if not row:
+            return None
+        if isinstance(row, dict):
+            return row
+        columns = [col[0] for col in self.cursor.description]
+        return dict(zip(columns, row))
+
 

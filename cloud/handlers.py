@@ -860,7 +860,18 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
         db.delete_challenge(user_id)
         raise HTTPException(404, "Shared file not found")
 
-    # 4) Return the file data, including the pre_key
+    # 4) Get the sender's pre-key bundle
+    sender = db.get_user_by_file_id(shared_file["file_id"])
+    if not sender:
+        db.delete_challenge(user_id)
+        raise HTTPException(404, "File owner not found")
+
+    sender_bundle = db.get_prekey_bundle(sender["username"])
+    if not sender_bundle:
+        db.delete_challenge(user_id)
+        raise HTTPException(404, "Sender's pre-key bundle not found")
+
+    # 5) Return the file data, including all required keys
     db.delete_challenge(user_id)
     return {
         "status": "ok",
@@ -869,6 +880,8 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
         "encrypted_file_key": base64.b64encode(shared_file["encrypted_file_key"]).decode(),
         "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode(),
         "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
+        "SPK_pub": base64.b64encode(sender_bundle["SPK_pub"]).decode(),
+        "SPK_signature": base64.b64encode(sender_bundle["SPK_signature"]).decode(),
         "OPK_id": shared_file["OPK_id"],
         "pre_key": base64.b64encode(shared_file["pre_key"]).decode() if shared_file["pre_key"] else None
     }
