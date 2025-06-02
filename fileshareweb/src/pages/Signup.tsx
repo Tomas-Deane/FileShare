@@ -20,6 +20,8 @@ import { generateKeyPair, encryptPrivateKey, generateSalt, derivePDK, generateKE
 import sodium from 'libsodium-wrappers-sumo';
 import { storage } from '../utils/storage';
 import base64 from 'base64-js';
+import PasswordStrengthMeter from '../components/PasswordStrengthMeter';
+import { validatePassword } from '../utils/passwordUtils';
 
 interface SignupResponse {
   status: string;
@@ -41,6 +43,7 @@ const Signup: React.FC = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isBrowserCompatible, setIsBrowserCompatible] = useState(true);
+  const [passwordValidationMessage, setPasswordValidationMessage] = useState('');
 
   useEffect(() => {
     // Check browser compatibility
@@ -82,8 +85,10 @@ const Signup: React.FC = () => {
         throw new Error('Username cannot be empty or contain only spaces');
       }
 
-      if (formData.password.length < 8) {
-        throw new Error('Password must be at least 8 characters long');
+      // Validate password
+      const validation = await validatePassword(formData.password);
+      if (!validation.isValid) {
+        throw new Error(validation.message);
       }
 
       if (!isBrowserCompatible) {
@@ -220,6 +225,18 @@ const Signup: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handlePasswordChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newPassword = e.target.value;
+    setFormData({
+      ...formData,
+      password: newPassword
+    });
+
+    // Validate password and update message
+    const validation = await validatePassword(newPassword);
+    setPasswordValidationMessage(validation.message);
   };
 
   return (
@@ -363,7 +380,7 @@ const Signup: React.FC = () => {
                 id="password"
                 autoComplete="new-password"
                 value={formData.password}
-                onChange={handleChange}
+                onChange={handlePasswordChange}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
@@ -384,7 +401,7 @@ const Signup: React.FC = () => {
                 }}
                 sx={{
                   mt: 2,
-                  mb: 2,
+                  mb: 1,
                   width: '98%',
                   alignSelf: 'center',
                   '& .MuiOutlinedInput-root': {
@@ -422,6 +439,20 @@ const Signup: React.FC = () => {
                   },
                 }}
               />
+              <PasswordStrengthMeter password={formData.password} />
+              {passwordValidationMessage && (
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: passwordValidationMessage.includes('valid') ? '#00ff00' : '#ff1744',
+                    display: 'block',
+                    mt: 1,
+                    fontFamily: 'monospace',
+                  }}
+                >
+                  {passwordValidationMessage}
+                </Typography>
+              )}
 
               <Button
                 type="submit"
