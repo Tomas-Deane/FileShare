@@ -665,13 +665,8 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
     spk_sig = base64.b64decode(req.SPK_signature)
     efk = payload
 
-    # 4) consume one‐time prekey
-    opk = db.get_unused_opk(rid)
-    if not opk:
-        raise HTTPException(409, "No OPKs available for recipient")
-    
-    # Use the opk_id (not the database id)
-    opk_id = opk["opk_id"]  # This is the actual OPK ID (0-99)
+    # 4) Use the OPK_ID from the request
+    opk_id = req.OPK_ID  # Use the OPK ID from the request
     
     # 5) record the share
     db.share_file(
@@ -682,7 +677,7 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
         SPK_pub=spk_pub,
         SPK_signature=spk_sig,
         encrypted_file_key=efk,
-        OPK_id=opk_id  # Store the opk_id, not the database id
+        OPK_id=opk_id  # Use the OPK ID from the request
     )
 
     db.delete_challenge(uid)
