@@ -77,6 +77,34 @@ def validate_filename(filename: str) -> bool:
         
     return True
 
+def validate_base64(b64_string: str, field_name: str) -> bytes:
+    """
+    Validate a Base64 string and return its decoded bytes.
+    
+    Args:
+        b64_string: The Base64 string to validate
+        field_name: Name of the field for error messages
+        
+    Returns:
+        bytes: The decoded Base64 data
+        
+    Raises:
+        HTTPException: If the Base64 string is invalid
+    """
+    if not b64_string:
+        raise HTTPException(status_code=400, detail=f"Empty {field_name}")
+        
+    try:
+        # Check if the string contains only valid Base64 characters
+        if not re.match(r'^[A-Za-z0-9+/]*={0,2}$', b64_string):
+            raise HTTPException(status_code=400, detail=f"Invalid Base64 characters in {field_name}")
+            
+        # Try to decode the Base64 string
+        return base64.b64decode(b64_string)
+    except Exception as e:
+        logging.warning(f"Invalid Base64 in {field_name}: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid Base64 for {field_name}")
+
 def verify_signature(username: str, nonce: str, signature: str) -> bool:
     """Verify a signature for a given username and nonce."""
     user = models.UserDB().get_user(username)
@@ -136,29 +164,53 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
         logging.warning(f"User '{req.username}' already exists")
         raise HTTPException(status_code=400, detail="User already exists")
 
+    # Validate all Base64 fields
+    try:
+        salt = validate_base64(req.salt, "salt")
+        public_key = validate_base64(req.public_key, "public_key")
+        encrypted_privkey = validate_base64(req.encrypted_privkey, "encrypted_privkey")
+        privkey_nonce = validate_base64(req.privkey_nonce, "privkey_nonce")
+        encrypted_kek = validate_base64(req.encrypted_kek, "encrypted_kek")
+        kek_nonce = validate_base64(req.kek_nonce, "kek_nonce")
+        identity_key = validate_base64(req.identity_key, "identity_key")
+        signed_pre_key = validate_base64(req.signed_pre_key, "signed_pre_key")
+        signed_pre_key_sig = validate_base64(req.signed_pre_key_sig, "signed_pre_key_sig")
+        
+        # Validate one-time pre-keys
+        opk_bytes = []
+        for i, opk in enumerate(req.one_time_pre_keys):
+            try:
+                opk_bytes.append(validate_base64(opk, f"one_time_pre_key[{i}]"))
+            except HTTPException as e:
+                raise HTTPException(status_code=400, detail=f"Invalid Base64 in one_time_pre_key[{i}]")
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Unexpected error during Base64 validation: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error during validation")
+
     # 1) create the user row
     user_id = db.add_user(
         req.username,
-        base64.b64decode(req.salt),
+        salt,
         req.argon2_opslimit,
         req.argon2_memlimit,
-        base64.b64decode(req.public_key),
-        base64.b64decode(req.encrypted_privkey),
-        base64.b64decode(req.privkey_nonce),
-        base64.b64decode(req.encrypted_kek),
-        base64.b64decode(req.kek_nonce)
+        public_key,
+        encrypted_privkey,
+        privkey_nonce,
+        encrypted_kek,
+        kek_nonce
     )
 
     # 2) store their X3DH pre-key bundle
     db.add_pre_key_bundle(
         user_id,
-        base64.b64decode(req.identity_key),
-        base64.b64decode(req.signed_pre_key),
-        base64.b64decode(req.signed_pre_key_sig),
+        identity_key,
+        signed_pre_key,
+        signed_pre_key_sig,
     )
 
     # 3) store their one-time pre-keys
-    opk_bytes = [base64.b64decode(k) for k in req.one_time_pre_keys]
     db.add_opks(user_id, opk_bytes)
 
     logging.info(f"Signup successful (and X3DH keys stored) for '{req.username}'")
@@ -273,24 +325,36 @@ def upload_file_handler(req: UploadRequest, db: models.UserDB):
         raise HTTPException(status_code=404, detail="Unknown user")
 
     user_id = user["user_id"]
-    provided = base64.b64decode(req.nonce)
-    stored  = db.get_pending_challenge(user_id, "upload_file")
+    
+    # Validate all Base64 fields
+    try:
+        provided = validate_base64(req.nonce, "nonce")
+        encrypted_dek = validate_base64(req.encrypted_dek, "encrypted_dek")
+        signature = validate_base64(req.signature, "signature")
+        encrypted_file = validate_base64(req.encrypted_file, "encrypted_file")
+        file_nonce = validate_base64(req.file_nonce, "file_nonce")
+        dek_nonce = validate_base64(req.dek_nonce, "dek_nonce")
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Unexpected error during Base64 validation: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error during validation")
+
+    stored = db.get_pending_challenge(user_id, "upload_file")
     if stored is None or provided != stored:
         logging.warning(f"No valid pending challenge for user_id={user_id} (upload_file)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
 
-    encrypted_dek = base64.b64decode(req.encrypted_dek)
-    signature     = base64.b64decode(req.signature)
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, encrypted_dek)
         db.add_file(
             req.username,
             req.filename,
-            base64.b64decode(req.encrypted_file),
-            base64.b64decode(req.file_nonce),
+            encrypted_file,
+            file_nonce,
             encrypted_dek,
-            base64.b64decode(req.dek_nonce)
+            dek_nonce
         )
         logging.info(f"File '{req.filename}' uploaded for user_id={user_id}")
         db.delete_challenge(user_id)
