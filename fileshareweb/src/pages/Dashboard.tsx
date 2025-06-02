@@ -232,6 +232,7 @@ interface DownloadResponse {
   SPK_signature?: string;
   EK_pub?: string;
   encrypted_file_key?: string;
+  opk_id?: number;  // Add opk_id to the interface
 }
 
 const Dashboard: React.FC = () => {
@@ -438,21 +439,8 @@ const Dashboard: React.FC = () => {
         SPK_pub: downloadResponse.SPK_pub?.substring(0, 50) + '...',
         SPK_signature: downloadResponse.SPK_signature?.substring(0, 50) + '...',
         EK_pub: downloadResponse.EK_pub?.substring(0, 50) + '...',
-        encrypted_file_key: downloadResponse.encrypted_file_key?.substring(0, 50) + '...'
-      });
-
-      // Log the response for debugging
-      console.log('Download response fields present:', {
-        hasEncryptedFile: !!downloadResponse.encrypted_file,
-        hasFileNonce: !!downloadResponse.file_nonce,
-        hasEncryptedFileKey: !!downloadResponse.encrypted_file_key,
-        hasDekNonce: !!downloadResponse.dek_nonce,
-        isShared,
-        hasPreKey: isShared ? !!downloadResponse.pre_key : undefined,
-        hasIKPub: isShared ? !!downloadResponse.IK_pub : undefined,
-        hasSPKPub: isShared ? !!downloadResponse.SPK_pub : undefined,
-        hasSPKSignature: isShared ? !!downloadResponse.SPK_signature : undefined,
-        hasEKPub: isShared ? !!downloadResponse.EK_pub : undefined
+        encrypted_file_key: downloadResponse.encrypted_file_key?.substring(0, 50) + '...',
+        opk_id: downloadResponse.opk_id
       });
 
       // Step 4: Decrypt file
@@ -474,27 +462,18 @@ const Dashboard: React.FC = () => {
           throw new Error('Key bundle not found');
         }
 
-        // Get the public OPK that was used for encryption (base64)
-        const usedOPKPub = downloadResponse.pre_key;
-        if (!usedOPKPub) {
-          throw new Error('Missing pre_key in server response');
+        // Get the opk_id that was used
+        const usedOPKId = downloadResponse.opk_id;
+        if (usedOPKId === undefined) {
+          throw new Error('Missing opk_id in server response');
         }
-        console.log('Public OPK used for encryption:', usedOPKPub);
+        console.log('OPK ID used for encryption:', usedOPKId);
 
-        // Find our private OPK that corresponds to this public key
-        let matchingPrivateOPK: string | null = null;
-        for (let i = 0; i < myKeyBundle.OPKs.length; i++) {
-          const publicOPK = myKeyBundle.OPKs[i];
-          if (publicOPK === usedOPKPub) {
-            matchingPrivateOPK = myKeyBundle.OPKs_priv[i];
-            break;
-          }
+        // Get our private OPK that corresponds to this opk_id
+        const privateOPK = myKeyBundle.OPKs_priv[usedOPKId];
+        if (!privateOPK) {
+          throw new Error(`Private OPK not found for ID ${usedOPKId} - this OPK may have already been used`);
         }
-
-        if (!matchingPrivateOPK) {
-          throw new Error('Private OPK not found - this OPK may have already been used');
-        }
-
         console.log('Found matching private OPK');
 
         // Check for required fields with detailed error messages
@@ -512,7 +491,7 @@ const Dashboard: React.FC = () => {
         // Derive the shared secret using our private keys and sender's public keys
         const sharedSecret = await deriveX3DHSharedSecret({
           myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
-          myEKPriv: b64ToUint8Array(matchingPrivateOPK),
+          myEKPriv: b64ToUint8Array(privateOPK),
           recipientIKPub: b64ToUint8Array(downloadResponse.IK_pub),
           recipientSPKPub: b64ToUint8Array(downloadResponse.SPK_pub),
           recipientSPKSignature: b64ToUint8Array(downloadResponse.SPK_signature),

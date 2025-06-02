@@ -122,7 +122,9 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
 
     # 3) store their one-time pre-keys
     opk_bytes = [base64.b64decode(k) for k in req.one_time_pre_keys]
-    db.add_opks(user_id, opk_bytes)
+    # Create list of tuples with sequential opk_ids (0 to len-1)
+    opks_with_ids = [(i, opk) for i, opk in enumerate(opk_bytes)]
+    db.add_opks(user_id, opks_with_ids)
 
     logging.info(f"Signup successful (and X3DH keys stored) for '{req.username}'")
     return {"status": "ok"}
@@ -536,7 +538,11 @@ def add_prekey_bundle_handler(req: AddPreKeyBundleRequest, db: models.UserDB):
                 
                 logging.debug(f"Decoded data lengths - IK_pub: {len(IK_pub)}, SPK_pub: {len(SPK_pub)}, SPK_signature: {len(SPK_signature)}")
                 
-                db.add_pre_key_bundle(user_id, IK_pub, SPK_pub, SPK_signature)
+                # Get the highest existing opk_id for this user
+                highest_opk_id = db.get_highest_opk_id(user_id)
+                # Create list of tuples with sequential opk_ids starting from highest + 1
+                opks_with_ids = [(highest_opk_id + i + 1, opk) for i, opk in enumerate([IK_pub, SPK_pub, SPK_signature])]
+                db.add_opks(user_id, opks_with_ids)
                 db.delete_challenge(user_id)
                 return {"status": "ok", "message": "Prekey bundle added"}
             except Exception as e:
@@ -611,7 +617,11 @@ def add_opks_handler(req: AddOPKsRequest, db: models.UserDB):
         # Decode base64 data before passing to database
         try:
             pre_keys = [base64.b64decode(opk) for opk in req.opks]
-            db.add_opks(user_id, pre_keys)
+            # Get the highest existing opk_id for this user
+            highest_opk_id = db.get_highest_opk_id(user_id)
+            # Create list of tuples with sequential opk_ids starting from highest + 1
+            opks_with_ids = [(highest_opk_id + i + 1, opk) for i, opk in enumerate(pre_keys)]
+            db.add_opks(user_id, opks_with_ids)
             db.delete_challenge(user_id)
             return {"status": "ok", "message": "OPKs added"}
         except Exception as e:
@@ -859,46 +869,8 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
         db.delete_challenge(user_id)
         raise HTTPException(404, "Shared file not found")
 
-    # 4) Get the sender's pre-key bundle
-    if 'file_id' not in shared_file:
-        raise HTTPException(500, "Missing file_id in shared file data")
-            
-    sender = db.get_user_by_file_id(shared_file["file_id"])
-    if not sender:
-        db.delete_challenge(user_id)
-        raise HTTPException(404, "File owner not found")
-
-    sender_bundle = db.get_prekey_bundle(sender["user_id"])
-    if not sender_bundle:
-        db.delete_challenge(user_id)
-        raise HTTPException(404, "Sender's pre-key bundle not found")
-
     # 5) Return the encrypted file and keys
     try:
-        # Check for required fields
-        required_fields = {
-            "encrypted_file": shared_file.get("encrypted_file"),
-            "file_nonce": shared_file.get("file_nonce"),
-            "encrypted_file_key": shared_file.get("encrypted_file_key"),
-            "pre_key": shared_file.get("pre_key"),
-            "IK_pub": shared_file.get("IK_pub"),
-            "EK_pub": shared_file.get("EK_pub")
-        }
-        
-        missing_fields = [field for field, value in required_fields.items() if value is None]
-        if missing_fields:
-            raise HTTPException(500, f"Missing required fields: {', '.join(missing_fields)}")
-
-        required_sender_fields = {
-            "SPK_pub": sender_bundle.get("SPK_pub"),
-            "SPK_signature": sender_bundle.get("SPK_signature")
-        }
-        
-        missing_sender_fields = [field for field, value in required_sender_fields.items() if value is None]
-        if missing_sender_fields:
-            raise HTTPException(500, f"Missing required sender fields: {', '.join(missing_sender_fields)}")
-
-        # Prepare response with base64 encoded values
         response = {
             "status": "ok",
             "encrypted_file": base64.b64encode(shared_file["encrypted_file"]).decode(),
@@ -906,9 +878,10 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
             "encrypted_file_key": base64.b64encode(shared_file["encrypted_file_key"]).decode(),
             "pre_key": base64.b64encode(shared_file["pre_key"]).decode(),
             "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
-            "SPK_pub": base64.b64encode(sender_bundle["SPK_pub"]).decode(),
-            "SPK_signature": base64.b64encode(sender_bundle["SPK_signature"]).decode(),
-            "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode()
+            "SPK_pub": base64.b64encode(shared_file["SPK_pub"]).decode(),
+            "SPK_signature": base64.b64encode(shared_file["SPK_signature"]).decode(),
+            "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode(),
+            "opk_id": shared_file["opk_id"]  # Add the opk_id to the response
         }
         return response
     except HTTPException:
