@@ -2,8 +2,9 @@
 #define CRYPTOSERVICE_H
 
 #include "icryptoservice.h"
+#include <QByteArray>
+#include <QString>
 
-// Concrete implementation of ICryptoService using CryptoUtils and libsodium.
 class CryptoService : public ICryptoService
 {
 public:
@@ -25,6 +26,18 @@ public:
 
     // Get a fresh random AEAD key of length 32 bytes
     QByteArray generateAeadKey() override;
+
+    // Generate an X25519 keypair (Curve25519) for X3DH identity keys / OPKs
+    void generateX25519KeyPair(QByteArray &publicKey,
+                               QByteArray &secretKey) override;
+
+    // Create a single one‐time pre‐key (Curve25519)
+    void generateOneTimePreKey(QByteArray &opkPub,
+                               QByteArray &opkPriv) override;
+
+    // Compute OOB verification code from two identity‐pubkeys
+    QString computeOOBVerificationCode(const QByteArray &ik1_pub,
+                                       const QByteArray &ik2_pub) override;
 
     // Symmetric encryption (AEAD)
     QByteArray encrypt(const QByteArray &plaintext,

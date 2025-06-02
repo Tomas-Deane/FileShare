@@ -1,4 +1,3 @@
-# cloud/handlers.py
 #!/usr/bin/env python3
 import base64
 import secrets
@@ -23,11 +22,11 @@ from schemas import (
     ListUsersResponse,
     UserData,
     AddOPKsRequest,
-    ShareFileRequest, 
-    RemoveSharedFileRequest, 
+    ShareFileRequest,
+    RemoveSharedFileRequest,
     ListSharedFilesRequest,
-    ListSharedToRequest, 
-    ListSharedFromRequest, 
+    ListSharedToRequest,
+    ListSharedFromRequest,
     SharedFileResponse,
     OPKResponse, 
     GetOPKRequest,
@@ -96,11 +95,12 @@ def login_handler_continue(req: LoginRequest, db: models.UserDB, b64_nonce: str)
 # --- SIGNUP ------------------------------------------------------------
 def signup_handler(req: SignupRequest, db: models.UserDB):
     logging.debug(f"Signup: {req.model_dump_json()}")
+    # 1) check if user already exists
     if db.get_user(req.username):
         logging.warning(f"User '{req.username}' already exists")
         raise HTTPException(status_code=400, detail="User already exists")
 
-    # 1) create the user row
+    # 2) create the user row in `users` + `username_map`
     user_id = db.add_user(
         req.username,
         base64.b64decode(req.salt),
@@ -113,7 +113,7 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
         base64.b64decode(req.kek_nonce)
     )
 
-    # 2) store their X3DH pre-key bundle
+    # 3) store their X3DH pre-key bundle (identity key, signed pre-key, signature)
     db.add_pre_key_bundle(
         user_id,
         base64.b64decode(req.identity_key),
@@ -121,13 +121,28 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
         base64.b64decode(req.signed_pre_key_sig),
     )
 
-    # 3) store their one-time pre-keys
+    # 4) store their one-time pre-keys
     opk_bytes = [base64.b64decode(k) for k in req.one_time_pre_keys]
     # Create list of tuples with sequential opk_ids (0 to len-1)
     opks_with_ids = [(i, opk) for i, opk in enumerate(opk_bytes)]
     db.add_opks(user_id, opks_with_ids)
+    
+    # 5) store the very first TOFU backup (if provided)
+    #    We expect the client to have encrypted their “newly‐generated identity+prekeys”
+    #    under the session‐Kek, and sent us base64 ciphertext + base64 nonce.
+    if req.encrypted_backup and req.backup_nonce:
+        try:
+            db.add_tofu_backup(
+                user_id,
+                base64.b64decode(req.encrypted_backup),
+                base64.b64decode(req.backup_nonce)
+            )
+        except Exception as e:
+            logging.error(f"Failed to store initial TOFU backup for user_id={user_id}: {e}")
+            # We allow signup to succeed, but log the failure.
+            # Alternatively, you could reject signup by raising HTTPException here.
 
-    logging.info(f"Signup successful (and X3DH keys stored) for '{req.username}'")
+    logging.info(f"Signup successful (and X3DH keys + initial TOFU backup stored) for '{req.username}'")
     return {"status": "ok"}
 
 # --- AUTHENTICATE (LOGIN COMPLETE) --------------------------------------

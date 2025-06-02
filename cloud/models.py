@@ -474,24 +474,22 @@ class UserDB:
 
     def add_opks(self, user_id, pre_keys):
         """Add one-time pre-keys for a user.
-        
         Args:
             user_id: The user's ID
             pre_keys: List of tuples (opk_id, pre_key) where opk_id is a non-negative integer
                      and pre_key is the binary pre-key data
         """
         self.ensure_connection()
-        
-        # Validate input format
+        #Validate input format,
         if not isinstance(pre_keys, list):
             raise ValueError("pre_keys must be a list")
-        
+
         for opk_id, pre_key in pre_keys:
             if not isinstance(opk_id, int) or opk_id < 0:
                 raise ValueError(f"Invalid opk_id: {opk_id}. Must be a non-negative integer.")
             if not isinstance(pre_key, bytes):
                 raise ValueError("pre_key must be bytes")
-        
+
         sql = """
             INSERT INTO opks
                 (user_id, opk_id, pre_key)
@@ -697,6 +695,7 @@ class UserDB:
             ORDER BY sf.shared_at DESC
         """
         self.cursor.execute(sql, (recipient_id, owner_id))
+
         return self.cursor.fetchall()
 
     def cleanup_old_tofu_backups(self, user_id: int, keep_last_n: int = 1):
@@ -808,5 +807,3 @@ class UserDB:
         
         self.cursor.execute(sql, (search_pattern,))
         return self.cursor.fetchall()
-
-
