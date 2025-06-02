@@ -33,6 +33,7 @@ from schemas import (
     RetrieveFileDEKRequest,
     DownloadSharedFileRequest,
     ListMatchingUsersRequest,
+    ListSharersRequest,
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
@@ -319,12 +320,16 @@ def download_file_handler(req: DownloadFileRequest, db: models.UserDB):
 
     signature = base64.b64decode(req.signature)
     try:
+        # Now signature is over the file_id (encoded as ASCII)
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
-            .verify(signature, req.filename.encode())
-        record = db.get_file(req.username, req.filename)
-        if not record:
-            logging.warning(f"File '{req.filename}' not found for user_id={user_id}")
+            .verify(signature, str(req.file_id).encode())
+
+        # (2) fetch by ID, rather than by filename
+        record = db.get_file_by_id(req.file_id)
+        if not record or record["owner_id"] != user_id:
+            logging.warning(f"File ID {req.file_id} not found or not owned by user_id={user_id}")
             raise HTTPException(status_code=404, detail="File not found")
+
         db.delete_challenge(user_id)
         return {
             "status": "ok",
@@ -402,11 +407,13 @@ def delete_file_handler(req: DeleteFileRequest, db: models.UserDB):
 
     signature = base64.b64decode(req.signature)
     try:
+        # Verify signature over the file_id (as ASCII string)
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
-            .verify(signature, req.filename.encode())
+            .verify(signature, str(req.file_id).encode())
 
-        db.delete_file(req.username, req.filename)
-        logging.info(f"File '{req.filename}' deleted for user_id={user_id}")
+        # Attempt to delete by ID (method checks owner_id internally)
+        db.delete_file_by_id(req.file_id, req.username)
+        logging.info(f"File ID '{req.file_id}' deleted for user_id={user_id}")
         db.delete_challenge(user_id)
         return {"status": "ok", "message": "file deleted"}
     except InvalidSignature:
@@ -738,40 +745,72 @@ def list_shared_files_handler(req: ListSharedFilesRequest, db: models.UserDB) ->
         "files": files
     }
 
-# ─── LIST SHARES I SENT TO A SPECIFIC USER ──────────────────────────────
 def list_shared_to_handler(req: ListSharedToRequest, db: models.UserDB):
+    import base64
+    from fastapi import HTTPException
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    from schemas import SharedFileResponse
+
+    # 1) Verify the requesting user and their challenge
     user = db.get_user(req.username)
     if not user:
-        raise HTTPException(404, "Unknown user")
+        raise HTTPException(status_code=404, detail="Unknown user")
     uid = user["user_id"]
+
     provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(uid, "list_shared_to")
+    stored   = db.get_pending_challenge(uid, "list_shared_to")
     if stored is None or provided != stored:
-        raise HTTPException(400, "Invalid or expired challenge")
-    sig = base64.b64decode(req.signature)
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+
     try:
+        sig = base64.b64decode(req.signature)
         Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, provided)
     except Exception:
         db.delete_challenge(uid)
-        raise HTTPException(401, "Bad signature")
+        raise HTTPException(status_code=401, detail="Bad signature")
 
+    # 2) Look up the target user
     target = db.get_user(req.target_username)
     if not target:
-        raise HTTPException(404, "Target user not found")
+        raise HTTPException(status_code=404, detail="Target user not found")
+
+    # 3) Fetch all rows of what I (owner=uid) have shared to target["user_id"]
     rows = db.get_shared_files_to(uid, target["user_id"])
     db.delete_challenge(uid)
-    return {"status": "ok", "shares": [
-        SharedFileResponse(
-            share_id = r["share_id"],
-            file_id  = r["file_id"],
-            filename = r["filename"],
-            EK_pub   = base64.b64encode(r["EK_pub"]).decode(),
-            IK_pub   = base64.b64encode(r["IK_pub"]).decode(),
-            shared_at= r["shared_at"].isoformat()
+
+    # 4) Build response, handling both dict‐rows and tuple‐rows
+    shares = []
+    for r in rows:
+        if isinstance(r, dict):
+            # When cursor was created with dictionary=True, r is a dict
+            share_id  = r["share_id"]
+            file_id   = r["file_id"]
+            filename  = r["filename"]
+            EK_bytes  = r["EK_pub"]
+            IK_bytes  = r["IK_pub"]
+            shared_at = r["shared_at"]
+        else:
+            # If r is a tuple, fields come back in this order:
+            #   (share_id, file_id, filename, EK_pub, IK_pub, encrypted_file_key, shared_at)
+            share_id  = r[0]
+            file_id   = r[1]
+            filename  = r[2]
+            EK_bytes  = r[3]
+            IK_bytes  = r[4]
+            shared_at = r[6]
+
+        shares.append(
+            SharedFileResponse(
+                share_id  = share_id,
+                file_id   = file_id,
+                filename  = filename,
+                EK_pub    = base64.b64encode(EK_bytes).decode(),
+                IK_pub    = base64.b64encode(IK_bytes).decode(),
+                shared_at = shared_at.isoformat()
+            )
         )
-        for r in rows
-    ]}
+
+    return {"status": "ok", "shares": shares}
 
 # ─── LIST SHARES SENT TO ME FROM A SPECIFIC USER ────────────────────────
 def list_shared_from_handler(req: ListSharedFromRequest, db: models.UserDB):
@@ -794,19 +833,41 @@ def list_shared_from_handler(req: ListSharedFromRequest, db: models.UserDB):
     target = db.get_user(req.target_username)
     if not target:
         raise HTTPException(404, "Target user not found")
+    
     rows = db.get_shared_files_from(uid, target["user_id"])
     db.delete_challenge(uid)
-    return {"status": "ok", "shares": [
-        SharedFileResponse(
-            share_id = r["share_id"],
-            file_id  = r["file_id"],
-            filename = r["filename"],
-            EK_pub   = base64.b64encode(r["EK_pub"]).decode(),
-            IK_pub   = base64.b64encode(r["IK_pub"]).decode(),
-            shared_at= r["shared_at"].isoformat()
+
+    shares = []
+    for r in rows:
+        if isinstance(r, dict):
+            # When the cursor returned a dict
+            share_id   = r["share_id"]
+            file_id    = r["file_id"]
+            filename   = r["filename"]
+            EK_bytes   = r["EK_pub"]
+            IK_bytes   = r["IK_pub"]
+            shared_at  = r["shared_at"]
+        else:
+            # Tuple order: (share_id, file_id, filename, EK_pub, IK_pub, encrypted_file_key, shared_at)
+            share_id   = r[0]
+            file_id    = r[1]
+            filename   = r[2]
+            EK_bytes   = r[3]
+            IK_bytes   = r[4]
+            shared_at  = r[6]
+
+        shares.append(
+            SharedFileResponse(
+                share_id  = share_id,
+                file_id   = file_id,
+                filename  = filename,
+                EK_pub    = base64.b64encode(EK_bytes).decode(),
+                IK_pub    = base64.b64encode(IK_bytes).decode(),
+                shared_at = shared_at.isoformat()
+            )
         )
-        for r in rows
-    ]}
+
+    return {"status": "ok", "shares": shares}
 
 # ─── REMOVE A SHARE ────────────────────────────────────────────────────
 def remove_shared_file_handler(req: RemoveSharedFileRequest, db: models.UserDB):
@@ -965,3 +1026,46 @@ def list_matching_users_handler(req: ListMatchingUsersRequest, db: models.UserDB
         logging.warning(f"Bad signature for list_matching_users of user_id={user_id}")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
+    
+    # LIST ALL DISTINCT USERS WHO SHARED TO A TARGET
+def list_sharers_handler(req: ListSharersRequest, db: models.UserDB) -> dict:
+    """
+    Given:
+      - req.username: the requester (must prove possession via nonce+signature)
+    Returns:
+      { "status":"ok", "usernames":[ <list of distinct usernames> ] }
+    """
+    import base64
+    from fastapi import HTTPException
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+    # 1) Verify the requesting user exists
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="Unknown user")
+    uid = user["user_id"]
+
+    # 2) Verify the stored challenge for operation "list_sharers"
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(uid, "list_sharers")
+    if stored is None or provided != stored:
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+
+    # 3) Verify signature over the raw nonce bytes
+    try:
+        sig = base64.b64decode(req.signature)
+        Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, provided)
+    except Exception:
+        db.delete_challenge(uid)
+        raise HTTPException(status_code=401, detail="Bad signature")
+
+    # 5) Fetch all distinct usernames who have shared to target_id
+    sharers = db.get_sharers(uid)
+
+    # 6) Delete the challenge and return
+    db.delete_challenge(uid)
+    return {
+        "status": "ok",
+        "usernames": sharers
+    }
+
