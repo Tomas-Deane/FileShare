@@ -88,9 +88,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Dependency to get DB ───────────────────────────────────────────────────────
-def get_db():
-    return app.state.db
+# ─── Database dependency ────────────────────────────────────────────────────────
+async def get_db():
+    db = models.UserDB()
+    try:
+        yield db
+    finally:
+        if hasattr(db._local, 'conn'):
+            try:
+                db._local.conn.close()
+            except:
+                pass
+            delattr(db._local, 'conn')
+            delattr(db._local, 'cursor')
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
