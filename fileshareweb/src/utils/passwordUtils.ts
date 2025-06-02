@@ -1,4 +1,5 @@
 import { SHA1 } from 'crypto-js';
+import { apiClient } from './apiClient';
 
 export const checkPwnedPassword = async (password: string): Promise<number> => {
   try {
@@ -32,7 +33,7 @@ export const checkPwnedPassword = async (password: string): Promise<number> => {
 };
 
 export const validatePassword = async (password: string): Promise<{ isValid: boolean; message: string }> => {
-  // Check minimum length (8 characters)
+  // Check minimum length (8 characters as per OWASP)
   if (password.length < 8) {
     return {
       isValid: false,
@@ -40,43 +41,11 @@ export const validatePassword = async (password: string): Promise<{ isValid: boo
     };
   }
 
-  // Check maximum length (64 characters)
-  if (password.length > 64) {
+  // Check maximum length (128 characters to allow for passphrases)
+  if (password.length > 128) {
     return {
       isValid: false,
-      message: 'Password must not exceed 64 characters'
-    };
-  }
-
-  // Check for at least one uppercase letter
-  if (!/[A-Z]/.test(password)) {
-    return {
-      isValid: false,
-      message: 'Password must contain at least one uppercase letter'
-    };
-  }
-
-  // Check for at least one lowercase letter
-  if (!/[a-z]/.test(password)) {
-    return {
-      isValid: false,
-      message: 'Password must contain at least one lowercase letter'
-    };
-  }
-
-  // Check for at least one number
-  if (!/\d/.test(password)) {
-    return {
-      isValid: false,
-      message: 'Password must contain at least one number'
-    };
-  }
-
-  // Check for at least one special character
-  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
-    return {
-      isValid: false,
-      message: 'Password must contain at least one special character (!@#$%^&*(),.?":{}|<>)'
+      message: 'Password must not exceed 128 characters'
     };
   }
 
@@ -93,4 +62,35 @@ export const validatePassword = async (password: string): Promise<{ isValid: boo
     isValid: true,
     message: 'Password is valid'
   };
+};
+
+export interface PasswordLeakInfo {
+  leakDate: string;
+  leakSource: string;
+  affectedUsers: string[];
+}
+
+export const handlePasswordLeak = async (
+  leakInfo: PasswordLeakInfo,
+  forceRotation: boolean = true
+): Promise<void> => {
+  try {
+    // Store leak information
+    await apiClient.post('/password-leak', {
+      leak_date: leakInfo.leakDate,
+      leak_source: leakInfo.leakSource,
+      affected_users: leakInfo.affectedUsers,
+      force_rotation: forceRotation
+    });
+
+    // If force rotation is enabled, mark affected users for password change
+    if (forceRotation) {
+      await apiClient.post('/force-password-change', {
+        affected_users: leakInfo.affectedUsers
+      });
+    }
+  } catch (error) {
+    console.error('Error handling password leak:', error);
+    throw error;
+  }
 }; 
