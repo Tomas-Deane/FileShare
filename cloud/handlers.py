@@ -148,15 +148,18 @@ def challenge_handler(req: ChallengeRequest, db: models.UserDB):
         logging.warning(f"Invalid operation '{req.operation}' requested")
         raise HTTPException(status_code=400, detail="Invalid operation")
     
-    user = db.get_user(req.username)
-    if not user:
-        logging.warning(f"Unknown user '{req.username}' at challenge")
-        raise HTTPException(status_code=400, detail="Invalid credentials")
-
-    user_id = user["user_id"]
+    # Generate challenge regardless of user existence
     challenge = secrets.token_bytes(32)
-    db.add_challenge(user_id, req.operation, challenge)
-    logging.debug(f"Stored challenge for user_id={user_id} op={req.operation}: {base64.b64encode(challenge).decode()}")
+    
+    # Only store challenge if user exists
+    user = db.get_user(req.username)
+    if user:
+        user_id = user["user_id"]
+        db.add_challenge(user_id, req.operation, challenge)
+        logging.debug(f"Stored challenge for user_id={user_id} op={req.operation}: {base64.b64encode(challenge).decode()}")
+    else:
+        logging.debug(f"Challenge generated for non-existent user '{req.username}'")
+    
     logging.debug(f"Challenge timestamp: {datetime.datetime.utcnow()}")
 
     return {
