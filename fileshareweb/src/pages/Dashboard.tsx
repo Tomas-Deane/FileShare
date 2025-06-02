@@ -503,7 +503,7 @@ const Dashboard: React.FC = () => {
           fileNonceLength: fileNonce?.length
         });
 
-        // Use fileKeyNonce instead of fileNonce for decrypting the file key
+        // Use fileKeyNonce for decrypting the file key
         const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileKeyNonce);
         console.log('Decrypted File Key Debug:', {
           hasFileKey: !!fileKey,

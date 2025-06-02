@@ -219,7 +219,7 @@ async def add_prekey_bundle(req: AddPreKeyBundleRequest, db: models.UserDB = Dep
 @app.post("/opk")
 async def opk(req: GetOPKRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"GetOPKRequest body: {req.model_dump_json()}")
-    resp = await run_in_threadpool(handlers.opk_handler, req, db)
+    resp = await run_in_threadpool(handlers.get_opk_handler, req, db)
     logger.debug(f"OPK response: {resp}")
     return resp
 
