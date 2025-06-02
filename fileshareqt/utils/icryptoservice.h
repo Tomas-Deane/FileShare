@@ -30,6 +30,17 @@ public:
     // Get a fresh random AEAD key of length 32 bytes
     virtual QByteArray generateAeadKey() = 0;
 
+    // Generate an X25519 keypair (Curve25519) for X3DH identity keys / OPKs
+    virtual void generateX25519KeyPair(QByteArray &publicKey,
+                               QByteArray &secretKey) = 0;
+
+    // Create a single one‐time pre‐key (Curve25519)
+    virtual void generateOneTimePreKey(QByteArray &opkPub,
+                               QByteArray &opkPriv) = 0;
+
+    // Compute OOB verification code from two identity‐pubkeys
+    virtual QString computeOOBVerificationCode(const QByteArray &ik1_pub,
+                                       const QByteArray &ik2_pub) = 0;
 
     // Symmetric encryption (AEAD)
     virtual QByteArray encrypt(const QByteArray &plaintext,
