@@ -922,6 +922,18 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
                 print(f"Debug - {field} type: {type(value)}")
                 print(f"Debug - {field} length: {len(value) if hasattr(value, '__len__') else 'N/A'}")
 
+        # Check if any required fields are missing
+        missing_fields = [field for field, value in required_fields.items() if value is None]
+        if missing_fields:
+            print(f"Debug - Missing required fields: {missing_fields}")
+            raise HTTPException(500, f"Missing required fields: {', '.join(missing_fields)}")
+
+        missing_sender_fields = [field for field, value in sender_fields.items() if value is None]
+        if missing_sender_fields:
+            print(f"Debug - Missing required sender fields: {missing_sender_fields}")
+            raise HTTPException(500, f"Missing required sender fields: {', '.join(missing_sender_fields)}")
+
+        # Prepare response with base64 encoded values
         response = {
             "status": "ok",
             "encrypted_file": base64.b64encode(shared_file["encrypted_file"]).decode(),
