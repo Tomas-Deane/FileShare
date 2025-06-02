@@ -855,17 +855,26 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
             raise HTTPException(401, "Bad signature")
 
         # 3) Get the shared file data
+        print(f"Debug - Getting shared file data for share_id: {req.share_id}")
         shared_file = db.get_shared_file(req.share_id, user_id)
         if not shared_file:
             db.delete_challenge(user_id)
             raise HTTPException(404, "Shared file not found")
+        
+        print(f"Debug - Shared file data keys: {list(shared_file.keys())}")
+        print(f"Debug - Shared file data: {shared_file}")
 
         # 4) Get the sender's pre-key bundle
+        if 'file_id' not in shared_file:
+            raise HTTPException(500, "Missing file_id in shared file data")
+            
+        print(f"Debug - Getting user by file_id: {shared_file['file_id']}")
         sender = db.get_user_by_file_id(shared_file["file_id"])
         if not sender:
             db.delete_challenge(user_id)
             raise HTTPException(404, "File owner not found")
 
+        print(f"Debug - Getting pre-key bundle for sender: {sender['username']}")
         sender_bundle = db.get_prekey_bundle(sender["username"])
         if not sender_bundle:
             db.delete_challenge(user_id)
