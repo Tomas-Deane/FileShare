@@ -761,7 +761,13 @@ class UserDB:
                 o.pre_key as pre_key
             FROM shared_files sf
             JOIN files f ON sf.file_id = f.id
-            LEFT JOIN opks o ON sf.OPK_id = o.opk_id
+            LEFT JOIN opks o ON o.id = (
+                SELECT id 
+                FROM opks 
+                WHERE opk_id = sf.OPK_id 
+                AND user_id = sf.recipient_id
+                LIMIT 1
+            )
             WHERE sf.share_id = %s
             AND sf.recipient_id = %s
             LIMIT 1
