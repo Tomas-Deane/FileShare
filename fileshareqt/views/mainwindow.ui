@@ -70,7 +70,7 @@
              <string/>
             </property>
             <property name="pixmap">
-             <pixmap resource="../build/Qt_6_9_0_for_macOS-Debug/qmake_qmake_immediate.qrc">:/nrmc_image.png</pixmap>
+             <pixmap resource="../resources.qrc">:/nrmc_image.png</pixmap>
             </property>
             <property name="scaledContents">
              <bool>true</bool>
@@ -433,9 +433,16 @@
                </layout>
               </item>
               <item>
+               <widget class="QLabel" name="label_2">
+                <property name="text">
+                 <string>Out of bands code for user pair:</string>
+                </property>
+               </widget>
+              </item>
+              <item>
                <widget class="QLabel" name="codeLabel">
                 <property name="text">
-                 <string>TextLabel</string>
+                 <string>XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX</string>
                 </property>
                </widget>
               </item>
@@ -476,13 +483,6 @@
               </item>
               <item>
                <widget class="QListWidget" name="verifiedUsersList"/>
-              </item>
-              <item>
-               <widget class="QPushButton" name="regenerateCodeButton">
-                <property name="text">
-                 <string>Regenerate Code</string>
-                </property>
-               </widget>
               </item>
               <item>
                <widget class="QPushButton" name="deleteVerifiedUserButton">
@@ -1144,7 +1144,7 @@
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
  <resources>
-  <include location="../build/Qt_6_9_0_for_macOS-Debug/qmake_qmake_immediate.qrc"/>
+  <include location="../resources.qrc"/>
  </resources>
  <connections/>
 </ui>

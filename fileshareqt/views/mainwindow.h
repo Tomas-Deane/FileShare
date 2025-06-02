@@ -19,6 +19,7 @@ class CryptoService;
 class AuthController;
 class ProfileController;
 class FileController;
+class VerifyController;
 class NetworkManager;
 
 class MainWindow : public QMainWindow
@@ -30,6 +31,7 @@ public:
     MainWindow(AuthController* authCtrl,
                 FileController* fileCtrl,
                 ProfileController* profileCtrl,
+                VerifyController* verifyCtrl,
                 QWidget *parent = nullptr);
 
     ~MainWindow();
@@ -85,6 +87,7 @@ private:
     AuthController        *authController;
     ProfileController     *profileController;
     FileController        *fileController;
+    VerifyController      *verifyController;
     PasswordStrength       pwEvaluator;
 
     QString                currentUploadPath;
