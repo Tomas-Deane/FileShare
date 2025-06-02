@@ -834,7 +834,7 @@ def opk_handler(req: GetOPKRequest, db: models.UserDB):
 
 def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.UserDB):
     # 1) verify owner & challenge
-    user = db.get_user_by_username(req.username)
+    user = db.get_user(req.username)
     if not user:
         raise HTTPException(404, "User not found")
     
@@ -868,7 +868,7 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
         db.delete_challenge(user_id)
         raise HTTPException(404, "File owner not found")
 
-    sender_bundle = db.get_prekey_bundle(sender["username"])
+    sender_bundle = db.get_prekey_bundle(sender["user_id"])
     if not sender_bundle:
         db.delete_challenge(user_id)
         raise HTTPException(404, "Sender's pre-key bundle not found")
