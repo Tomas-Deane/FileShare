@@ -39,6 +39,27 @@ import datetime
 
 import models
 
+# List of allowed operations for challenge requests
+ALLOWED_OPERATIONS = {
+    "login",
+    "change_username",
+    "change_password",
+    "upload_file",
+    "list_files",
+    "download_file",
+    "delete_file",
+    "get_pre_key_bundle",
+    "add_pre_key_bundle",
+    "list_users",
+    "add_opks",
+    "get_opk",
+    "share_file",
+    "list_shared_files",
+    "list_shared_to",
+    "list_shared_from",
+    "remove_shared_file"
+}
+
 def validate_filename(filename: str) -> bool:
     """
     Validate a filename to prevent directory traversal and ensure it only contains safe characters.
@@ -121,6 +142,12 @@ def verify_signature(username: str, nonce: str, signature: str) -> bool:
 # --- CHALLENGE HANDLER --------------------------------------------
 def challenge_handler(req: ChallengeRequest, db: models.UserDB):
     logging.debug(f"Challenge: {req.model_dump_json()}")
+    
+    # Validate operation
+    if req.operation not in ALLOWED_OPERATIONS:
+        logging.warning(f"Invalid operation '{req.operation}' requested")
+        raise HTTPException(status_code=400, detail="Invalid operation")
+    
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' at challenge")
