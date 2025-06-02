@@ -669,19 +669,30 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
     opk_id = req.OPK_ID  # Use the OPK ID from the request
     
     # 5) record the share
-    db.share_file(
-        file_id=file_id,
-        recipient_id=rid,
-        EK_pub=ek_pub,
-        IK_pub=ik_pub,
-        SPK_pub=spk_pub,
-        SPK_signature=spk_sig,
-        encrypted_file_key=efk,
-        OPK_id=opk_id  # Use the OPK ID from the request
-    )
-
-    db.delete_challenge(uid)
-    return {"status": "ok", "message": "file shared"}
+    try:
+        # Convert base64 fields to bytes
+        encrypted_file_key = base64.b64decode(req.encrypted_file_key)
+        file_key_nonce = base64.b64decode(req.file_key_nonce)
+        
+        # Store the shared file with the file_key_nonce
+        db.create_shared_file(
+            file_id=req.file_id,
+            recipient_id=recipient["user_id"],
+            encrypted_file_key=encrypted_file_key,
+            file_key_nonce=file_key_nonce,
+            EK_pub=base64.b64decode(req.EK_pub),
+            IK_pub=base64.b64decode(req.IK_pub),
+            SPK_pub=base64.b64decode(req.SPK_pub),
+            SPK_signature=base64.b64decode(req.SPK_signature),
+            OPK_id=req.OPK_ID,
+            pre_key=pre_key
+        )
+        
+        return {"status": "ok"}
+        
+    except Exception as e:
+        logging.error(f"Error sharing file: {str(e)}")
+        raise HTTPException(500, f"Error sharing file: {str(e)}")
 
 # ─── LIST ALL SHARES TO ME ───────────────────────────────────────────────
 def list_shared_files_handler(req: ListSharedFilesRequest, db: models.UserDB) -> dict:
