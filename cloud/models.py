@@ -758,11 +758,10 @@ class UserDB:
                 sf.SPK_pub,
                 sf.SPK_signature,
                 sf.OPK_id,
-                o.opk_id as opk_id,
                 o.pre_key as pre_key
             FROM shared_files sf
             JOIN files f ON sf.file_id = f.id
-            LEFT JOIN opks o ON sf.OPK_id = o.id
+            LEFT JOIN opks o ON sf.OPK_id = o.opk_id
             WHERE sf.share_id = %s
             AND sf.recipient_id = %s
             LIMIT 1

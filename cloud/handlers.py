@@ -669,8 +669,7 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
     opk = db.get_unused_opk(rid)
     if not opk:
         raise HTTPException(409, "No OPKs available for recipient")
-    opk_id = opk["id"] if isinstance(opk, dict) else opk[0]
-    db.mark_opk_consumed(opk_id)
+    opk_id = opk["opk_id"] if isinstance(opk, dict) else opk[1]
 
     # 5) record the share
     db.share_file(file_id, rid, ek_pub, ik_pub, spk_pub, spk_sig, efk, opk_id)
