@@ -4,6 +4,7 @@ import sodium from 'libsodium-wrappers-sumo';
 declare global {
   interface Window {
     crypto: Crypto;
+    runX3DHTest: () => Promise<void>;
   }
 }
 
@@ -391,9 +392,9 @@ export async function deriveX3DHSharedSecretRecipient({
     const myOPKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(myOPKPriv);
 
     // DH computations
-    const DH1 = sodium.crypto_scalarmult(mySPKPriv_x, senderEKPub_x);  // DH(SPKb, EKa)
+    const DH1 = sodium.crypto_scalarmult(mySPKPriv_x, senderIKPub_x);  // DH(SPKb, IKa)
     const DH2 = sodium.crypto_scalarmult(myIKPriv_x, senderEKPub_x);   // DH(IKb, EKa)
-    const DH3 = sodium.crypto_scalarmult(myOPKPriv_x, senderIKPub_x);  // DH(OPKb, IKa)
+    const DH3 = sodium.crypto_scalarmult(mySPKPriv_x, senderEKPub_x);  // DH(SPKb, EKa)
     const DH4 = sodium.crypto_scalarmult(myOPKPriv_x, senderEKPub_x);  // DH(OPKb, EKa)
 
     const combined = new Uint8Array(DH1.length + DH2.length + DH3.length + DH4.length);
@@ -430,5 +431,71 @@ export async function encryptWithAESGCM(key: Uint8Array, data: Uint8Array) {
   return {
     ciphertext, // Uint8Array
     nonce       // Uint8Array
+  };
+}
+
+export async function testX3DHKeyExchange() {
+  await sodium.ready;
+  console.log('Starting X3DH key exchange test...');
+
+  // Generate key bundles for both parties
+  const aliceBundle = await generateX3DHKeys();
+  const bobBundle = await generateX3DHKeys();
+
+  // Generate ephemeral key for Alice (sender)
+  const aliceEphemeral = await generateEphemeralKeyPair();
+
+  console.log('Generated key bundles and ephemeral key');
+
+  // Alice (sender) derives shared secret
+  const aliceSharedSecret = await deriveX3DHSharedSecret({
+    myIKPriv: aliceBundle.identity_key_private,
+    myEKPriv: aliceEphemeral.privateKey,
+    recipientIKPub: bobBundle.identity_key,
+    recipientSPKPub: bobBundle.signed_pre_key,
+    recipientSPKSignature: bobBundle.signed_pre_key_sig,
+    recipientOPKPub: bobBundle.one_time_pre_keys[0] // Using first OPK
+  });
+
+  console.log('Alice derived shared secret:', {
+    length: aliceSharedSecret.length,
+    hex: Array.from(new Uint8Array(aliceSharedSecret)).map(b => b.toString(16).padStart(2, '0')).join('')
+  });
+
+  // Bob (recipient) derives shared secret
+  const bobSharedSecret = await deriveX3DHSharedSecretRecipient({
+    senderEKPub: aliceEphemeral.publicKey,
+    senderIKPub: aliceBundle.identity_key,
+    myIKPriv: bobBundle.identity_key_private,
+    mySPKPriv: bobBundle.signed_pre_key_private,
+    myOPKPriv: bobBundle.one_time_pre_keys_private[0] // Using first OPK private key
+  });
+
+  console.log('Bob derived shared secret:', {
+    length: bobSharedSecret.length,
+    hex: Array.from(new Uint8Array(bobSharedSecret)).map(b => b.toString(16).padStart(2, '0')).join('')
+  });
+
+  // Compare shared secrets
+  const secretsMatch = sodium.memcmp(aliceSharedSecret, bobSharedSecret);
+  console.log('Shared secrets match:', secretsMatch);
+
+  // Test encryption/decryption with shared secrets
+  const testMessage = new TextEncoder().encode('Hello, X3DH!');
+  const { ciphertext, nonce } = await encryptWithAESGCM(aliceSharedSecret, testMessage);
+  
+  try {
+    const decrypted = await decryptFile(ciphertext, bobSharedSecret, nonce);
+    const decryptedText = new TextDecoder().decode(decrypted);
+    console.log('Test message decrypted successfully:', decryptedText);
+    console.log('Original message matches decrypted:', decryptedText === 'Hello, X3DH!');
+  } catch (error) {
+    console.error('Decryption failed:', error);
+  }
+
+  return {
+    secretsMatch,
+    aliceSharedSecret,
+    bobSharedSecret
   };
 }

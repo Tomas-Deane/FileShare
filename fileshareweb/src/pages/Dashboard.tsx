@@ -21,6 +21,7 @@ import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, g
 import { storage } from '../utils/storage';
 import sodium from 'libsodium-wrappers-sumo';
 import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithAESGCM, deriveX3DHSharedSecretRecipient } from '../utils/crypto';
+import { testX3DHKeyExchange } from '../utils/crypto';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -489,13 +490,33 @@ const Dashboard: React.FC = () => {
           myOPKPriv: b64ToUint8Array(privateOPK)
         });
 
-        
+        console.log('Shared secret:', {
+          length: sharedSecret.length,
+          hex: Array.from(new Uint8Array(sharedSecret)).map(b => b.toString(16).padStart(2, '0')).join('')
+        });
+
         // Decrypt the file key using the shared secret
         const encryptedFileKey = b64ToUint8Array(downloadResponse.encrypted_file_key);
+        console.log('File key decryption inputs:', {
+          encryptedFileKeyLength: encryptedFileKey.length,
+          sharedSecretLength: sharedSecret.length,
+          fileNonceLength: fileNonce.length,
+          encryptedFileKeyB64: downloadResponse.encrypted_file_key,
+          fileNonceB64: downloadResponse.file_nonce
+        });
         const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileNonce);
+        console.log('Decrypted file key:', {
+          length: fileKey.length,
+          hex: Array.from(new Uint8Array(fileKey)).map(b => b.toString(16).padStart(2, '0')).join('')
+        });
 
         // Decrypt the file using the file key
         decrypted = await decryptFile(encryptedFile, fileKey, fileNonce);
+        console.log('File decryption inputs:', {
+          encryptedFileLength: encryptedFile.length,
+          fileKeyLength: fileKey.length,
+          fileNonceLength: fileNonce.length
+        });
       } else {
         // For regular files, just decrypt the file key with our KEK
         if (!downloadResponse.encrypted_file_key || !downloadResponse.file_nonce) {
@@ -530,6 +551,28 @@ const Dashboard: React.FC = () => {
     logDebug('Revoke initiated', { fileId });
     // TODO: Implement revoke
   };
+
+  // Add this to Dashboard.tsx temporarily
+const TestButton = () => {
+  const runTest = async () => {
+    try {
+      const results = await testX3DHKeyExchange();
+      console.log('X3DH Test Results:', results);
+    } catch (error) {
+      console.error('X3DH Test Failed:', error);
+    }
+  };
+
+  return (
+    <button 
+      onClick={runTest}
+      style={{ position: 'fixed', bottom: '20px', right: '20px', zIndex: 1000 }}
+    >
+      Run X3DH Test
+    </button>
+  );
+};
+
   const handleVerifyClick = async (user: { id: number; username: string }) => {
     try {
       // Get your own username and key bundle
@@ -1405,6 +1448,7 @@ const Dashboard: React.FC = () => {
   return (
     <>
       <MatrixBackground />
+      <TestButton />
       <Box sx={{ display: 'flex' }}>
         {/* Left Navigation Drawer */}
         <NavDrawer variant="permanent">
