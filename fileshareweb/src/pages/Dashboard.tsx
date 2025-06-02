@@ -416,15 +416,15 @@ const Dashboard: React.FC = () => {
         }
 
         // Get our private OPK that matches the OPK_id from the response
-        const myOPK = myKeyBundle.OPKs?.[downloadResponse.OPK_id];
-        if (!myOPK) {
-          throw new Error('OPK not found in key bundle');
+        const myPrivateOPK = myKeyBundle.OPKs_priv?.[downloadResponse.OPK_id];
+        if (!myPrivateOPK) {
+          throw new Error('Private OPK not found - this OPK may have been used already');
         }
 
         // Derive the shared secret using our private keys and sender's public keys
         const sharedSecret = await deriveX3DHSharedSecret({
           myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
-          myEKPriv: b64ToUint8Array(myOPK), // OPK is already the private key
+          myEKPriv: b64ToUint8Array(myPrivateOPK), // Use our private OPK
           recipientIKPub: Uint8Array.from(atob(downloadResponse.IK_pub), c => c.charCodeAt(0)),
           recipientSPKPub: Uint8Array.from(atob(downloadResponse.SPK_pub), c => c.charCodeAt(0)),
           recipientSPKSignature: Uint8Array.from(atob(downloadResponse.SPK_signature), c => c.charCodeAt(0)),
