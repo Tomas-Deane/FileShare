@@ -97,10 +97,11 @@ async def get_db():
         if hasattr(db._local, 'conn'):
             try:
                 db._local.conn.close()
-            except:
-                pass
-            delattr(db._local, 'conn')
-            delattr(db._local, 'cursor')
+            except Exception as e:
+                logger.error(f"Error closing database connection: {str(e)}")
+            finally:
+                delattr(db._local, 'conn')
+                delattr(db._local, 'cursor')
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -109,8 +110,18 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    # Log the full error with traceback
+    logger.error("Unhandled exception during request", exc_info=True)
+    
+    # Check if it's a database error
+    if isinstance(exc, connector.Error):
+        logger.error(f"Database error: {str(exc)}")
+        return JSONResponse(
+            status_code=503,  # Service Unavailable
+            content={"detail": "Database error, please try again"}
+        )
+    
     # Everything else is a 500
-    logger.error("Unhandled exception during request", exc_info=exc)
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error"}

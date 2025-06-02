@@ -184,33 +184,40 @@ class UserDB:
         if UserDB._pool is None:
             UserDB._pool = PooledDB(
                 creator=connector,
-                maxconnections=20,  # Maximum number of connections
-                mincached=2,        # Minimum number of idle connections
-                maxcached=5,        # Maximum number of idle connections
+                maxconnections=50,  # Increased max connections
+                mincached=5,        # Increased min cached connections
+                maxcached=10,       # Increased max cached connections
                 blocking=True,      # Block when no connection is available
-                maxusage=None,      # Connections can be reused indefinitely
+                maxusage=100,       # Recycle connections after 100 uses
                 setsession=[],      # No session setup commands
-                ping=0,            # Don't ping on checkout
+                ping=1,            # Ping on checkout to verify connection
                 user=DB_USER,
                 password=DB_PASSWORD,
                 host=DB_HOST,
                 port=DB_PORT,
-                database=DB_NAME
+                database=DB_NAME,
+                charset='utf8mb4',  # Explicit charset
+                cursorclass=connector.cursors.DictCursor  # Always use dict cursor
             )
     
     def _get_connection(self):
         """Get thread-local database connection and cursor."""
-        if not hasattr(self._local, 'conn'):
-            self._local.conn = self._pool.connection()
-            self._local.cursor = self._local.conn.cursor(dictionary=True)
-        return self._local.conn, self._local.cursor
+        try:
+            if not hasattr(self._local, 'conn'):
+                self._local.conn = self._pool.connection()
+                self._local.cursor = self._local.conn.cursor()
+            return self._local.conn, self._local.cursor
+        except Exception as e:
+            logging.error(f"Error getting database connection: {str(e)}")
+            raise
     
     def ensure_connection(self):
         """Ensure the connection is alive and reestablish if needed."""
         try:
             conn, cursor = self._get_connection()
             conn.ping(reconnect=True)
-        except Exception:
+        except Exception as e:
+            logging.error(f"Connection error, attempting to reconnect: {str(e)}")
             if hasattr(self._local, 'conn'):
                 try:
                     self._local.conn.close()
