@@ -46,6 +46,15 @@ MainWindow::MainWindow(AuthController* authCtrl,
         }
     });
 
+    // Populate “shareNewUserList” in the Share New tab in exactly the same way:
+    connect(verifyController, &VerifyController::updateVerifiedUsersList, this,
+            [=](const QList<VerifiedUser> &list){
+                ui->shareNewUserList->clear();
+                for (auto &vu : list) {
+                    ui->shareNewUserList->addItem(vu.username);
+                }
+            });
+
     // Optionally, show success/errors from backup:
     connect(verifyController, &VerifyController::tofuBackupResult, this, [=](bool success, const QString &msg){
         if (success) {
@@ -456,22 +465,24 @@ void MainWindow::clearPage(int /*idx*/)
 {
     // No-op: we do not clear fields when switching tabs anymore.
 }
-
 void MainWindow::refreshPage(int idx)
 {
     using TI = MainWindow::TabIndex;
     switch (idx) {
     case TI::Download:
-        // re-fetch file list for Download tab
+        // re‐fetch file list for Download tab
         fileController->listFiles();
         break;
 
     case TI::ShareNew:
-        // re-fetch file list for Share New tab
+        // ⬇️ NEW: reload the TOFU (verified‐users) before showing “Share New” UI
+        verifyController->initializeVerifyPage();
+        // then fetch file list (as before)
         fileController->listFiles();
         break;
 
     case TI::Verify:
+        // re‐fetch TOFU (verified‐users) when Verify tab is shown
         verifyController->initializeVerifyPage();
         break;
 
