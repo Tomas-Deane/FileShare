@@ -3,6 +3,7 @@
 import base64
 import secrets
 import logging
+import re
 from fastapi import HTTPException
 from schemas import (
     SignupRequest,
@@ -37,6 +38,44 @@ from cryptography.exceptions import InvalidSignature
 import datetime
 
 import models
+
+def validate_filename(filename: str) -> bool:
+    """
+    Validate a filename to prevent directory traversal and ensure it only contains safe characters.
+    
+    Args:
+        filename: The filename to validate
+        
+    Returns:
+        bool: True if filename is valid, False otherwise
+        
+    Rules:
+    1. No directory traversal sequences (../ or ..\)
+    2. No null bytes
+    3. Only alphanumeric characters, dots, hyphens, and underscores
+    4. Maximum length of 255 characters
+    5. No leading or trailing dots
+    """
+    if not filename or len(filename) > 255:
+        return False
+        
+    # Check for directory traversal
+    if '..' in filename or '/' in filename or '\\' in filename:
+        return False
+        
+    # Check for null bytes
+    if '\0' in filename:
+        return False
+        
+    # Check for leading/trailing dots
+    if filename.startswith('.') or filename.endswith('.'):
+        return False
+        
+    # Only allow alphanumeric, dots, hyphens, and underscores
+    if not re.match(r'^[a-zA-Z0-9._-]+$', filename):
+        return False
+        
+    return True
 
 def verify_signature(username: str, nonce: str, signature: str) -> bool:
     """Verify a signature for a given username and nonce."""
@@ -222,6 +261,12 @@ def change_password_handler(req: ChangePasswordRequest, db: models.UserDB):
 # --- FILE UPLOAD ------------------------------------------------------
 def upload_file_handler(req: UploadRequest, db: models.UserDB):
     logging.debug(f"UploadFile: {req.model_dump_json(exclude={'encrypted_file'})}")
+    
+    # Validate filename
+    if not validate_filename(req.filename):
+        logging.warning(f"Invalid filename '{req.filename}' attempted upload")
+        raise HTTPException(status_code=400, detail="Invalid filename format")
+        
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' at upload_file")
