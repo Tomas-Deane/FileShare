@@ -833,21 +833,15 @@ def opk_handler(req: GetOPKRequest, db: models.UserDB):
     )
 
 def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.UserDB):
-    print(f"Debug - Starting download_shared_file_handler for share_id: {req.share_id}")
-    
     # 1) verify owner & challenge
     user = db.get_user_by_username(req.username)
     if not user:
-        print(f"Debug - User not found: {req.username}")
         raise HTTPException(404, "User not found")
     
     user_id = user["user_id"]
-    print(f"Debug - User found with ID: {user_id}")
-    
     provided = base64.b64decode(req.nonce)
     stored = db.get_pending_challenge(user_id, "download_shared_file")
     if stored is None or provided != stored:
-        print(f"Debug - Challenge verification failed. Stored: {stored}, Provided: {req.nonce}")
         raise HTTPException(400, "Invalid or expired challenge")
 
     # 2) Verify signature
@@ -855,46 +849,33 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, str(req.share_id).encode())
-        print("Debug - Signature verification successful")
     except InvalidSignature:
-        print("Debug - Signature verification failed")
         db.delete_challenge(user_id)
         raise HTTPException(401, "Bad signature")
 
     # 3) Get the shared file data
-    print(f"Debug - Getting shared file data for share_id: {req.share_id}")
     shared_file = db.get_shared_file(req.share_id, user_id)
     if not shared_file:
-        print(f"Debug - Shared file not found for share_id: {req.share_id}")
         db.delete_challenge(user_id)
         raise HTTPException(404, "Shared file not found")
-    
-    print(f"Debug - Shared file data keys: {list(shared_file.keys())}")
-    print(f"Debug - Shared file data: {shared_file}")
 
     # 4) Get the sender's pre-key bundle
     if 'file_id' not in shared_file:
-        print(f"Debug - Missing file_id in shared file data. Available keys: {list(shared_file.keys())}")
         raise HTTPException(500, "Missing file_id in shared file data")
             
-    print(f"Debug - Getting user by file_id: {shared_file['file_id']}")
     sender = db.get_user_by_file_id(shared_file["file_id"])
     if not sender:
-        print(f"Debug - File owner not found for file_id: {shared_file['file_id']}")
         db.delete_challenge(user_id)
         raise HTTPException(404, "File owner not found")
 
-    print(f"Debug - Getting pre-key bundle for sender: {sender['username']}")
     sender_bundle = db.get_prekey_bundle(sender["username"])
     if not sender_bundle:
-        print(f"Debug - Pre-key bundle not found for sender: {sender['username']}")
         db.delete_challenge(user_id)
         raise HTTPException(404, "Sender's pre-key bundle not found")
 
     # 5) Return the encrypted file and keys
     try:
-        # Log each field before encoding
-        print("Debug - Checking required fields:")
+        # Check for required fields
         required_fields = {
             "encrypted_file": shared_file.get("encrypted_file"),
             "file_nonce": shared_file.get("file_nonce"),
@@ -904,37 +885,17 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
             "EK_pub": shared_file.get("EK_pub")
         }
         
-        for field, value in required_fields.items():
-            print(f"Debug - {field}: {'Present' if value is not None else 'Missing'}")
-            if value is not None:
-                print(f"Debug - {field} type: {type(value)}")
-                print(f"Debug - {field} length: {len(value) if hasattr(value, '__len__') else 'N/A'}")
-                if isinstance(value, bytes):
-                    print(f"Debug - {field} hex: {value.hex()[:50]}...")
+        missing_fields = [field for field, value in required_fields.items() if value is None]
+        if missing_fields:
+            raise HTTPException(500, f"Missing required fields: {', '.join(missing_fields)}")
 
-        print("Debug - Checking sender bundle fields:")
-        sender_fields = {
+        required_sender_fields = {
             "SPK_pub": sender_bundle.get("SPK_pub"),
             "SPK_signature": sender_bundle.get("SPK_signature")
         }
         
-        for field, value in sender_fields.items():
-            print(f"Debug - {field}: {'Present' if value is not None else 'Missing'}")
-            if value is not None:
-                print(f"Debug - {field} type: {type(value)}")
-                print(f"Debug - {field} length: {len(value) if hasattr(value, '__len__') else 'N/A'}")
-                if isinstance(value, bytes):
-                    print(f"Debug - {field} hex: {value.hex()[:50]}...")
-
-        # Check if any required fields are missing
-        missing_fields = [field for field, value in required_fields.items() if value is None]
-        if missing_fields:
-            print(f"Debug - Missing required fields: {missing_fields}")
-            raise HTTPException(500, f"Missing required fields: {', '.join(missing_fields)}")
-
-        missing_sender_fields = [field for field, value in sender_fields.items() if value is None]
+        missing_sender_fields = [field for field, value in required_sender_fields.items() if value is None]
         if missing_sender_fields:
-            print(f"Debug - Missing required sender fields: {missing_sender_fields}")
             raise HTTPException(500, f"Missing required sender fields: {', '.join(missing_sender_fields)}")
 
         # Prepare response with base64 encoded values
@@ -949,11 +910,8 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
             "SPK_signature": base64.b64encode(sender_bundle["SPK_signature"]).decode(),
             "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode()
         }
-        print("Debug - Successfully prepared response")
         return response
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Debug - Error preparing response: {str(e)}")
-        print(f"Debug - Error type: {type(e)}")
-        import traceback
-        print(f"Debug - Traceback: {traceback.format_exc()}")
         raise HTTPException(500, f"Error preparing response: {str(e)}")
