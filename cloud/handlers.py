@@ -893,6 +893,35 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
 
     # 5) Return the encrypted file and keys
     try:
+        # Log each field before encoding
+        print("Debug - Checking required fields:")
+        required_fields = {
+            "encrypted_file": shared_file.get("encrypted_file"),
+            "file_nonce": shared_file.get("file_nonce"),
+            "encrypted_file_key": shared_file.get("encrypted_file_key"),
+            "pre_key": shared_file.get("pre_key"),
+            "IK_pub": shared_file.get("IK_pub"),
+            "EK_pub": shared_file.get("EK_pub")
+        }
+        
+        for field, value in required_fields.items():
+            print(f"Debug - {field}: {'Present' if value is not None else 'Missing'}")
+            if value is not None:
+                print(f"Debug - {field} type: {type(value)}")
+                print(f"Debug - {field} length: {len(value) if hasattr(value, '__len__') else 'N/A'}")
+
+        print("Debug - Checking sender bundle fields:")
+        sender_fields = {
+            "SPK_pub": sender_bundle.get("SPK_pub"),
+            "SPK_signature": sender_bundle.get("SPK_signature")
+        }
+        
+        for field, value in sender_fields.items():
+            print(f"Debug - {field}: {'Present' if value is not None else 'Missing'}")
+            if value is not None:
+                print(f"Debug - {field} type: {type(value)}")
+                print(f"Debug - {field} length: {len(value) if hasattr(value, '__len__') else 'N/A'}")
+
         response = {
             "status": "ok",
             "encrypted_file": base64.b64encode(shared_file["encrypted_file"]).decode(),
