@@ -295,14 +295,6 @@ async def list_shared_from(req: ListSharedFromRequest, db: models.UserDB = Depen
     logger.debug(f"ListSharedFrom response: {resp}")
     return resp
 
-# TODO: Implement download_shared_file endpoint
-@app.post("/download_shared_file")
-async def download_shared_file(req: DownloadSharedFileRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"DownloadSharedFileRequest body: {req.model_dump_json()}")
-    resp = await run_in_threadpool(handlers.download_shared_file_handler, req, db)
-    logger.debug(f"DownloadSharedFile response: {resp}")
-    return resp
-
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     host     = os.environ.get('FS_HOST', '0.0.0.0')
