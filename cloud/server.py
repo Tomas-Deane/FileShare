@@ -77,9 +77,13 @@ app = FastAPI(
 # ─── Security headers (HSTS) ───────────────────────────────────────────────────
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    return response
+    try:
+        response = await call_next(request)
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+    except Exception as e:
+        logger.error("Error in security headers middleware", exc_info=e)
+        raise
 
 # ─── CORS ───────────────────────────────────────────────────────────────────────
 app.add_middleware(
@@ -290,9 +294,6 @@ async def list_shared_from(req: ListSharedFromRequest, db: models.UserDB = Depen
     resp = await run_in_threadpool(handlers.list_shared_from_handler, req, db)
     logger.debug(f"ListSharedFrom response: {resp}")
     return resp
-
-# TODO: Implement download_shared_file endpoint
-# @app.post("/download_shared_file")
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
