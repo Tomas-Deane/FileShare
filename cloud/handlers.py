@@ -878,35 +878,27 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
         raise HTTPException(401, "Bad signature")
 
     # 3) Get the shared file data
-    shared_file = db.get_shared_file(req.share_id, user_id)
+    shared_file = db.get_shared_file(req.share_id)
     if not shared_file:
-        db.delete_challenge(user_id)
         raise HTTPException(404, "Shared file not found")
 
-    # Add debug logging
-    logging.debug(f"Shared file data: {shared_file}")
-    logging.debug(f"Pre key present: {shared_file.get('pre_key') is not None}")
-    logging.debug(f"OPK ID: {shared_file.get('OPK_id')}")
+    # Get the original file's nonce
+    file_nonce = db.get_file_nonce(shared_file["file_id"])
+    if not file_nonce:
+        raise HTTPException(404, "File nonce not found")
 
-    # 5) Return the encrypted file and keys
-    try:
-        response = {
-            "status": "ok",
-            "encrypted_file": base64.b64encode(shared_file["encrypted_file"]).decode(),
-            "file_nonce": base64.b64encode(shared_file["file_nonce"]).decode(),
-            "encrypted_file_key": base64.b64encode(shared_file["encrypted_file_key"]).decode(),
-            "pre_key": base64.b64encode(shared_file["pre_key"]).decode() if shared_file["pre_key"] else None,
-            "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
-            "SPK_pub": base64.b64encode(shared_file["SPK_pub"]).decode(),
-            "SPK_signature": base64.b64encode(shared_file["SPK_signature"]).decode(),
-            "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode(),
-            "opk_id": shared_file["OPK_id"],
-            "file_key_nonce": base64.b64encode(shared_file["file_key_nonce"]).decode()
-        }
-        return response
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Error preparing response: {str(e)}")
-        logging.error(f"Shared file data: {shared_file}")
-        raise HTTPException(500, f"Error preparing response: {str(e)}")
+    # Return both nonces
+    return {
+        "status": "ok",
+        "encrypted_file": base64.b64encode(shared_file["encrypted_file"]).decode(),
+        "file_nonce": base64.b64encode(file_nonce).decode(),  # Original file's nonce
+        "encrypted_file_key": base64.b64encode(shared_file["encrypted_file_key"]).decode(),
+        "file_key_nonce": base64.b64encode(shared_file["file_key_nonce"]).decode(),  # Nonce for decrypting the file key
+        "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode(),
+        "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
+        "SPK_pub": base64.b64encode(shared_file["SPK_pub"]).decode(),
+        "SPK_signature": base64.b64encode(shared_file["SPK_signature"]).decode(),
+        "opk_id": shared_file["OPK_id"],
+        "pre_key": base64.b64encode(shared_file["pre_key"]).decode()  # Added pre_key
+
+    }

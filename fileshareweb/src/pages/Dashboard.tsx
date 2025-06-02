@@ -1363,7 +1363,8 @@ const TestButton = () => {
           SPK_signature: myKeyBundle.SPK_signature,
           OPK_ID: opkResponse.opk_id,
           nonce: shareChallengeResponse.nonce,
-          signature: uint8ArrayToB64(shareSignature)
+          signature: uint8ArrayToB64(shareSignature),
+          pre_key: opkResponse.pre_key
         });
         console.log('Share request sent successfully');
       }

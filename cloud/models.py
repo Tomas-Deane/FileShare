@@ -137,6 +137,7 @@ def init_db():
         SPK_pub              BLOB                NOT NULL,
         SPK_signature        BLOB                NOT NULL,
         encrypted_file_key   BLOB                NOT NULL,
+        file_key_nonce       BLOB                NOT NULL,
         OPK_id              BIGINT              NOT NULL,
         shared_at            DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT fk_shared_file
@@ -777,5 +778,11 @@ class UserDB:
             return row
         columns = [col[0] for col in self.cursor.description]
         return dict(zip(columns, row))
+
+    def get_file_nonce(self, file_id: int) -> bytes:
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT file_nonce FROM files WHERE id = %s", (file_id,))
+            result = cur.fetchone()
+            return result[0] if result else None
 
 
