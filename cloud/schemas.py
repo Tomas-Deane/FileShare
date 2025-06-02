@@ -79,14 +79,14 @@ class ListFilesRequest(BaseModel):
 
 class DownloadFileRequest(BaseModel):
     username: str
-    filename: str
+    file_id: int
     nonce: str
     signature: str
 
 
 class DeleteFileRequest(BaseModel):
     username: str
-    filename: str
+    file_id: int
     nonce: str
     signature: str
 
@@ -251,3 +251,9 @@ class ListMatchingUsersRequest(BaseModel):
     nonce: str     # Challenge nonce
     signature: str # Signature of the nonce
     search_query: str  # The search query from the user
+
+# list every user who has ever shared at least one file with the challenge initiator
+class ListSharersRequest(BaseModel):
+    username: str
+    nonce: str
+    signature: str
