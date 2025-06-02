@@ -38,6 +38,7 @@ from schemas import (
     RetrieveFileDEKRequest,
     DownloadSharedFileRequest,
     ListMatchingUsersRequest,
+    ListSharersRequest,
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -280,7 +281,7 @@ async def list_users(req: ListUsersRequest, db: models.UserDB = Depends(get_db))
     logger.debug(f"ListUsers response: {resp}")
     return resp
 
-# New: list the files I have shared *to* a given user
+# list the files I have shared *to* a given user
 @app.post("/list_shared_to")
 async def list_shared_to(req: ListSharedToRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"ListSharedToRequest body: {req.model_dump_json()}")
@@ -288,7 +289,7 @@ async def list_shared_to(req: ListSharedToRequest, db: models.UserDB = Depends(g
     logger.debug(f"ListSharedTo response: {resp}")
     return resp
 
-# New: list the files shared *to me* *from* a given user
+# list the files shared *to me* *from* a given user
 @app.post("/list_shared_from")
 async def list_shared_from(req: ListSharedFromRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"ListSharedFromRequest body: {req.model_dump_json()}")
@@ -302,6 +303,14 @@ async def list_matching_users(req: ListMatchingUsersRequest, db: models.UserDB =
     logger.debug(f"ListMatchingUsersRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.list_matching_users_handler, req, db)
     logger.debug(f"ListMatchingUsers response: {resp}")
+    return resp
+
+# list all distinct users who have shared files to a target user
+@app.post("/list_sharers")
+async def list_sharers(req: ListSharersRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListSharersRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.list_sharers_handler, req, db)
+    logger.debug(f"ListSharers response: {resp}")
     return resp
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
