@@ -1,4 +1,3 @@
-// models/networkmanager.h
 #ifndef NETWORKMANAGER_H
 #define NETWORKMANAGER_H
 
@@ -35,6 +34,13 @@ public:
     void listFiles(const QJsonObject &payload) override;
     void downloadFile(const QJsonObject &payload) override;
     void deleteFile(const QJsonObject &payload) override;
+
+    // X3DH
+    void getPreKeyBundle(const QJsonObject &payload) override;
+
+    // TOFU backup
+    void backupTOFU(const QJsonObject &payload) override;
+    void getBackupTOFU(const QJsonObject &payload) override;
 
     void checkConnection() override;
 
