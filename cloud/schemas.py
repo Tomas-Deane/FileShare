@@ -119,7 +119,8 @@ class AddOPKsRequest(BaseModel):
 
 
 class GetOPKRequest(BaseModel):
-    username: str
+    username: str  # The requesting user (for signature verification)
+    target_username: str  # The user we want OPK for
     nonce: str
     signature: str
 
@@ -131,14 +132,17 @@ class OPKResponse(BaseModel):
 
 class ShareFileRequest(BaseModel):
     username: str
-    filename: str
+    file_id: int
     recipient_username: str
-    encrypted_file_key: str
+    signature: str
     EK_pub: str
     IK_pub: str
+    SPK_pub: str
+    SPK_signature: str
+    OPK_ID: int
+    encrypted_file_key: str
+    file_key_nonce: str  
     nonce: str
-    signature: str
-
 
 class ListSharedFilesRequest(BaseModel):
     """List *all* files shared to me (no filter)."""
@@ -213,3 +217,26 @@ class UserData(BaseModel):
 class ListUsersResponse(BaseModel):
     status: str
     users: list[UserData]
+
+class RetrieveFileDEKRequest(BaseModel):
+    username: str
+    file_id: int
+    nonce: str
+    signature: str
+
+class RetrieveFileDEKResponse(BaseModel):
+    status: str
+    encrypted_dek: str
+    dek_nonce: str
+
+class DownloadSharedFileRequest(BaseModel):
+    username: str
+    share_id: int
+    nonce: str
+    signature: str
+
+class ListMatchingUsersRequest(BaseModel):
+    username: str  # The user making the request
+    nonce: str     # Challenge nonce
+    signature: str # Signature of the nonce
+    search_query: str  # The search query from the user

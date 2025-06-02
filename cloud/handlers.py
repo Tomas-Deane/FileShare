@@ -30,7 +30,10 @@ from schemas import (
     ListSharedFromRequest, 
     SharedFileResponse,
     OPKResponse, 
-    GetOPKRequest
+    GetOPKRequest,
+    RetrieveFileDEKRequest,
+    DownloadSharedFileRequest,
+    ListMatchingUsersRequest,
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
@@ -120,7 +123,9 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
 
     # 3) store their one-time pre-keys
     opk_bytes = [base64.b64decode(k) for k in req.one_time_pre_keys]
-    db.add_opks(user_id, opk_bytes)
+    # Create list of tuples with sequential opk_ids (0 to len-1)
+    opks_with_ids = [(i, opk) for i, opk in enumerate(opk_bytes)]
+    db.add_opks(user_id, opks_with_ids)
 
     logging.info(f"Signup successful (and X3DH keys stored) for '{req.username}'")
     return {"status": "ok"}
@@ -317,6 +322,53 @@ def download_file_handler(req: DownloadFileRequest, db: models.UserDB):
         logging.warning(f"Bad signature for download_file of user_id={user_id}")
         db.delete_challenge(user_id)
         raise HTTPException(status_code=401, detail="Bad signature")
+    
+def retrieve_file_dek_handler(req: RetrieveFileDEKRequest, db: models.UserDB):
+    logging.debug(f"RetrieveFileDEK: {req.model_dump_json()}")
+    user = db.get_user(req.username)
+    if not user:
+        logging.warning(f"Unknown user '{req.username}' at retrieve_file_dek")
+        raise HTTPException(status_code=404, detail="Unknown user")
+
+    user_id = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(user_id, "retrieve_file_dek")
+    if stored is None or provided != stored:
+        logging.warning(f"No valid pending challenge for user_id={user_id} (retrieve_file_dek)")
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+
+    signature = base64.b64decode(req.signature)
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(signature, provided)
+        
+        # First check if the file exists
+        file_owner = db.get_file_owner(req.file_id)
+        if not file_owner:
+            logging.warning(f"File {req.file_id} not found")
+            raise HTTPException(status_code=404, detail="File not found")
+            
+        # Then verify ownership
+        if file_owner != user_id:
+            logging.warning(f"File {req.file_id} not owned by user {user_id}")
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        # Get the DEK directly using file_id
+        dek_data = db.retrieve_file_dek(req.file_id)
+        if not dek_data:
+            logging.warning(f"No DEK found for file_id={req.file_id}")
+            raise HTTPException(status_code=404, detail="DEK not found")
+        
+        db.delete_challenge(user_id)
+        return {
+            "status": "ok",
+            "encrypted_dek": base64.b64encode(dek_data['encrypted_dek']).decode(),
+            "dek_nonce": base64.b64encode(dek_data['dek_nonce']).decode()
+        }
+    except InvalidSignature:
+        logging.warning(f"Bad signature for retrieve_file_dek of user_id={user_id}")
+        db.delete_challenge(user_id)
+        raise HTTPException(status_code=401, detail="Bad signature")
 
 # --- DELETE FILE ------------------------------------------------------
 def delete_file_handler(req: DeleteFileRequest, db: models.UserDB):
@@ -487,7 +539,11 @@ def add_prekey_bundle_handler(req: AddPreKeyBundleRequest, db: models.UserDB):
                 
                 logging.debug(f"Decoded data lengths - IK_pub: {len(IK_pub)}, SPK_pub: {len(SPK_pub)}, SPK_signature: {len(SPK_signature)}")
                 
-                db.add_pre_key_bundle(user_id, IK_pub, SPK_pub, SPK_signature)
+                # Get the highest existing opk_id for this user
+                highest_opk_id = db.get_highest_opk_id(user_id)
+                # Create list of tuples with sequential opk_ids starting from highest + 1
+                opks_with_ids = [(highest_opk_id + i + 1, opk) for i, opk in enumerate([IK_pub, SPK_pub, SPK_signature])]
+                db.add_opks(user_id, opks_with_ids)
                 db.delete_challenge(user_id)
                 return {"status": "ok", "message": "Prekey bundle added"}
             except Exception as e:
@@ -562,7 +618,11 @@ def add_opks_handler(req: AddOPKsRequest, db: models.UserDB):
         # Decode base64 data before passing to database
         try:
             pre_keys = [base64.b64decode(opk) for opk in req.opks]
-            db.add_opks(user_id, pre_keys)
+            # Get the highest existing opk_id for this user
+            highest_opk_id = db.get_highest_opk_id(user_id)
+            # Create list of tuples with sequential opk_ids starting from highest + 1
+            opks_with_ids = [(highest_opk_id + i + 1, opk) for i, opk in enumerate(pre_keys)]
+            db.add_opks(user_id, opks_with_ids)
             db.delete_challenge(user_id)
             return {"status": "ok", "message": "OPKs added"}
         except Exception as e:
@@ -588,72 +648,79 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
     sig = base64.b64decode(req.signature)
     payload = base64.b64decode(req.encrypted_file_key)
     try:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, payload)
     except Exception:
         db.delete_challenge(uid)
         raise HTTPException(401, "Bad signature")
 
     # 3) lookup file and recipient
-    file_id = db.get_file_id(req.username, req.filename)
-    if file_id is None:
-        raise HTTPException(404, "File not found")
+    file_id = req.file_id
     recipient = db.get_user(req.recipient_username)
     if not recipient:
         raise HTTPException(404, "Recipient not found")
 
     rid = recipient["user_id"]
-    ek_pub = base64.b64decode(req.EK_pub)
-    ik_pub = base64.b64decode(req.IK_pub)
-    efk    = payload
+    efk = payload
 
-    # 4) consume one‐time prekey
-    opk = db.get_unused_opk(rid)
-    if not opk:
-        raise HTTPException(409, "No OPKs available for recipient")
-    opk_id = opk["id"] if isinstance(opk, dict) else opk[0]
-    db.mark_opk_consumed(opk_id)
-
+    # 4) Use the OPK_ID from the request
+    opk_id = req.OPK_ID
+    
     # 5) record the share
-    db.share_file(file_id, rid, ek_pub, ik_pub, efk, opk_id)
-
-    db.delete_challenge(uid)
-    return {"status": "ok", "message": "file shared"}
+    try:
+        # Convert base64 fields to bytes
+        encrypted_file_key = base64.b64decode(req.encrypted_file_key)
+        file_key_nonce = base64.b64decode(req.file_key_nonce)
+        EK_pub = base64.b64decode(req.EK_pub)
+        IK_pub = base64.b64decode(req.IK_pub)
+        SPK_pub = base64.b64decode(req.SPK_pub)
+        SPK_signature = base64.b64decode(req.SPK_signature)
+        
+        # Create the shared file record using the correct parameters
+        db.share_file(
+            file_id=req.file_id,
+            recipient_id=recipient["user_id"],
+            encrypted_file_key=encrypted_file_key,
+            file_key_nonce=file_key_nonce,
+            EK_pub=EK_pub,
+            IK_pub=IK_pub,
+            SPK_pub=SPK_pub,
+            SPK_signature=SPK_signature,
+            OPK_id=req.OPK_ID
+        )
+        
+        return {"status": "ok"}
+        
+    except Exception as e:
+        logging.error(f"Error sharing file: {str(e)}")
+        raise HTTPException(500, f"Error sharing file: {str(e)}")
 
 # ─── LIST ALL SHARES TO ME ───────────────────────────────────────────────
-def list_shared_files_handler(req: ListSharedFilesRequest, db: models.UserDB):
-    user = db.get_user(req.username)
-    if not user:
-        raise HTTPException(404, "Unknown user")
-    uid = user["user_id"]
-    provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(uid, "list_shared_files")
-    if stored is None or provided != stored:
-        raise HTTPException(400, "Invalid or expired challenge")
-    # no extra signature payload
-    sig = base64.b64decode(req.signature)
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-    try:
-        Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, provided)
-    except Exception:
-        db.delete_challenge(uid)
-        raise HTTPException(401, "Bad signature")
+def list_shared_files_handler(req: ListSharedFilesRequest, db: models.UserDB) -> dict:
+    """List all files shared with the user."""
+    # Verify the challenge
+    if not verify_signature(req.username, req.nonce, req.signature):
+        raise HTTPException(status_code=401, detail="Invalid challenge signature")
 
-    rows = db.get_shared_files(uid)
-    db.delete_challenge(uid)
+    # Get all files shared with this user
+    shared_files = db.get_shared_files(req.username)
+    
+    # Format the response
+    files = []
+    for share in shared_files:
+        # Unpack the tuple correctly
+        share_id, file_id, filename, shared_by, created_at = share
+        
+        files.append({
+            "id": file_id,
+            "share_id": share_id,
+            "filename": filename,
+            "shared_by": shared_by,
+            "created_at": created_at
+        })
+
     return {
         "status": "ok",
-        "shares": [
-            SharedFileResponse(
-                share_id = r["share_id"],
-                file_id  = r["file_id"],
-                filename = r["filename"],
-                EK_pub   = base64.b64encode(r["EK_pub"]).decode(),
-                IK_pub   = base64.b64encode(r["IK_pub"]).decode(),
-                shared_at= r["shared_at"].isoformat()
-            )
-            for r in rows
-        ]
+        "files": files
     }
 
 # ─── LIST SHARES I SENT TO A SPECIFIC USER ──────────────────────────────
@@ -750,38 +817,136 @@ def remove_shared_file_handler(req: RemoveSharedFileRequest, db: models.UserDB):
     db.delete_challenge(uid)
     return {"status": "ok", "message": "share removed"}
 
-def opk_handler(req: GetOPKRequest, db: models.UserDB):
-    # 1) lookup user & verify challenge
-    user = db.get_user(req.username)
-    if not user:
-        raise HTTPException(404, "Unknown user")
-    user_id = user["user_id"]
+def get_opk_handler(req: GetOPKRequest, db: models.UserDB):
+    # 1) lookup target user (the one we want OPK for)
+    target_user = db.get_user(req.target_username)  # Add target_username to GetOPKRequest
+    if not target_user:
+        raise HTTPException(404, "Target user not found")
+    target_user_id = target_user["user_id"]
 
+    # 2) lookup requesting user (for signature verification)
+    requesting_user = db.get_user(req.username)
+    if not requesting_user:
+        raise HTTPException(404, "Requesting user not found")
+    
+    # 3) verify challenge using requesting user's ID
     provided = base64.b64decode(req.nonce)
-    stored   = db.get_pending_challenge(user_id, "get_opk")
+    stored = db.get_pending_challenge(requesting_user["user_id"], "get_opk")
     if stored is None or provided != stored:
         raise HTTPException(400, "Invalid or expired challenge")
 
-    # 2) verify signature over the nonce
+    # 4) verify signature using requesting user's public key
     signature = base64.b64decode(req.signature)
     try:
-        Ed25519PublicKey.from_public_bytes(user["public_key"])\
+        Ed25519PublicKey.from_public_bytes(requesting_user["public_key"])\
             .verify(signature, provided)
+    except InvalidSignature:
+        db.delete_challenge(requesting_user["user_id"])
+        raise HTTPException(401, "Bad signature")
+
+    # 5) fetch & consume one-time pre-key for target user
+    opk = db.get_unused_opk(target_user_id)
+    if not opk:
+        db.delete_challenge(requesting_user["user_id"])
+        raise HTTPException(404, "No OPK available")
+    
+    # Mark the OPK as consumed using its database id
+    db.mark_opk_consumed(opk["id"])
+
+    # 6) done—return it
+    db.delete_challenge(requesting_user["user_id"])
+    return OPKResponse(
+        opk_id=opk["opk_id"],  # Return the opk_id (0-99)
+        pre_key=base64.b64encode(opk["pre_key"]).decode()
+    )
+
+def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.UserDB):
+    # 1) verify owner & challenge
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(404, "User not found")
+    
+    user_id = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(user_id, "download_shared_file")
+    if stored is None or provided != stored:
+        raise HTTPException(400, "Invalid or expired challenge")
+
+    # 2) Verify signature
+    signature = base64.b64decode(req.signature)
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(signature, str(req.share_id).encode())
     except InvalidSignature:
         db.delete_challenge(user_id)
         raise HTTPException(401, "Bad signature")
 
-    # 3) fetch & consume one-time pre-key
-    opk = db.get_unused_opk(user_id)
-    if not opk:
-        db.delete_challenge(user_id)
-        raise HTTPException(404, "No OPK available")
-    opk_id, raw_pre = opk["id"], opk["pre_key"]
-    db.mark_opk_consumed(opk_id)
+    # 3) Get the shared file data
+    shared_file = db.get_shared_file(req.share_id, user_id)
+    if not shared_file:
+        raise HTTPException(404, "Shared file not found")
 
-    # 4) done—return it (base64!)
-    db.delete_challenge(user_id)
-    return OPKResponse(
-        opk_id = opk_id,
-        pre_key = base64.b64encode(raw_pre).decode()
-    )
+    # Get the original file's nonce
+    file_nonce = db.get_file_nonce(shared_file["file_id"])
+    if not file_nonce:
+        raise HTTPException(404, "File nonce not found")
+
+    # Return both nonces
+    return {
+        "status": "ok",
+        "encrypted_file": base64.b64encode(shared_file["encrypted_file"]).decode(),
+        "file_nonce": base64.b64encode(file_nonce).decode(),  # Original file's nonce
+        "encrypted_file_key": base64.b64encode(shared_file["encrypted_file_key"]).decode(),
+        "file_key_nonce": base64.b64encode(shared_file["file_key_nonce"]).decode(),  # Nonce for decrypting the file key
+        "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode(),
+        "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
+        "SPK_pub": base64.b64encode(shared_file["SPK_pub"]).decode(),
+        "SPK_signature": base64.b64encode(shared_file["SPK_signature"]).decode(),
+        "opk_id": shared_file["OPK_id"]
+    }
+
+def list_matching_users_handler(req: ListMatchingUsersRequest, db: models.UserDB) -> ListUsersResponse:
+    """List all users whose usernames match the given search query."""
+    logging.debug(f"ListMatchingUsers: {req.model_dump_json()}")
+    
+    # Verify the requesting user
+    user = db.get_user(req.username)
+    if not user:
+        logging.warning(f"Unknown user '{req.username}' at list_matching_users")
+        raise HTTPException(status_code=404, detail="Unknown user")
+
+    # Verify the challenge
+    user_id = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(user_id, "list_matching_users")
+    if stored is None or provided != stored:
+        logging.warning(f"No valid pending challenge for user_id={user_id} (list_matching_users)")
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+
+    # Verify the signature
+    signature = base64.b64decode(req.signature)
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(signature, provided)
+        
+        # Get matching users
+        users = db.get_matching_users(req.search_query)
+        
+        # Delete the challenge after successful verification
+        db.delete_challenge(user_id)
+        
+        # Return user list - handle both tuple and dict results
+        return ListUsersResponse(
+            status="ok",
+            users=[
+                UserData(
+                    id=user[0] if isinstance(user, tuple) else user["id"],
+                    username=user[1] if isinstance(user, tuple) else user["username"]
+                )
+                for user in users
+            ]
+        )
+    except InvalidSignature:
+        logging.warning(f"Bad signature for list_matching_users of user_id={user_id}")
+        db.delete_challenge(user_id)
+        raise HTTPException(status_code=401, detail="Bad signature")

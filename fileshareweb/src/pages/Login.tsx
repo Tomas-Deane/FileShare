@@ -170,7 +170,7 @@ const Login: React.FC = () => {
         );
         console.log('Signed TOFU challenge');
 
-        const tofuBackupResponse = await apiClient.post<GetBackupTOFUResponse>('/get_backup_tofu_keys', {
+        const tofuBackupResponse = await apiClient.post<GetBackupTOFUResponse>('/get_backup_tofu', {
             username: trimmedUsername,
             nonce: tofuChallengeResponse.nonce,
             signature: btoa(String.fromCharCode.apply(null, Array.from(tofuSignature)))
@@ -195,29 +195,29 @@ const Login: React.FC = () => {
         try {
             backupData = JSON.parse(new TextDecoder().decode(decryptedBackup));
             console.log('Backup data parsed:', {
-                hasIdentityKey: !!backupData.identityKey,
-                hasSignedPreKey: !!backupData.signedPreKey,
-                hasOneTimePreKeys: Array.isArray(backupData.oneTimePreKeys) ? backupData.oneTimePreKeys.length : 'not an array',
-                hasPrivateKey: !!backupData.privateKey,
+                hasIdentityKey: !!backupData.IK_pub,
+                hasSignedPreKey: !!backupData.SPK_pub,
+                hasOneTimePreKeys: Array.isArray(backupData.OPKs) ? backupData.OPKs.length : 'not an array',
+                hasPrivateKey: !!backupData.secretKey,
                 hasPDK: !!backupData.pdk,
                 hasKEK: !!backupData.kek
             });
 
             // Validate required fields
-            if (!backupData.identityKey || !backupData.signedPreKey || !Array.isArray(backupData.oneTimePreKeys)) {
+            if (!backupData.IK_pub || !backupData.SPK_pub || !Array.isArray(backupData.OPKs)) {
                 throw new Error('Invalid backup data structure');
             }
 
             myKeyBundle = {
                 username: trimmedUsername,
-                IK_pub: backupData.identityKey,
-                SPK_pub: backupData.signedPreKey,
-                SPK_signature: backupData.signedPreKeySig,
-                OPKs: backupData.oneTimePreKeys || [],
-                IK_priv: backupData.identityKeyPrivate,
-                SPK_priv: backupData.signedPreKeyPrivate,
-                OPKs_priv: backupData.oneTimePreKeysPrivate || [],
-                secretKey: backupData.privateKey,
+                IK_pub: backupData.IK_pub,
+                SPK_pub: backupData.SPK_pub,
+                SPK_signature: backupData.SPK_signature,
+                OPKs: backupData.OPKs || [],
+                IK_priv: backupData.IK_priv,
+                SPK_priv: backupData.SPK_priv,
+                OPKs_priv: backupData.OPKs_priv || [],
+                secretKey: backupData.secretKey,
                 pdk: backupData.pdk,
                 kek: backupData.kek,
                 verified: true,
