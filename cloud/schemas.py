@@ -2,14 +2,18 @@
 """
 Common request schemas for FileShare API (shared between server and handlers).
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, conint
+
+# Constants for Argon2 parameter limits
+MIN_OPS_LIMIT = 1
+MIN_MEM_LIMIT = 8192  # 8KB minimum memory limit
 
 
 class SignupRequest(BaseModel):
     username: str
     salt: str
-    argon2_opslimit: int
-    argon2_memlimit: int
+    argon2_opslimit: conint(gt=0)  # Must be greater than 0
+    argon2_memlimit: conint(gt=MIN_MEM_LIMIT)  # Must be greater than 8KB
     public_key: str
     encrypted_privkey: str
     privkey_nonce: str
@@ -46,8 +50,8 @@ class ChangeUsernameRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     username: str
     salt: str
-    argon2_opslimit: int
-    argon2_memlimit: int
+    argon2_opslimit: conint(gt=0)  # Must be greater than 0
+    argon2_memlimit: conint(gt=MIN_MEM_LIMIT)  # Must be greater than 8KB
     encrypted_privkey: str
     privkey_nonce: str
     encrypted_kek: str
