@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box, Container, Typography, Button, Paper, Grid, List, ListItem, ListItemText,
   ListItemIcon, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
@@ -20,7 +20,8 @@ import { apiClient } from '../utils/apiClient';
 import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
 import { storage } from '../utils/storage';
 import sodium from 'libsodium-wrappers-sumo';
-import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithAESGCM } from '../utils/crypto';
+import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithAESGCM, deriveX3DHSharedSecretRecipient, encryptWithPublicKey } from '../utils/crypto';
+import { testX3DHKeyExchange } from '../utils/crypto';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -195,8 +196,31 @@ const logDebug = (message: string, data?: any) => {
   }
 };
 
-function b64ToUint8Array(b64: string): Uint8Array {
-  return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+function b64ToUint8Array(b64: string | undefined | null): Uint8Array {
+  if (!b64) {
+    console.error('Attempted to decode undefined or null base64 string');
+    throw new Error('Invalid base64 string: value is undefined or null');
+  }
+  
+  // Replace URL-safe characters back to standard base64
+  const standardB64 = b64.replace(/-/g, '+').replace(/_/g, '/');
+  
+  // Add padding if needed
+  const paddedB64 = standardB64.padEnd(standardB64.length + (4 - (standardB64.length % 4)) % 4, '=');
+  
+  try {
+    return Uint8Array.from(atob(paddedB64), c => c.charCodeAt(0));
+  } catch (error) {
+    console.error('Base64 decoding error:', error);
+    console.error('Input string:', b64);
+    console.error('Padded string:', paddedB64);
+    throw new Error('Invalid base64 string: failed to decode');
+  }
+}
+
+function uint8ArrayToB64(bytes: Uint8Array): string {
+  // Use standard base64 encoding without URL-safe modifications
+  return btoa(String.fromCharCode.apply(null, Array.from(bytes)));
 }
 
 // Update the interface for the file list response
@@ -207,6 +231,21 @@ interface FileListResponse {
     id: number;
     created_at: string;
   }>;
+}
+
+interface DownloadResponse {
+  status: string;
+  detail?: string;
+  encrypted_file?: string;
+  file_nonce?: string;
+  encrypted_file_key?: string;
+  file_key_nonce?: string;  // Add this field
+  EK_pub?: string;
+  IK_pub?: string;
+  SPK_pub?: string;
+  SPK_signature?: string;
+  opk_id?: number;
+  pre_key?: string;
 }
 
 const Dashboard: React.FC = () => {
@@ -321,7 +360,7 @@ const Dashboard: React.FC = () => {
         username,
         filename: file.name,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
       logDebug('Delete response received', {
         status: deleteResponse.status,
@@ -416,26 +455,62 @@ const Dashboard: React.FC = () => {
         }
 
         // Get our private OPK that matches the OPK_id from the response
-        const myOPK = myKeyBundle.OPKs?.[downloadResponse.OPK_id];
+        console.log('OPK Debug:', {
+          receivedOPKId: downloadResponse.opk_id, // Changed from OPK_id to opk_id
+          availableOPKs: myKeyBundle.OPKs_priv?.length,
+          keyBundle: {
+            hasOPKs: !!myKeyBundle.OPKs_priv,
+            OPKCount: myKeyBundle.OPKs_priv?.length,
+            OPKIds: myKeyBundle.OPKs_priv?.map((_, i) => i)
+          }
+        });
+
+        const myOPK = myKeyBundle.OPKs_priv?.[downloadResponse.opk_id]; // Changed from OPK_id to opk_id
         if (!myOPK) {
+          console.error('OPK Debug - Not Found:', {
+            requestedId: downloadResponse.opk_id, // Changed from OPK_id to opk_id
+            availableIds: myKeyBundle.OPKs_priv?.map((_, i) => i)
+          });
           throw new Error('OPK not found in key bundle');
         }
 
         // Derive the shared secret using our private keys and sender's public keys
-        const sharedSecret = await deriveX3DHSharedSecret({
-          myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
-          myEKPriv: b64ToUint8Array(myOPK), // OPK is already the private key
-          recipientIKPub: Uint8Array.from(atob(downloadResponse.IK_pub), c => c.charCodeAt(0)),
-          recipientSPKPub: Uint8Array.from(atob(downloadResponse.SPK_pub), c => c.charCodeAt(0)),
-          recipientSPKSignature: Uint8Array.from(atob(downloadResponse.SPK_signature), c => c.charCodeAt(0)),
-          recipientOPKPub: Uint8Array.from(atob(downloadResponse.EK_pub), c => c.charCodeAt(0))
+        const sharedSecret = await deriveX3DHSharedSecretRecipient({
+          senderEKPub: Uint8Array.from(atob(downloadResponse.EK_pub), c => c.charCodeAt(0)),
+          senderIKPub: Uint8Array.from(atob(downloadResponse.IK_pub), c => c.charCodeAt(0)),
+          senderSPKPub: Uint8Array.from(atob(downloadResponse.SPK_pub), c => c.charCodeAt(0)),
+          myIKPriv: Uint8Array.from(atob(myKeyBundle.IK_priv), c => c.charCodeAt(0)),
+          mySPKPriv: Uint8Array.from(atob(myKeyBundle.SPK_priv), c => c.charCodeAt(0)),
+          myOPKPriv: Uint8Array.from(atob(myOPK), c => c.charCodeAt(0))
+        });
+
+        console.log('Shared Secret Debug:', {
+          hasSharedSecret: !!sharedSecret,
+          sharedSecretLength: sharedSecret?.length,
+          sharedSecretHex: sharedSecret ? Array.from(sharedSecret).map(b => b.toString(16).padStart(2, '0')).join('') : null
         });
 
         // Decrypt the file key using the shared secret
         const encryptedFileKey = Uint8Array.from(atob(downloadResponse.encrypted_file_key), c => c.charCodeAt(0));
-        const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileNonce);
+        const fileKeyNonce = Uint8Array.from(atob(downloadResponse.file_key_nonce), c => c.charCodeAt(0)); // Add this line
 
-        // Decrypt the file using the file key
+        console.log('File Key Debug:', {
+          hasEncryptedFileKey: !!encryptedFileKey,
+          encryptedFileKeyLength: encryptedFileKey?.length,
+          hasFileKeyNonce: !!fileKeyNonce,
+          fileKeyNonceLength: fileKeyNonce?.length,
+          hasFileNonce: !!fileNonce,
+          fileNonceLength: fileNonce?.length
+        });
+
+        // Use fileKeyNonce for decrypting the file key
+        const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileKeyNonce);
+        console.log('Decrypted File Key Debug:', {
+          hasFileKey: !!fileKey,
+          fileKeyLength: fileKey?.length
+        });
+
+        // Use fileNonce for decrypting the actual file
         decrypted = await decryptFile(encryptedFile, fileKey, fileNonce);
       } else {
         // For regular files, just decrypt the file key with our KEK
@@ -467,6 +542,28 @@ const Dashboard: React.FC = () => {
     logDebug('Revoke initiated', { fileId });
     // TODO: Implement revoke
   };
+
+  // Add this to Dashboard.tsx temporarily
+const TestButton = () => {
+  const runTest = async () => {
+    try {
+      const results = await testX3DHKeyExchange();
+      console.log('X3DH Test Results:', results);
+    } catch (error) {
+      console.error('X3DH Test Failed:', error);
+    }
+  };
+
+  return (
+    <button 
+      onClick={runTest}
+      style={{ position: 'fixed', bottom: '20px', right: '20px', zIndex: 1000 }}
+    >
+      Run X3DH Test
+    </button>
+  );
+};
+
   const handleVerifyClick = async (user: { id: number; username: string }) => {
     try {
       // Get your own username and key bundle
@@ -509,7 +606,7 @@ const Dashboard: React.FC = () => {
         username: myUsername,
         target_username: user.username,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
 
       // Store the pre-key bundle temporarily in state for later use
@@ -611,10 +708,10 @@ const Dashboard: React.FC = () => {
       // Send the backup to the server
       await apiClient.post('/backup_tofu', {
         username: myUsername,
-        encrypted_backup: btoa(String.fromCharCode.apply(null, Array.from(encryptedBackup))),
-        backup_nonce: btoa(String.fromCharCode.apply(null, Array.from(encryptionNonce))),
+        encrypted_backup: uint8ArrayToB64(encryptedBackup),
+        backup_nonce: uint8ArrayToB64(encryptionNonce),
         nonce: backupChallengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(backupSignature)))
+        signature: uint8ArrayToB64(backupSignature)
       });
 
       // Close the verification dialog
@@ -673,7 +770,7 @@ const Dashboard: React.FC = () => {
       const listResponse = await apiClient.post<FileListResponse>('/list_files', {
         username,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
 
       logDebug('File list response received', {
@@ -813,11 +910,8 @@ const Dashboard: React.FC = () => {
       // Step 2: Generate file key and encrypt file
       logDebug('Generating file key');
       const fileKey = await generateFileKey();
-      const fileNonce = new Uint8Array(24);
-      window.crypto.getRandomValues(fileNonce);
       logDebug('File key generated', {
-        keyLength: fileKey.length,
-        nonceLength: fileNonce.length
+        keyLength: fileKey.length
       });
 
       logDebug('Reading file data');
@@ -825,16 +919,15 @@ const Dashboard: React.FC = () => {
       logDebug('Encrypting file', {
         fileSize: fileData.byteLength
       });
-      const encryptedFile = await encryptFile(new Uint8Array(fileData), fileKey, fileNonce);
+      const { ciphertext: encryptedFile, nonce: fileNonce } = await encryptWithAESGCM(fileKey, new Uint8Array(fileData));
       logDebug('File encrypted', {
-        encryptedSize: encryptedFile.length
+        encryptedSize: encryptedFile.length,
+        nonceLength: fileNonce.length
       });
 
       // Step 3: Encrypt file key with KEK
       logDebug('Encrypting file key with KEK');
-      const kekNonce = new Uint8Array(24);
-      window.crypto.getRandomValues(kekNonce);
-      const encryptedDek = await encryptFile(fileKey, kek!, kekNonce);
+      const { ciphertext: encryptedDek, nonce: kekNonce } = await encryptWithAESGCM(kek!, fileKey);
       logDebug('File key encrypted', {
         encryptedDekLength: encryptedDek.length,
         kekNonceLength: kekNonce.length
@@ -853,12 +946,12 @@ const Dashboard: React.FC = () => {
       const uploadResponse = await apiClient.post<UploadResponse>('/upload_file', {
         username,
         filename: file.name,
-        encrypted_file: btoa(String.fromCharCode.apply(null, Array.from(encryptedFile))),
-        file_nonce: btoa(String.fromCharCode.apply(null, Array.from(fileNonce))),
-        encrypted_dek: btoa(String.fromCharCode.apply(null, Array.from(encryptedDek))),
-        dek_nonce: btoa(String.fromCharCode.apply(null, Array.from(kekNonce))),
+        encrypted_file: uint8ArrayToB64(encryptedFile),
+        file_nonce: uint8ArrayToB64(fileNonce),
+        encrypted_dek: uint8ArrayToB64(encryptedDek),
+        dek_nonce: uint8ArrayToB64(kekNonce),
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
       logDebug('Upload response received', {
         status: uploadResponse.status,
@@ -932,16 +1025,16 @@ const Dashboard: React.FC = () => {
         username,
         filename: file.name,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
       if (downloadResponse.status !== 'ok') {
         throw new Error(downloadResponse.detail || 'Failed to download file');
       }
       // Step 4: Decrypt file
-      const encryptedFile = Uint8Array.from(atob(downloadResponse.encrypted_file), c => c.charCodeAt(0));
-      const fileNonce = Uint8Array.from(atob(downloadResponse.file_nonce), c => c.charCodeAt(0));
-      const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
-      const decrypted = await decryptFile(encryptedFile, dek, fileNonce);
+      const previewEncryptedFile = b64ToUint8Array(downloadResponse.encrypted_file);
+      const previewFileNonce = b64ToUint8Array(downloadResponse.file_nonce);
+      const dek = await decryptFileKey(downloadResponse.encrypted_file_key, kek!, downloadResponse.file_nonce);
+      const decrypted = await decryptFile(previewEncryptedFile, dek, previewFileNonce);
 
       if (isTextFile(file.name)) {
         const text = new TextDecoder('utf-8').decode(decrypted);
@@ -1024,7 +1117,7 @@ const Dashboard: React.FC = () => {
       const listResponse = await apiClient.post<{ status: string; users: UserData[] }>('/list_matching_users', {
         username,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature))),
+        signature: uint8ArrayToB64(signature)
         search_query: userSearchQuery
       });
 
@@ -1128,12 +1221,17 @@ const Dashboard: React.FC = () => {
         username,
         file_id: selectedFile,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
 
       if (dekResponse.status !== 'ok') {
         throw new Error('Failed to retrieve file key');
       }
+      console.log('Retrieved encrypted DEK:', {
+        encrypted_dek_length: dekResponse.encrypted_dek.length,
+        dek_nonce_length: dekResponse.dek_nonce.length
+      });
+
       console.log('Retrieved encrypted DEK');
 
       // Decrypt the file key using the KEK from our keyBundle
@@ -1169,7 +1267,7 @@ const Dashboard: React.FC = () => {
           username: myUsername,
           target_username: recipientUsername,
           nonce: bundleChallengeResponse.nonce,
-          signature: btoa(String.fromCharCode.apply(null, Array.from(bundleSignature)))
+          signature: uint8ArrayToB64(bundleSignature)
         });
 
         if (freshBundleResponse.status !== 'ok') {
@@ -1199,16 +1297,17 @@ const Dashboard: React.FC = () => {
         console.log('Got challenge for OPK');
 
         const opkSignature = await signChallenge(b64ToUint8Array(opkChallengeResponse.nonce), secretKey!);
-        const opkResponse = await apiClient.post<{ status: string; opk_id: number; pre_key: string }>('/opk', {
+        const opkResponse = await apiClient.post<{ opk_id: number; pre_key: string }>('/opk', {
           username: myUsername,
           target_username: recipientUsername,
           nonce: opkChallengeResponse.nonce,
-          signature: btoa(String.fromCharCode.apply(null, Array.from(opkSignature)))
+          signature: uint8ArrayToB64(opkSignature)
         });
 
         // Add more detailed logging
         console.log('OPK Response:', opkResponse);
 
+        // Check if the response has the required fields
         if (!opkResponse.opk_id || !opkResponse.pre_key) {
           throw new Error('Invalid OPK response: missing required fields');
         }
@@ -1243,7 +1342,10 @@ const Dashboard: React.FC = () => {
         // 8. Encrypt the file key (DEK) with the shared secret
         console.log('Encrypting file key with shared secret...');
         const { ciphertext, nonce } = await encryptWithAESGCM(sharedSecret, fileKey);
-        console.log('Encrypted file key');
+        console.log('Encrypted file key:', {
+          ciphertext_length: ciphertext.length,
+          nonce_length: nonce.length
+        });
 
         // 9. Request challenge for share_file
         console.log('Requesting challenge for share_file...');
@@ -1268,13 +1370,16 @@ const Dashboard: React.FC = () => {
           username,
           file_id: selectedFile,
           recipient_username: recipientUsername,
-          EK_pub: btoa(String.fromCharCode.apply(null, Array.from(ephemeralKeyPair.publicKey))),
+          EK_pub: uint8ArrayToB64(ephemeralKeyPair.publicKey),
           IK_pub: myKeyBundle.IK_pub,
-          encrypted_file_key: btoa(String.fromCharCode.apply(null, Array.from(ciphertext))),
-          file_key_nonce: btoa(String.fromCharCode.apply(null, Array.from(nonce))),
+          encrypted_file_key: uint8ArrayToB64(ciphertext),
+          file_key_nonce: uint8ArrayToB64(nonce), // Use the nonce from encryptWithAESGCM
+          SPK_pub: myKeyBundle.SPK_pub,
+          SPK_signature: myKeyBundle.SPK_signature,
           OPK_ID: opkResponse.opk_id,
           nonce: shareChallengeResponse.nonce,
-          signature: btoa(String.fromCharCode.apply(null, Array.from(shareSignature)))
+          signature: uint8ArrayToB64(shareSignature),
+          pre_key: opkResponse.pre_key
         });
         console.log('Share request sent successfully');
       }
@@ -1317,7 +1422,7 @@ const Dashboard: React.FC = () => {
       const response = await apiClient.post<{ status: string; files: SharedFileData[] }>('/list_shared_files', {
         username,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
 
       if (response.status === 'ok') {
@@ -1354,6 +1459,7 @@ const Dashboard: React.FC = () => {
   return (
     <>
       <MatrixBackground />
+      <TestButton />
       <Box sx={{ display: 'flex' }}>
         {/* Left Navigation Drawer */}
         <NavDrawer variant="permanent">
@@ -1403,7 +1509,17 @@ const Dashboard: React.FC = () => {
                 </ListItemIcon>
                 <ListItemText primary="Users" sx={{ color: '#00ff00' }} />
               </ListItem>
-              <ListItem button onClick={() => navigate('/login')}>
+              <ListItem
+                button
+                onClick={() => {
+                  const currentUser = storage.getCurrentUser();
+                  if (currentUser) {
+                    storage.removeKeyBundle(currentUser);
+                  }
+                  storage.clearStorage();
+                  navigate('/login');
+                }}
+              >
                 <ListItemIcon>
                   <LockIcon sx={{ color: '#00ff00' }} />
                 </ListItemIcon>

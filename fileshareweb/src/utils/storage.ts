@@ -23,7 +23,7 @@ export interface KeyBundle {
     OPKs: string[];
     IK_priv: string;
     SPK_priv: string;
-    OPKs_priv: string[];
+    OPKs_priv: string[];  // Array of base64-encoded private OPKs
     secretKey: string;
     pdk: string;
     kek: string;
@@ -124,5 +124,18 @@ export const storage = {
         sessionStorage.removeItem(STORAGE_KEYS.KEY_BUNDLES);
         sessionStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
         sessionStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
+    },
+
+    // Remove a specific user's key bundle
+    removeKeyBundle: (username: string) => {
+        const bundlesStr = sessionStorage.getItem(STORAGE_KEYS.KEY_BUNDLES);
+        if (!bundlesStr) return;
+        try {
+            const bundles = JSON.parse(bundlesStr);
+            delete bundles[username];
+            sessionStorage.setItem(STORAGE_KEYS.KEY_BUNDLES, JSON.stringify(bundles));
+        } catch (e) {
+            console.error('Error removing key bundle:', e);
+        }
     }
 };

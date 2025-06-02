@@ -78,9 +78,13 @@ app = FastAPI(
 # ─── Security headers (HSTS) ───────────────────────────────────────────────────
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    return response
+    try:
+        response = await call_next(request)
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+    except Exception as e:
+        logger.error("Error in security headers middleware", exc_info=e)
+        raise
 
 # ─── CORS ───────────────────────────────────────────────────────────────────────
 app.add_middleware(
@@ -216,7 +220,7 @@ async def add_prekey_bundle(req: AddPreKeyBundleRequest, db: models.UserDB = Dep
 @app.post("/opk")
 async def opk(req: GetOPKRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"GetOPKRequest body: {req.model_dump_json()}")
-    resp = await run_in_threadpool(handlers.opk_handler, req, db)
+    resp = await run_in_threadpool(handlers.get_opk_handler, req, db)
     logger.debug(f"OPK response: {resp}")
     return resp
 
@@ -292,8 +296,6 @@ async def list_shared_from(req: ListSharedFromRequest, db: models.UserDB = Depen
     logger.debug(f"ListSharedFrom response: {resp}")
     return resp
 
-# TODO: Implement download_shared_file endpoint
-# @app.post("/download_shared_file")
 
 @app.post("/list_matching_users")
 async def list_matching_users(req: ListMatchingUsersRequest, db: models.UserDB = Depends(get_db)):
@@ -305,7 +307,7 @@ async def list_matching_users(req: ListMatchingUsersRequest, db: models.UserDB =
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     host     = os.environ.get('FS_HOST', '0.0.0.0')
-    port     = int(os.environ.get('FS_HTTPS_PORT', '3210'))
+    port     = int(os.environ.get('FS_HTTPS_PORT', '3220'))
     certfile = os.environ.get('SSL_CERTFILE', 'cert.pem')
     keyfile  = os.environ.get('SSL_KEYFILE', 'key.pem')
 
