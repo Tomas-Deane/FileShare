@@ -4,6 +4,7 @@
 #include "authcontroller.h"
 #include "profilecontroller.h"
 #include "filecontroller.h"
+#include "verifycontroller.h"
 
 #include <QFile>
 #include <QDebug>
@@ -30,8 +31,9 @@ int main(int argc, char *argv[])
     auto ac = std::make_unique<AuthController>(net.get(), cs.get());
     auto pc = std::make_unique<ProfileController>(net.get(), ac.get(), cs.get());
     auto fc = std::make_unique<FileController>(net.get(), ac.get(), cs.get());
+    auto vc = std::make_unique<VerifyController>(net.get(), ac.get(), cs.get());
 
-    MainWindow w(ac.get(), fc.get(), pc.get());
+    MainWindow w(ac.get(), fc.get(), pc.get(), vc.get());
     w.show();
 
     return a.exec();
