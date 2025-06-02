@@ -143,6 +143,7 @@ class ShareFileRequest(BaseModel):
     encrypted_file_key: str
     file_key_nonce: str  
     nonce: str
+    pre_key: str
 
 
 class ListSharedFilesRequest(BaseModel):

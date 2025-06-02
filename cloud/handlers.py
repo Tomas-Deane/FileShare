@@ -659,10 +659,6 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
         raise HTTPException(404, "Recipient not found")
 
     rid = recipient["user_id"]
-    ek_pub = base64.b64decode(req.EK_pub)
-    ik_pub = base64.b64decode(req.IK_pub)
-    spk_pub = base64.b64decode(req.SPK_pub)
-    spk_sig = base64.b64decode(req.SPK_signature)
     efk = payload
 
     # 4) Use the OPK_ID from the request
@@ -675,7 +671,7 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
         file_key_nonce = base64.b64decode(req.file_key_nonce)
         
         # Store the shared file with the file_key_nonce
-        db.create_shared_file(
+        db.share_file(
             file_id=req.file_id,
             recipient_id=recipient["user_id"],
             encrypted_file_key=encrypted_file_key,
@@ -685,7 +681,7 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
             SPK_pub=base64.b64decode(req.SPK_pub),
             SPK_signature=base64.b64decode(req.SPK_signature),
             OPK_id=req.OPK_ID,
-            pre_key=pre_key
+            pre_key=req.pre_key
         )
         
         return {"status": "ok"}
