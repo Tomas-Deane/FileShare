@@ -1,24 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box, Container, Typography, Button, Paper, Grid, List, ListItem, ListItemText,
   ListItemIcon, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider
+  TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider, Checkbox,
+  LinearProgress
 } from '@mui/material';
 import {
   Upload as UploadIcon, Share as ShareIcon, Delete as DeleteIcon, Download as DownloadIcon,
   Folder as FolderIcon, Person as PersonIcon, Lock as LockIcon, LockOpen as LockOpenIcon,
   Search as SearchIcon, VerifiedUser as VerifiedUserIcon, People as PeopleIcon,
   Home as HomeIcon, Storage as StorageIcon, Security as SecurityIcon, Settings as SettingsIcon,
-  Edit as EditIcon, Visibility as VisibilityIcon
+  Edit as EditIcon, Visibility as VisibilityIcon, Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
 import { CyberButton, MatrixBackground } from '../components';
 import { QRCodeSVG } from 'qrcode.react';
-import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../utils/apiClient';
 import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
-import { storage, KeyBundle } from '../utils/storage';
+import { storage } from '../utils/storage';
+import sodium from 'libsodium-wrappers-sumo';
+import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithAESGCM, deriveX3DHSharedSecretRecipient, encryptWithPublicKey } from '../utils/crypto';
+import { testX3DHKeyExchange } from '../utils/crypto';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -153,6 +156,38 @@ interface DeleteResponse {
   detail?: string;
 }
 
+// First, let's define the proper types
+interface PreKeyBundle {
+  IK_pub: string;
+  SPK_pub: string;
+  SPK_signature: string;
+}
+
+interface RecipientKeyBundle {
+  data: PreKeyBundle;
+  verified: boolean;
+  lastVerified?: string;
+}
+
+interface SelectedUser {
+  id: number;
+  username: string;
+  prekeyBundle?: {
+    IK_pub: string;
+    SPK_pub: string;
+    SPK_signature: string;
+  };
+}
+
+// Add this interface near the top with other interfaces
+interface SharedFileData {
+  id: number;
+  share_id: number;  // Add this
+  filename: string;
+  shared_by: string;
+  created_at: string;
+}
+
 const DEBUG = true; // Toggle for development
 
 const logDebug = (message: string, data?: any) => {
@@ -160,6 +195,58 @@ const logDebug = (message: string, data?: any) => {
     console.log(`[Dashboard Debug] ${message}`, data ? data : '');
   }
 };
+
+function b64ToUint8Array(b64: string | undefined | null): Uint8Array {
+  if (!b64) {
+    console.error('Attempted to decode undefined or null base64 string');
+    throw new Error('Invalid base64 string: value is undefined or null');
+  }
+  
+  // Replace URL-safe characters back to standard base64
+  const standardB64 = b64.replace(/-/g, '+').replace(/_/g, '/');
+  
+  // Add padding if needed
+  const paddedB64 = standardB64.padEnd(standardB64.length + (4 - (standardB64.length % 4)) % 4, '=');
+  
+  try {
+    return Uint8Array.from(atob(paddedB64), c => c.charCodeAt(0));
+  } catch (error) {
+    console.error('Base64 decoding error:', error);
+    console.error('Input string:', b64);
+    console.error('Padded string:', paddedB64);
+    throw new Error('Invalid base64 string: failed to decode');
+  }
+}
+
+function uint8ArrayToB64(bytes: Uint8Array): string {
+  // Use standard base64 encoding without URL-safe modifications
+  return btoa(String.fromCharCode.apply(null, Array.from(bytes)));
+}
+
+// Update the interface for the file list response
+interface FileListResponse {
+  status: string;
+  files: Array<{
+    filename: string;
+    id: number;
+    created_at: string;
+  }>;
+}
+
+interface DownloadResponse {
+  status: string;
+  detail?: string;
+  encrypted_file?: string;
+  file_nonce?: string;
+  encrypted_file_key?: string;
+  file_key_nonce?: string;  // Add this field
+  EK_pub?: string;
+  IK_pub?: string;
+  SPK_pub?: string;
+  SPK_signature?: string;
+  opk_id?: number;
+  pre_key?: string;
+}
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -169,9 +256,9 @@ const Dashboard: React.FC = () => {
   const [openUpload, setOpenUpload] = useState(false);
   const [openShare, setOpenShare] = useState(false);
   const [selectedFile, setSelectedFile] = useState<number | null>(null);
-  const [shareEmail, setShareEmail] = useState('');
+  const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
   const [openVerify, setOpenVerify] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<{ id: number; username: string } | null>(null);
+  const [selectedUser, setSelectedUser] = useState<SelectedUser | null>(null);
   const [openProfileSettings, setOpenProfileSettings] = useState(false);
   const [profileData, setProfileData] = useState<ProfileData>(mockUserProfile);
   const [editMode, setEditMode] = useState(false);
@@ -190,6 +277,10 @@ const Dashboard: React.FC = () => {
   const [users, setUsers] = useState<UserData[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
+  const [openDelete, setOpenDelete] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<number | null>(null);
+  const [sharedFiles, setSharedFiles] = useState<SharedFileData[]>([]);
+  const [loadingSharedFiles, setLoadingSharedFiles] = useState(false);
 
   // Get current user and their key bundle
   const currentUsername = storage.getCurrentUser();
@@ -208,6 +299,9 @@ const Dashboard: React.FC = () => {
   const hasFetchedFiles = React.useRef(false);
   const mountCount = React.useRef(0);
 
+  // Add this ref near the top of the component with other refs
+  const hasFetchedSharedFiles = React.useRef(false);
+
   // Filter files based on search query
   const filteredFiles = mockFiles.filter(file => 
     file.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -221,13 +315,19 @@ const Dashboard: React.FC = () => {
     setOpenShare(true);
   };
   const handleDelete = async (fileId: number) => {
+    setFileToDelete(fileId);
+    setOpenDelete(true);
+  };
+  const handleDeleteConfirm = async () => {
+    if (!fileToDelete) return;
+    
     try {
       setLoading(true);
       setError(null);
-      logDebug('Starting file deletion', { fileId });
+      logDebug('Starting file deletion', { fileId: fileToDelete });
 
-      const fileToDelete = files.find(f => f.id === fileId);
-      if (!fileToDelete) {
+      const file = files.find(f => f.id === fileToDelete);
+      if (!file) {
         throw new Error('File not found');
       }
 
@@ -249,7 +349,7 @@ const Dashboard: React.FC = () => {
       // Step 2: Sign the filename
       logDebug('Signing filename');
       const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
-      const signature = await signChallenge(new TextEncoder().encode(fileToDelete.name), secretKey!);
+      const signature = await signChallenge(new TextEncoder().encode(file.name), secretKey!);
       logDebug('Filename signed', {
         signatureLength: signature.length
       });
@@ -258,9 +358,9 @@ const Dashboard: React.FC = () => {
       logDebug('Sending delete request');
       const deleteResponse = await apiClient.post<DeleteResponse>('/delete_file', {
         username,
-        filename: fileToDelete.name,
+        filename: file.name,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
       logDebug('Delete response received', {
         status: deleteResponse.status,
@@ -285,58 +385,146 @@ const Dashboard: React.FC = () => {
       setError(err.message || 'Failed to delete file');
     } finally {
       setLoading(false);
+      setOpenDelete(false);
+      setFileToDelete(null);
       logDebug('Delete process completed');
     }
   };
-  const handleDownload = async (fileId: number) => {
-    const file = files.find(f => f.id === fileId);
-    if (!file) return;
+  const handleDownload = async (fileId: number, isShared: boolean = false) => {
     setLoading(true);
     setError(null);
 
     try {
+      // Get file information
+      const file = isShared 
+        ? sharedFiles.find(f => f.id === fileId)
+        : files.find(f => f.id === fileId);
+      
+      if (!file) {
+        throw new Error('File not found');
+      }
+
+      // Get the filename based on the type
+      const filename = isShared 
+        ? (file as SharedFileData).filename 
+        : (file as FileData).name;
+
       // Step 1: Request challenge
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
-        operation: 'download_file'
+        operation: isShared ? 'download_shared_file' : 'download_file'
       });
       if (challengeResponse.status !== 'challenge') {
         throw new Error(challengeResponse.detail || 'Failed to get challenge');
       }
-      // Step 2: Sign the filename
-      const signature = await signChallenge(new TextEncoder().encode(file.name), secretKey!);
+
+      // Step 2: Sign the appropriate data
+      const signature = await signChallenge(
+        isShared ? new TextEncoder().encode((file as SharedFileData).share_id.toString()) : new TextEncoder().encode(filename),
+        secretKey!
+      );
+
       // Step 3: Download file
-      const downloadResponse = await apiClient.post<any>('/download_file', {
-        username,
-        filename: file.name,
-        nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
-      });
+      const downloadResponse = await apiClient.post<any>(
+        isShared ? '/download_shared_file' : '/download_file',
+        {
+          username,
+          ...(isShared ? { share_id: (file as SharedFileData).share_id } : { filename }),
+          nonce: challengeResponse.nonce,
+          signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        }
+      );
+
       if (downloadResponse.status !== 'ok') {
         throw new Error(downloadResponse.detail || 'Failed to download file');
       }
+
       // Step 4: Decrypt file
       const encryptedFile = Uint8Array.from(atob(downloadResponse.encrypted_file), c => c.charCodeAt(0));
       const fileNonce = Uint8Array.from(atob(downloadResponse.file_nonce), c => c.charCodeAt(0));
-      const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
-      const decrypted = await decryptFile(encryptedFile, dek, fileNonce);
+      
+      let decrypted: Uint8Array;
+      if (isShared) {
+        // For shared files, we need to derive the shared secret using X3DH
+        if (!username) {
+          throw new Error('Username not found');
+        }
+        const myKeyBundle = storage.getKeyBundle(username);
+        if (!myKeyBundle) {
+          throw new Error('Key bundle not found');
+        }
+
+        // Get our private OPK that matches the OPK_id from the response
+        console.log('OPK Debug:', {
+          receivedOPKId: downloadResponse.opk_id, // Changed from OPK_id to opk_id
+          availableOPKs: myKeyBundle.OPKs_priv?.length,
+          keyBundle: {
+            hasOPKs: !!myKeyBundle.OPKs_priv,
+            OPKCount: myKeyBundle.OPKs_priv?.length,
+            OPKIds: myKeyBundle.OPKs_priv?.map((_, i) => i)
+          }
+        });
+
+        const myOPK = myKeyBundle.OPKs_priv?.[downloadResponse.opk_id]; // Changed from OPK_id to opk_id
+        if (!myOPK) {
+          console.error('OPK Debug - Not Found:', {
+            requestedId: downloadResponse.opk_id, // Changed from OPK_id to opk_id
+            availableIds: myKeyBundle.OPKs_priv?.map((_, i) => i)
+          });
+          throw new Error('OPK not found in key bundle');
+        }
+
+        // Derive the shared secret using our private keys and sender's public keys
+        const sharedSecret = await deriveX3DHSharedSecretRecipient({
+          senderEKPub: Uint8Array.from(atob(downloadResponse.EK_pub), c => c.charCodeAt(0)),
+          senderIKPub: Uint8Array.from(atob(downloadResponse.IK_pub), c => c.charCodeAt(0)),
+          senderSPKPub: Uint8Array.from(atob(downloadResponse.SPK_pub), c => c.charCodeAt(0)),
+          myIKPriv: Uint8Array.from(atob(myKeyBundle.IK_priv), c => c.charCodeAt(0)),
+          mySPKPriv: Uint8Array.from(atob(myKeyBundle.SPK_priv), c => c.charCodeAt(0)),
+          myOPKPriv: Uint8Array.from(atob(myOPK), c => c.charCodeAt(0))
+        });
+
+        console.log('Shared Secret Debug:', {
+          hasSharedSecret: !!sharedSecret,
+          sharedSecretLength: sharedSecret?.length,
+          sharedSecretHex: sharedSecret ? Array.from(sharedSecret).map(b => b.toString(16).padStart(2, '0')).join('') : null
+        });
+
+        // Decrypt the file key using the shared secret
+        const encryptedFileKey = Uint8Array.from(atob(downloadResponse.encrypted_file_key), c => c.charCodeAt(0));
+        const fileKeyNonce = Uint8Array.from(atob(downloadResponse.file_key_nonce), c => c.charCodeAt(0)); // Add this line
+
+        console.log('File Key Debug:', {
+          hasEncryptedFileKey: !!encryptedFileKey,
+          encryptedFileKeyLength: encryptedFileKey?.length,
+          hasFileKeyNonce: !!fileKeyNonce,
+          fileKeyNonceLength: fileKeyNonce?.length,
+          hasFileNonce: !!fileNonce,
+          fileNonceLength: fileNonce?.length
+        });
+
+        // Use fileKeyNonce for decrypting the file key
+        const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileKeyNonce);
+        console.log('Decrypted File Key Debug:', {
+          hasFileKey: !!fileKey,
+          fileKeyLength: fileKey?.length
+        });
+
+        // Use fileNonce for decrypting the actual file
+        decrypted = await decryptFile(encryptedFile, fileKey, fileNonce);
+      } else {
+        // For regular files, just decrypt the file key with our KEK
+        const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
+        decrypted = await decryptFile(encryptedFile, dek, fileNonce);
+      }
 
       // Step 5: Create a Blob and trigger download
-      // Guess MIME type from extension
-      let mime = 'application/octet-stream';
-      if (isTextFile(file.name)) mime = 'text/plain';
-      else if (/\.png$/i.test(file.name)) mime = 'image/png';
-      else if (/\.jpe?g$/i.test(file.name)) mime = 'image/jpeg';
-      else if (/\.gif$/i.test(file.name)) mime = 'image/gif';
-      else if (/\.bmp$/i.test(file.name)) mime = 'image/bmp';
-      else if (/\.webp$/i.test(file.name)) mime = 'image/webp';
-
-      const blob = new Blob([decrypted], { type: mime });
+      const blob = new Blob([decrypted], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
 
       const a = document.createElement('a');
       a.href = url;
-      a.download = file.name;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       setTimeout(() => {
@@ -354,6 +542,28 @@ const Dashboard: React.FC = () => {
     logDebug('Revoke initiated', { fileId });
     // TODO: Implement revoke
   };
+
+  // Add this to Dashboard.tsx temporarily
+const TestButton = () => {
+  const runTest = async () => {
+    try {
+      const results = await testX3DHKeyExchange();
+      console.log('X3DH Test Results:', results);
+    } catch (error) {
+      console.error('X3DH Test Failed:', error);
+    }
+  };
+
+  return (
+    <button 
+      onClick={runTest}
+      style={{ position: 'fixed', bottom: '20px', right: '20px', zIndex: 1000 }}
+    >
+      Run X3DH Test
+    </button>
+  );
+};
+
   const handleVerifyClick = async (user: { id: number; username: string }) => {
     try {
       // Get your own username and key bundle
@@ -369,74 +579,150 @@ const Dashboard: React.FC = () => {
         return;
       }
 
-      // 3. Request challenge for get_prekey_bundle as the logged-in user
+      // Request challenge for get_prekey_bundle
       const challengeResponse = await apiClient.post<{ status: string; nonce: string }>('/challenge', {
         username: myUsername,
         operation: 'get_pre_key_bundle'
       });
+
       if (challengeResponse.status !== 'challenge') {
         setUserError('Failed to get challenge for verification.');
         return;
       }
 
-      // 4. Sign the nonce with your own secret key
+      // Sign the nonce with your own secret key
       const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
       const signature = await signChallenge(nonce, secretKey!);
 
-      // 5. Request the prekey bundle for the target user
-      const prekeyResponse = await apiClient.post<{ prekey_bundle: { IK_pub: string } }>(
-        '/get_pre_key_bundle',
-        {
-          username: myUsername,  // Your username (for challenge verification)
-          target_username: user.username,  // The target user's username
-          nonce: challengeResponse.nonce,
-          signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
-        }
-      );
-      const remoteIK = prekeyResponse.prekey_bundle.IK_pub;
+      // Request the prekey bundle for the target user
+      const prekeyResponse = await apiClient.post<{ 
+        status: string;
+        prekey_bundle: { 
+          IK_pub: string;
+          SPK_pub: string;
+          SPK_signature: string;
+        } 
+      }>('/get_pre_key_bundle', {
+        username: myUsername,
+        target_username: user.username,
+        nonce: challengeResponse.nonce,
+        signature: uint8ArrayToB64(signature)
+      });
 
-      // 6. Generate the OOB verification code
-      const code = await generateOOBVerificationCode(myKeyBundle.IK_pub, remoteIK);
+      // Store the pre-key bundle temporarily in state for later use
+      setSelectedUser({
+        ...user,
+        prekeyBundle: prekeyResponse.prekey_bundle
+      });
+
+      // Generate and show the verification code
+      const code = await generateOOBVerificationCode(myKeyBundle.IK_pub, prekeyResponse.prekey_bundle.IK_pub);
       setVerificationCode(code);
-      setSelectedUser(user);
       setOpenVerify(true);
+
     } catch (err: any) {
       console.error('Verification error:', err);
       setUserError('Failed to fetch user key bundle or generate verification code.');
     }
   };
 
-  const debugSection = (
-    <Box sx={{ 
-      p: 2, 
-      mb: 2,
-      bgcolor: 'rgba(0,0,0,0.8)', 
-      color: '#00ff00', 
-      fontFamily: 'monospace',
-      border: '1px solid rgba(0, 255, 0, 0.2)',
-      borderRadius: 1
-    }}>
-       <Typography variant="h6" sx={{ color: '#00ffff', mb: 1 }}>Debug Info:</Typography>
-      <Typography>Username: {username}</Typography>
-      <Typography>Secret Key: {secretKey ? 'Present' : 'Not set'}</Typography>
-      <Typography>PDK: {pdk ? 'Present' : 'Not set'}</Typography>
-      <Typography>KEK: {kek ? 'Present' : 'Not set'}</Typography>
-    </Box>
-  );
-  const handleProfileEdit = () => {
-    setEditMode(true);
-    setEditedProfile(profileData);
-  };
+  // Add the verification confirmation handler
+  const handleVerifyConfirm = async () => {
+    try {
+      const myUsername = storage.getCurrentUser();
+      if (!myUsername || !selectedUser?.prekeyBundle) {
+        throw new Error('Missing required data for verification');
+      }
 
-  const handleProfileSave = () => {
-    setProfileData(editedProfile);
-    setEditMode(false);
-    // TODO: Implement profile update logic
-  };
+      const myKeyBundle = storage.getKeyBundle(myUsername);
+      if (!myKeyBundle) {
+        throw new Error('Could not retrieve your key bundle');
+      }
 
-  const handleProfileCancel = () => {
-    setEditMode(false);
-    setEditedProfile(profileData);
+      // Create the recipient key bundle with verified status
+      const recipientKeyBundle: RecipientKeyBundle = {
+        data: selectedUser.prekeyBundle,  // Store raw data directly
+        verified: true
+      };
+
+      // Update the key bundle with the new verified recipient
+      const updatedKeyBundle = {
+        ...myKeyBundle,
+        recipients: {
+          ...(myKeyBundle.recipients || {}),
+          [selectedUser.username]: recipientKeyBundle
+        }
+      };
+
+      // Store the updated key bundle locally
+      storage.saveKeyBundle(updatedKeyBundle);
+
+      // Request challenge for backup_tofu
+      const backupChallengeResponse = await apiClient.post<{ status: string; nonce: string }>('/challenge', {
+        username: myUsername,
+        operation: 'backup_tofu'
+      });
+
+      if (backupChallengeResponse.status !== 'challenge') {
+        throw new Error('Failed to get challenge for backup');
+      }
+
+      // Sign the nonce for backup
+      const backupNonce = Uint8Array.from(atob(backupChallengeResponse.nonce), c => c.charCodeAt(0));
+      const backupSignature = await signChallenge(backupNonce, secretKey!);
+
+      // Create backup data with all necessary keys
+      const backupData = {
+        username: myUsername,
+        // Private keys
+        IK_priv: myKeyBundle.IK_priv,
+        SPK_priv: myKeyBundle.SPK_priv,
+        OPKs_priv: myKeyBundle.OPKs_priv,
+        // Public keys
+        IK_pub: myKeyBundle.IK_pub,
+        SPK_pub: myKeyBundle.SPK_pub,
+        SPK_signature: myKeyBundle.SPK_signature,
+        OPKs: myKeyBundle.OPKs,
+        // Additional keys
+        secretKey: myKeyBundle.secretKey,
+        pdk: myKeyBundle.pdk,
+        kek: myKeyBundle.kek,
+        // Add the recipients with base64 encoded data
+        recipients: updatedKeyBundle.recipients,
+        verified: true,
+        lastVerified: new Date().toISOString()
+      };
+
+      // Generate a new nonce for the backup encryption
+      const encryptionNonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+      
+      // Encrypt the backup with the PDK
+      const encryptedBackup = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+        JSON.stringify(backupData),
+        null,
+        null,
+        encryptionNonce,
+        pdk!
+      );
+
+      // Send the backup to the server
+      await apiClient.post('/backup_tofu', {
+        username: myUsername,
+        encrypted_backup: uint8ArrayToB64(encryptedBackup),
+        backup_nonce: uint8ArrayToB64(encryptionNonce),
+        nonce: backupChallengeResponse.nonce,
+        signature: uint8ArrayToB64(backupSignature)
+      });
+
+      // Close the verification dialog
+      setOpenVerify(false);
+      setSelectedUser(null);
+      setVerificationCode('');
+
+    } catch (err: any) {
+      console.error('Verification confirmation error:', err);
+      setUserError('Failed to confirm verification and update backup.');
+    }
   };
 
   // Update the fetchFiles function
@@ -461,11 +747,11 @@ const Dashboard: React.FC = () => {
       });
 
       // Request challenge
-      logDebug('Requesting challenge for list_files');
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
         operation: 'list_files'
       });
+
       logDebug('Challenge response received', {
         status: challengeResponse.status,
         hasNonce: !!challengeResponse.nonce,
@@ -476,48 +762,40 @@ const Dashboard: React.FC = () => {
         throw new Error(challengeResponse.detail || 'Failed to get challenge');
       }
 
-      // Convert base64 nonce to Uint8Array
-      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
-      logDebug('Nonce converted', {
-        nonceLength: nonce.length,
-        nonceBase64: challengeResponse.nonce
-      });
-
       // Sign the nonce
-      logDebug('Signing nonce with secretKey');
+      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
       const signature = await signChallenge(nonce, secretKey!);
-      logDebug('Nonce signed', {
-        signatureLength: signature.length,
-        signatureBase64: btoa(String.fromCharCode.apply(null, Array.from(signature)))
-      });
 
       // List files
-      logDebug('Requesting file list');
-      const listResponse = await apiClient.post<{ status: string; files: string[] }>('/list_files', {
+      const listResponse = await apiClient.post<FileListResponse>('/list_files', {
         username,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
+
       logDebug('File list response received', {
         status: listResponse.status,
         fileCount: listResponse.files?.length
       });
 
       if (listResponse.status === 'ok' && isMounted.current) {
-        const fileData: FileData[] = listResponse.files.map((filename, index) => ({
-          id: index + 1,
-          name: filename,
-          type: filename.split('.').pop() || 'unknown',
-          size: '0 KB',
-          shared: false,
-          date: new Date()
-        }));
-        logDebug('Files processed', {
-          fileCount: fileData.length,
-          fileNames: fileData.map(f => f.name)
+        const fileData: FileData[] = listResponse.files.map(file => {
+          if (!file || !file.filename) {
+            logDebug('Invalid file data received', { file });
+            throw new Error('Invalid file data received from server');
+          }
+          return {
+            id: file.id,
+            name: file.filename,
+            type: file.filename.split('.').pop() || 'unknown',
+            size: '0 KB', // Size not provided in response
+            shared: false, // Shared status not provided in response
+            date: new Date(file.created_at)
+          };
         });
         setFiles(fileData);
         hasFetchedFiles.current = true;
+        logDebug('Files processed successfully', { fileCount: fileData.length });
       } else if (!isMounted.current) {
         logDebug('Component unmounted during fetch, skipping state update');
       } else {
@@ -529,7 +807,8 @@ const Dashboard: React.FC = () => {
           errorType: err.constructor.name,
           message: err.message,
           hasResponse: !!err.response,
-          responseData: err.response?.data
+          responseData: err.response?.data,
+          stack: err.stack
         });
         setError(err.message || 'Failed to list files');
       }
@@ -576,6 +855,7 @@ const Dashboard: React.FC = () => {
 
       try {
         await fetchFiles();
+        await fetchSharedFiles();
       } catch (error) {
         if (isMounted.current) {
           logDebug('Error in loadFiles', { error });
@@ -587,11 +867,12 @@ const Dashboard: React.FC = () => {
 
     return () => {
       isMounted.current = false;
+      hasFetchedSharedFiles.current = false; // Reset the flag on unmount
       logDebug('Dashboard unmounted', {
         mountCount: mountCount.current
       });
     };
-  }, [username, pdk]); // Keep these dependencies
+  }, [username, pdk]); // Keep these dependencies for initial load
 
   // Update the refreshFiles function
   const refreshFiles = async () => {
@@ -629,11 +910,8 @@ const Dashboard: React.FC = () => {
       // Step 2: Generate file key and encrypt file
       logDebug('Generating file key');
       const fileKey = await generateFileKey();
-      const fileNonce = new Uint8Array(24);
-      window.crypto.getRandomValues(fileNonce);
       logDebug('File key generated', {
-        keyLength: fileKey.length,
-        nonceLength: fileNonce.length
+        keyLength: fileKey.length
       });
 
       logDebug('Reading file data');
@@ -641,16 +919,15 @@ const Dashboard: React.FC = () => {
       logDebug('Encrypting file', {
         fileSize: fileData.byteLength
       });
-      const encryptedFile = await encryptFile(new Uint8Array(fileData), fileKey, fileNonce);
+      const { ciphertext: encryptedFile, nonce: fileNonce } = await encryptWithAESGCM(fileKey, new Uint8Array(fileData));
       logDebug('File encrypted', {
-        encryptedSize: encryptedFile.length
+        encryptedSize: encryptedFile.length,
+        nonceLength: fileNonce.length
       });
 
       // Step 3: Encrypt file key with KEK
       logDebug('Encrypting file key with KEK');
-      const kekNonce = new Uint8Array(24);
-      window.crypto.getRandomValues(kekNonce);
-      const encryptedDek = await encryptFile(fileKey, kek!, kekNonce);
+      const { ciphertext: encryptedDek, nonce: kekNonce } = await encryptWithAESGCM(kek!, fileKey);
       logDebug('File key encrypted', {
         encryptedDekLength: encryptedDek.length,
         kekNonceLength: kekNonce.length
@@ -669,12 +946,12 @@ const Dashboard: React.FC = () => {
       const uploadResponse = await apiClient.post<UploadResponse>('/upload_file', {
         username,
         filename: file.name,
-        encrypted_file: btoa(String.fromCharCode.apply(null, Array.from(encryptedFile))),
-        file_nonce: btoa(String.fromCharCode.apply(null, Array.from(fileNonce))),
-        encrypted_dek: btoa(String.fromCharCode.apply(null, Array.from(encryptedDek))),
-        dek_nonce: btoa(String.fromCharCode.apply(null, Array.from(kekNonce))),
+        encrypted_file: uint8ArrayToB64(encryptedFile),
+        file_nonce: uint8ArrayToB64(fileNonce),
+        encrypted_dek: uint8ArrayToB64(encryptedDek),
+        dek_nonce: uint8ArrayToB64(kekNonce),
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
       logDebug('Upload response received', {
         status: uploadResponse.status,
@@ -748,16 +1025,16 @@ const Dashboard: React.FC = () => {
         username,
         filename: file.name,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
       });
       if (downloadResponse.status !== 'ok') {
         throw new Error(downloadResponse.detail || 'Failed to download file');
       }
       // Step 4: Decrypt file
-      const encryptedFile = Uint8Array.from(atob(downloadResponse.encrypted_file), c => c.charCodeAt(0));
-      const fileNonce = Uint8Array.from(atob(downloadResponse.file_nonce), c => c.charCodeAt(0));
-      const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
-      const decrypted = await decryptFile(encryptedFile, dek, fileNonce);
+      const previewEncryptedFile = b64ToUint8Array(downloadResponse.encrypted_file);
+      const previewFileNonce = b64ToUint8Array(downloadResponse.file_nonce);
+      const dek = await decryptFileKey(downloadResponse.encrypted_file_key, kek!, downloadResponse.file_nonce);
+      const decrypted = await decryptFile(previewEncryptedFile, dek, previewFileNonce);
 
       if (isTextFile(file.name)) {
         const text = new TextDecoder('utf-8').decode(decrypted);
@@ -812,6 +1089,12 @@ const Dashboard: React.FC = () => {
 
   // Add function to fetch users
   const fetchUsers = async () => {
+    // Don't fetch if there's no search query
+    if (!userSearchQuery.trim()) {
+      setUsers([]);
+      return;
+    }
+
     try {
       setLoadingUsers(true);
       setUserError(null);
@@ -819,7 +1102,7 @@ const Dashboard: React.FC = () => {
       // Step 1: Request challenge
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
-        operation: 'list_users'
+        operation: 'list_matching_users'
       });
 
       if (challengeResponse.status !== 'challenge') {
@@ -830,11 +1113,12 @@ const Dashboard: React.FC = () => {
       const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
       const signature = await signChallenge(nonce, secretKey!);
 
-      // Step 3: Get user list
-      const listResponse = await apiClient.post<{ status: string; users: UserData[] }>('/list_users', {
+      // Step 3: Get matching users
+      const listResponse = await apiClient.post<{ status: string; users: UserData[] }>('/list_matching_users', {
         username,
         nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
+        signature: uint8ArrayToB64(signature)
+        search_query: userSearchQuery
       });
 
       if (listResponse.status === 'ok') {
@@ -849,12 +1133,20 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // Update useEffect to fetch users when needed
+  // Update the useEffect to only trigger when there's a search query
   useEffect(() => {
-    if (activeTab === 'users' && username && secretKey && !loadingUsers && !users.length) {
-      fetchUsers();
+    if (activeTab === 'users' && username && secretKey && userSearchQuery.trim()) {
+      // Add a small delay to prevent too many API calls while typing
+      const timeoutId = setTimeout(() => {
+        fetchUsers();
+      }, 300); // 300ms delay
+
+      return () => clearTimeout(timeoutId);
+    } else if (activeTab === 'users' && !userSearchQuery.trim()) {
+      // Clear users when search is empty
+      setUsers([]);
     }
-  }, [activeTab]); // Only depend on activeTab changes
+  }, [activeTab, userSearchQuery]); // Keep userSearchQuery as a dependency
 
   // Add a function to manually refresh users
   const refreshUsers = () => {
@@ -863,9 +1155,311 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const handleProfileCancel = () => {
+    setEditMode(false);
+    setEditedProfile(profileData);
+  };
+
+  const handleProfileSave = () => {
+    setProfileData(editedProfile);
+    setEditMode(false);
+  };
+
+  const handleProfileEdit = () => {
+    setEditMode(true);
+    setEditedProfile(profileData);
+  };
+
+  const debugSection = (
+    <Box sx={{ 
+      p: 2, 
+      mb: 2,
+      bgcolor: 'rgba(0,0,0,0.8)', 
+      color: '#00ff00', 
+      fontFamily: 'monospace',
+      border: '1px solid rgba(0, 255, 0, 0.2)',
+      borderRadius: 1
+    }}>
+      <Typography variant="h6" sx={{ color: '#00ffff', mb: 1 }}>Debug Info:</Typography>
+      <Typography>Username: {username}</Typography>
+      <Typography>Secret Key: {secretKey ? 'Present' : 'Not set'}</Typography>
+      <Typography>PDK: {pdk ? 'Present' : 'Not set'}</Typography>
+      <Typography>KEK: {kek ? 'Present' : 'Not set'}</Typography>
+    </Box>
+  );
+
+  const handleShareConfirm = async () => {
+    if (!selectedFile || selectedRecipients.length === 0) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      console.log('Starting file share process...');
+      const file = files.find(f => f.id === selectedFile);
+      if (!file) throw new Error('File not found');
+      console.log('Found file:', file.name);
+
+      // 1. Get the DEK for this file
+      console.log('Requesting challenge for DEK retrieval...');
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'retrieve_file_dek'
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+      console.log('Got challenge for DEK retrieval');
+
+      // Sign the nonce 
+      const signature = await signChallenge(b64ToUint8Array(challengeResponse.nonce), secretKey!);
+      console.log('Signed DEK challenge');
+
+      // Get the encrypted DEK
+      console.log('Retrieving encrypted DEK...');
+      const dekResponse = await apiClient.post<{ status: string; encrypted_dek: string; dek_nonce: string }>('/retrieve_file_dek', {
+        username,
+        file_id: selectedFile,
+        nonce: challengeResponse.nonce,
+        signature: uint8ArrayToB64(signature)
+      });
+
+      if (dekResponse.status !== 'ok') {
+        throw new Error('Failed to retrieve file key');
+      }
+      console.log('Retrieved encrypted DEK:', {
+        encrypted_dek_length: dekResponse.encrypted_dek.length,
+        dek_nonce_length: dekResponse.dek_nonce.length
+      });
+
+      console.log('Retrieved encrypted DEK');
+
+      // Decrypt the file key using the KEK from our keyBundle
+      const fileKey = await decryptFileKey(dekResponse.encrypted_dek, kek!, dekResponse.dek_nonce);
+      console.log('Decrypted file key');
+      
+      for (const recipientUsername of selectedRecipients) {
+        console.log(`Processing recipient: ${recipientUsername}`);
+        
+        // 2. Get recipient's verified pre-key bundle from local storage
+        const myUsername = storage.getCurrentUser();
+        if (!myUsername) throw new Error('No current user found');
+        const myKeyBundle = storage.getKeyBundle(myUsername);
+        if (!myKeyBundle) throw new Error('Key bundle not found for current user');
+        const storedRecipientBundle = myKeyBundle.recipients?.[recipientUsername]?.data;
+        if (!storedRecipientBundle) throw new Error('Recipient bundle not found or not verified');
+        console.log('Retrieved stored recipient bundle');
+
+        // 3. Get fresh key bundle from server for TOFU check
+        console.log('Requesting fresh key bundle...');
+        const bundleChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+          username: myUsername,
+          operation: 'get_pre_key_bundle'
+        });
+
+        if (bundleChallengeResponse.status !== 'challenge') {
+          throw new Error('Failed to get challenge for key bundle');
+        }
+        console.log('Got challenge for key bundle');
+
+        const bundleSignature = await signChallenge(b64ToUint8Array(bundleChallengeResponse.nonce), secretKey!);
+        const freshBundleResponse = await apiClient.post<{ status: string; prekey_bundle: any }>('/get_pre_key_bundle', {
+          username: myUsername,
+          target_username: recipientUsername,
+          nonce: bundleChallengeResponse.nonce,
+          signature: uint8ArrayToB64(bundleSignature)
+        });
+
+        if (freshBundleResponse.status !== 'ok') {
+          throw new Error('Failed to get fresh key bundle');
+        }
+        console.log('Retrieved fresh key bundle');
+
+        // 4. Compare stored bundle with fresh bundle for TOFU
+        const freshBundle = freshBundleResponse.prekey_bundle;
+        if (freshBundle.IK_pub !== storedRecipientBundle.IK_pub ||
+            freshBundle.SPK_pub !== storedRecipientBundle.SPK_pub ||
+            freshBundle.SPK_signature !== storedRecipientBundle.SPK_signature) {
+          throw new Error('Key bundle mismatch - possible security issue');
+        }
+        console.log('TOFU check passed');
+
+        // 5. Get OPK for recipient
+        console.log('Requesting OPK...');
+        const opkChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+          username: myUsername,
+          operation: 'get_opk'
+        });
+
+        if (opkChallengeResponse.status !== 'challenge') {
+          throw new Error('Failed to get challenge for OPK');
+        }
+        console.log('Got challenge for OPK');
+
+        const opkSignature = await signChallenge(b64ToUint8Array(opkChallengeResponse.nonce), secretKey!);
+        const opkResponse = await apiClient.post<{ opk_id: number; pre_key: string }>('/opk', {
+          username: myUsername,
+          target_username: recipientUsername,
+          nonce: opkChallengeResponse.nonce,
+          signature: uint8ArrayToB64(opkSignature)
+        });
+
+        // Add more detailed logging
+        console.log('OPK Response:', opkResponse);
+
+        // Check if the response has the required fields
+        if (!opkResponse.opk_id || !opkResponse.pre_key) {
+          throw new Error('Invalid OPK response: missing required fields');
+        }
+
+        console.log('Retrieved OPK:', { opk_id: opkResponse.opk_id });
+
+        // 6. Generate ephemeral X25519 key pair
+        console.log('Generating ephemeral key pair...');
+        const ephemeralKeyPair = await generateEphemeralKeyPair();
+        console.log('Generated ephemeral key pair');
+
+        // 7. Derive X3DH shared secret
+        console.log('Deriving X3DH shared secret...');
+        console.log('Key data:', {
+          myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv).length,
+          myEKPriv: ephemeralKeyPair.privateKey.length,
+          recipientIKPub: b64ToUint8Array(freshBundle.IK_pub).length,
+          recipientSPKPub: b64ToUint8Array(freshBundle.SPK_pub).length,
+          recipientOPKPub: b64ToUint8Array(opkResponse.pre_key).length
+        });
+
+        const sharedSecret = await deriveX3DHSharedSecret({
+          myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
+          myEKPriv: ephemeralKeyPair.privateKey,
+          recipientIKPub: b64ToUint8Array(freshBundle.IK_pub),
+          recipientSPKPub: b64ToUint8Array(freshBundle.SPK_pub),
+          recipientSPKSignature: b64ToUint8Array(freshBundle.SPK_signature),
+          recipientOPKPub: b64ToUint8Array(opkResponse.pre_key),
+        });
+        console.log('Derived shared secret');
+
+        // 8. Encrypt the file key (DEK) with the shared secret
+        console.log('Encrypting file key with shared secret...');
+        const { ciphertext, nonce } = await encryptWithAESGCM(sharedSecret, fileKey);
+        console.log('Encrypted file key:', {
+          ciphertext_length: ciphertext.length,
+          nonce_length: nonce.length
+        });
+
+        // 9. Request challenge for share_file
+        console.log('Requesting challenge for share_file...');
+        const shareChallengeResponse = await apiClient.post<{ status: string; nonce: string; detail?: string }>('/challenge', {
+          username,
+          operation: 'share_file'
+        });
+
+        if (shareChallengeResponse.status !== 'challenge') {
+          throw new Error('Failed to get challenge for sharing');
+        }
+        console.log('Got challenge for share_file');
+
+        // 10. Sign the encrypted file key
+        if (!secretKey) throw new Error('Secret key not available');
+        const shareSignature = await signChallenge(ciphertext, secretKey);
+        console.log('Signed share request');
+
+        // 11. Send /share_file request with OPK
+        console.log('Sending share_file request...');
+        await apiClient.post('/share_file', {
+          username,
+          file_id: selectedFile,
+          recipient_username: recipientUsername,
+          EK_pub: uint8ArrayToB64(ephemeralKeyPair.publicKey),
+          IK_pub: myKeyBundle.IK_pub,
+          encrypted_file_key: uint8ArrayToB64(ciphertext),
+          file_key_nonce: uint8ArrayToB64(nonce), // Use the nonce from encryptWithAESGCM
+          SPK_pub: myKeyBundle.SPK_pub,
+          SPK_signature: myKeyBundle.SPK_signature,
+          OPK_ID: opkResponse.opk_id,
+          nonce: shareChallengeResponse.nonce,
+          signature: uint8ArrayToB64(shareSignature),
+          pre_key: opkResponse.pre_key
+        });
+        console.log('Share request sent successfully');
+      }
+
+      console.log('Share process completed successfully');
+      setOpenShare(false);
+      setSelectedRecipients([]);
+
+    } catch (err: any) {
+      console.error('Share process failed:', err);
+      setError(err.message || 'Failed to share file');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add this function to fetch shared files
+  const fetchSharedFiles = async () => {
+    if (!username || !secretKey || hasFetchedSharedFiles.current) return;
+    
+    try {
+      setLoadingSharedFiles(true);
+      setError(null);
+
+      // Request challenge
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'list_shared_files'
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+
+      // Sign the nonce
+      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonce, secretKey);
+
+      // Get shared files
+      const response = await apiClient.post<{ status: string; files: SharedFileData[] }>('/list_shared_files', {
+        username,
+        nonce: challengeResponse.nonce,
+        signature: uint8ArrayToB64(signature)
+      });
+
+      if (response.status === 'ok') {
+        setSharedFiles(response.files);
+        hasFetchedSharedFiles.current = true;
+      } else {
+        throw new Error('Failed to list shared files');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to fetch shared files');
+    } finally {
+      setLoadingSharedFiles(false);
+    }
+  };
+
+  // Update the useEffect
+  useEffect(() => {
+    if (activeTab === 'files' && username && secretKey) {
+      if (!hasFetchedFiles.current) {
+        fetchFiles();
+      }
+      if (!hasFetchedSharedFiles.current) {
+        fetchSharedFiles();
+      }
+    }
+  }, [activeTab]); // Only depend on activeTab
+
+  // Add a refresh function for shared files
+  const refreshSharedFiles = async () => {
+    hasFetchedSharedFiles.current = false;
+    await fetchSharedFiles();
+  };
+
   return (
     <>
       <MatrixBackground />
+      <TestButton />
       <Box sx={{ display: 'flex' }}>
         {/* Left Navigation Drawer */}
         <NavDrawer variant="permanent">
@@ -915,7 +1509,17 @@ const Dashboard: React.FC = () => {
                 </ListItemIcon>
                 <ListItemText primary="Users" sx={{ color: '#00ff00' }} />
               </ListItem>
-              <ListItem button onClick={() => navigate('/login')}>
+              <ListItem
+                button
+                onClick={() => {
+                  const currentUser = storage.getCurrentUser();
+                  if (currentUser) {
+                    storage.removeKeyBundle(currentUser);
+                  }
+                  storage.clearStorage();
+                  navigate('/login');
+                }}
+              >
                 <ListItemIcon>
                   <LockIcon sx={{ color: '#00ff00' }} />
                 </ListItemIcon>
@@ -1035,7 +1639,9 @@ const Dashboard: React.FC = () => {
                 </DashboardCard>
               </>
             ) : activeTab === 'files' ? (
-              <DashboardCard>
+              <>
+                {/* My Files Card */}
+                <DashboardCard sx={{ mb: 3 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
                   <Typography
                     variant="h6"
@@ -1044,7 +1650,7 @@ const Dashboard: React.FC = () => {
                       textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
                     }}
                   >
-                    Your Files
+                      My Files
                   </Typography>
                   <CyberButton
                     startIcon={<UploadIcon />}
@@ -1054,6 +1660,7 @@ const Dashboard: React.FC = () => {
                     Upload File
                   </CyberButton>
                 </Box>
+
                 {loading ? (
                   <Box sx={{ textAlign: 'center', py: 4 }}>
                     <Typography sx={{ color: '#00ff00' }}>Loading files...</Typography>
@@ -1067,62 +1674,139 @@ const Dashboard: React.FC = () => {
                     <Typography sx={{ color: '#00ff00' }}>No files found. Upload your first file!</Typography>
                   </Box>
                 ) : (
-                <List>
+                  <List>
                     {files
                       .filter(file => file.name.toLowerCase().includes(searchQuery.toLowerCase()))
                       .map((file) => (
-                    <ListItem
-                      key={file.id}
+                        <ListItem
+                          key={file.id}
+                          sx={{
+                            border: '1px solid rgba(0, 255, 0, 0.2)',
+                            borderRadius: 1,
+                            mb: 1,
+                            '&:hover': {
+                              border: '1px solid rgba(0, 255, 0, 0.4)',
+                              backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                            },
+                          }}
+                        >
+                          <ListItemIcon>
+                            <FolderIcon sx={{ color: '#00ff00' }} />
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={file.name}
+                            secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                            primaryTypographyProps={{
+                              sx: { color: '#00ffff', fontWeight: 'bold' },
+                            }}
+                            secondaryTypographyProps={{
+                              sx: { color: 'rgba(0, 255, 0, 0.7)' },
+                            }}
+                          />
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Tooltip title="Share">
+                              <IconButton onClick={() => handleShare(file.id)} sx={{ color: '#00ff00' }}>
+                                <ShareIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Download">
+                              <IconButton onClick={() => handleDownload(file.id, false)} sx={{ color: '#00ff00' }}>
+                                <DownloadIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete">
+                              <IconButton onClick={() => handleDelete(file.id)} sx={{ color: '#00ff00' }}>
+                                <DeleteIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Preview">
+                              <IconButton onClick={() => handlePreview(file.id)} sx={{ color: '#00ff00' }}>
+                                <VisibilityIcon />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        </ListItem>
+                      ))}
+                  </List>
+                )}
+                </DashboardCard>
+
+                {/* Shared Files Card */}
+                <DashboardCard>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography
+                      variant="h6"
                       sx={{
-                        border: '1px solid rgba(0, 255, 0, 0.2)',
-                        borderRadius: 1,
-                        mb: 1,
-                        '&:hover': {
-                          border: '1px solid rgba(0, 255, 0, 0.4)',
-                          backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                        },
+                        color: '#00ffff',
+                        textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
                       }}
                     >
-                      <ListItemIcon>
-                        <FolderIcon sx={{ color: '#00ff00' }} />
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={file.name}
-                        secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
-                        primaryTypographyProps={{
-                          sx: { color: '#00ffff', fontWeight: 'bold' },
-                        }}
-                        secondaryTypographyProps={{
-                          sx: { color: 'rgba(0, 255, 0, 0.7)' },
-                        }}
-                      />
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Tooltip title="Share">
-                          <IconButton onClick={() => handleShare(file.id)} sx={{ color: '#00ff00' }}>
-                            <ShareIcon />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Download">
-                          <IconButton onClick={() => handleDownload(file.id)} sx={{ color: '#00ff00' }}>
-                            <DownloadIcon />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete">
-                          <IconButton onClick={() => handleDelete(file.id)} sx={{ color: '#00ff00' }}>
-                            <DeleteIcon />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Preview">
-                          <IconButton onClick={() => handlePreview(file.id)} sx={{ color: '#00ff00' }}>
-                            <VisibilityIcon />
-                          </IconButton>
-                        </Tooltip>
-                      </Box>
-                    </ListItem>
-                  ))}
-                </List>
-                )}
+                      Files Shared With You
+                    </Typography>
+                    <IconButton 
+                      onClick={refreshSharedFiles} 
+                      sx={{ color: '#00ff00' }}
+                      disabled={loadingSharedFiles}
+                    >
+                      <RefreshIcon />
+                    </IconButton>
+                  </Box>
+                  {loadingSharedFiles ? (
+                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                      <Typography sx={{ color: '#00ff00' }}>Loading shared files...</Typography>
+                    </Box>
+                  ) : sharedFiles.length === 0 ? (
+                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                      <Typography sx={{ color: '#00ff00' }}>No files have been shared with you yet.</Typography>
+                    </Box>
+                  ) : (
+                    <List>
+                      {sharedFiles
+                        .filter(file => file.filename.toLowerCase().includes(searchQuery.toLowerCase()))
+                        .map((file) => (
+                          <ListItem
+                            key={file.id}
+                            sx={{
+                              border: '1px solid rgba(0, 255, 0, 0.2)',
+                              borderRadius: 1,
+                              mb: 1,
+                              '&:hover': {
+                                border: '1px solid rgba(0, 255, 0, 0.4)',
+                                backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                              },
+                            }}
+                          >
+                            <ListItemIcon>
+                              <FolderIcon sx={{ color: '#00ff00' }} />
+                            </ListItemIcon>
+                            <ListItemText
+                              primary={file.filename}
+                              secondary={`Shared by ${file.shared_by} • ${new Date(file.created_at).toLocaleDateString()}`}
+                              primaryTypographyProps={{
+                                sx: { color: '#00ffff', fontWeight: 'bold' },
+                              }}
+                              secondaryTypographyProps={{
+                                sx: { color: 'rgba(0, 255, 0, 0.7)' },
+                              }}
+                            />
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Tooltip title="Download">
+                                <IconButton onClick={() => handleDownload(file.id, true)} sx={{ color: '#00ff00' }}>
+                                  <DownloadIcon />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Preview">
+                                <IconButton onClick={() => handlePreview(file.id)} sx={{ color: '#00ff00' }}>
+                                  <VisibilityIcon />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
+                          </ListItem>
+                        ))}
+                    </List>
+                  )}
               </DashboardCard>
+              </>
             ) : activeTab === 'users' ? (
               <DashboardCard>
                 <Box sx={{ mb: 3 }}>
@@ -1312,7 +1996,11 @@ const Dashboard: React.FC = () => {
       {/* Upload Dialog */}
       <Dialog
         open={openUpload}
-        onClose={() => setOpenUpload(false)}
+        onClose={() => {
+          if (!loading) {
+            setOpenUpload(false);
+          }
+        }}
         PaperProps={{
           sx: {
             background: 'rgba(0, 0, 0, 0.9)',
@@ -1340,15 +2028,16 @@ const Dashboard: React.FC = () => {
               border: '2px dashed rgba(0, 255, 0, 0.3)',
               borderRadius: 2,
               textAlign: 'center',
-              cursor: 'pointer',
+              cursor: loading ? 'default' : 'pointer',
               backgroundColor: dragActive ? 'rgba(0, 255, 0, 0.1)' : 'transparent',
               transition: 'background 0.2s',
               mx: 'auto',
               my: 2,
               '&:hover': {
-                border: '2px dashed rgba(0, 255, 0, 0.5)',
-                backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                border: loading ? '2px dashed rgba(0, 255, 0, 0.3)' : '2px dashed rgba(0, 255, 0, 0.5)',
+                backgroundColor: loading ? 'transparent' : 'rgba(0, 255, 0, 0.05)',
               },
+              opacity: loading ? 0.7 : 1,
             }}
             component="label"
           >
@@ -1361,15 +2050,40 @@ const Dashboard: React.FC = () => {
                   handleFileUpload(file);
                 }
               }}
+              disabled={loading}
             />
             <UploadIcon sx={{ fontSize: 48, color: '#00ff00', mb: 2 }} />
             <Typography sx={{ color: '#00ffff', mb: 1 }}>
               {loading ? 'Uploading...' : 'Drag and drop your file here'}
             </Typography>
             <Typography sx={{ color: 'rgba(0, 255, 0, 0.7)', fontSize: '0.875rem' }}>
-              or click to browse
+              {loading ? 'Please wait...' : 'or click to browse'}
             </Typography>
           </Box>
+          {loading && (
+            <Box sx={{ width: '100%', px: 2, pb: 2 }}>
+              <LinearProgress 
+                sx={{
+                  backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                  '& .MuiLinearProgress-bar': {
+                    backgroundColor: '#00ff00',
+                    boxShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                  },
+                }}
+              />
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  color: 'rgba(0, 255, 0, 0.7)', 
+                  mt: 1,
+                  textAlign: 'center',
+                  fontFamily: 'monospace'
+                }}
+              >
+                Encrypting and uploading file...
+              </Typography>
+            </Box>
+          )}
           {error && (
             <Alert severity="error" sx={{ mt: 2, bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
               {error}
@@ -1390,7 +2104,10 @@ const Dashboard: React.FC = () => {
       {/* Share Dialog */}
       <Dialog
         open={openShare}
-        onClose={() => setOpenShare(false)}
+        onClose={() => {
+          setOpenShare(false);
+          setSelectedRecipients([]);
+        }}
         PaperProps={{
           sx: {
             background: 'rgba(0, 0, 0, 0.9)',
@@ -1403,41 +2120,128 @@ const Dashboard: React.FC = () => {
           Share File
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
-          <TextField
-            fullWidth
-            label="User Email"
-            variant="outlined"
-            value={shareEmail}
-            onChange={(e) => setShareEmail(e.target.value)}
+          <Typography
+            variant="subtitle1"
             sx={{
-              '& .MuiOutlinedInput-root': {
-                '& fieldset': {
-                  borderColor: 'rgba(0, 255, 0, 0.3)',
-                },
-                '&:hover fieldset': {
-                  borderColor: 'rgba(0, 255, 0, 0.5)',
-                },
-                '&.Mui-focused fieldset': {
-                  borderColor: '#00ff00',
-                },
-              },
-              '& .MuiInputLabel-root': {
-                color: 'rgba(0, 255, 0, 0.7)',
-              },
-              '& .MuiInputBase-input': {
-                color: '#fff',
-              },
+              color: '#00ffff',
+              mb: 2,
+              fontFamily: 'monospace',
             }}
-          />
+          >
+            Select Verified Recipients
+          </Typography>
+          
+          {(() => {
+            const myUsername = storage.getCurrentUser();
+            const myKeyBundle = myUsername ? storage.getKeyBundle(myUsername) : null;
+            const verifiedRecipients = myKeyBundle?.recipients 
+              ? Object.entries(myKeyBundle.recipients)
+                  .filter(([_, bundle]) => bundle.verified)
+                  .reduce<{ [username: string]: RecipientKeyBundle }>((acc, [username, bundle]) => ({
+                    ...acc,
+                    [username]: bundle as RecipientKeyBundle
+                  }), {})
+              : {};
+
+            return Object.keys(verifiedRecipients).length === 0 ? (
+              <Alert severity="info" sx={{ bgcolor: 'rgba(0, 255, 0, 0.1)' }}>
+                No verified recipients found. Verify users first to share files with them.
+              </Alert>
+            ) : (
+              <>
+                <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography
+                    variant="body2"
+                    sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+                  >
+                    {selectedRecipients.length} recipient{selectedRecipients.length !== 1 ? 's' : ''} selected
+                  </Typography>
+                  {selectedRecipients.length > 0 && (
+                    <Button
+                      size="small"
+                      onClick={() => setSelectedRecipients([])}
+                      sx={{ color: 'rgba(255, 0, 0, 0.7)' }}
+                    >
+                      Clear All
+                    </Button>
+                  )}
+                </Box>
+                <List sx={{ 
+                  maxHeight: 300, 
+                  overflowY: 'auto',
+                  border: '1px solid rgba(0, 255, 0, 0.2)',
+                  borderRadius: 1,
+                }}>
+                  {Object.entries(verifiedRecipients).map(([username, bundle]: [string, RecipientKeyBundle]) => (
+                    <ListItem
+                      key={username}
+                      button
+                      onClick={() => {
+                        setSelectedRecipients(prev => 
+                          prev.includes(username)
+                            ? prev.filter(u => u !== username)
+                            : [...prev, username]
+                        );
+                      }}
+                      selected={selectedRecipients.includes(username)}
+                      sx={{
+                        borderBottom: '1px solid rgba(0, 255, 0, 0.1)',
+                        '&:hover': {
+                          backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                        },
+                        '&.Mui-selected': {
+                          backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                          '&:hover': {
+                            backgroundColor: 'rgba(0, 255, 0, 0.15)',
+                          },
+                        },
+                      }}
+                    >
+                      <ListItemIcon>
+                        <VerifiedUserIcon sx={{ color: '#00ff00' }} />
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={username}
+                        primaryTypographyProps={{
+                          sx: { color: '#00ffff', fontWeight: 'bold' },
+                        }}
+                        secondary={`Verified on ${new Date(bundle.lastVerified || '').toLocaleDateString()}`}
+                        secondaryTypographyProps={{
+                          sx: { color: 'rgba(0, 255, 0, 0.7)' },
+                        }}
+                      />
+                      <Checkbox
+                        edge="end"
+                        checked={selectedRecipients.includes(username)}
+                        sx={{
+                          color: 'rgba(0, 255, 0, 0.3)',
+                          '&.Mui-checked': {
+                            color: '#00ff00',
+                          },
+                        }}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </>
+            );
+          })()}
         </DialogContent>
         <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
-          <Button onClick={() => setOpenShare(false)} sx={{ color: 'rgba(0, 255, 0, 0.7)' }}>
+          <Button 
+            onClick={() => {
+              setOpenShare(false);
+              setSelectedRecipients([]);
+            }}
+            sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+          >
             Cancel
           </Button>
           <CyberButton
-            onClick={() => setOpenShare(false)}
+            onClick={handleShareConfirm}
             size="small"
             sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+            disabled={selectedRecipients.length === 0}
           >
             Share
           </CyberButton>
@@ -1523,10 +2327,7 @@ const Dashboard: React.FC = () => {
             Don't Trust
           </Button>
           <CyberButton
-            onClick={() => {
-              // TODO: Implement verification logic
-              setOpenVerify(false);
-            }}
+            onClick={handleVerifyConfirm}
             size="small"
             sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
           >
@@ -1713,6 +2514,87 @@ const Dashboard: React.FC = () => {
           <Button onClick={() => setOpenPreview(false)} sx={{ color: 'rgba(0, 255, 0, 0.7)' }}>
             Close
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={openDelete}
+        onClose={() => {
+          if (!loading) {
+            setOpenDelete(false);
+            setFileToDelete(null);
+          }
+        }}
+        PaperProps={{
+          sx: {
+            background: 'rgba(0, 0, 0, 0.9)',
+            border: '1px solid rgba(0, 255, 0, 0.2)',
+            color: '#00ff00',
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#00ffff', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
+          Confirm Delete
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Typography sx={{ color: '#00ff00', mb: 2 }}>
+            Are you sure you want to delete this file? This action cannot be undone.
+          </Typography>
+          {loading && (
+            <Box sx={{ width: '100%', mt: 2 }}>
+              <LinearProgress 
+                sx={{
+                  backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                  '& .MuiLinearProgress-bar': {
+                    backgroundColor: '#00ff00',
+                    boxShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                  },
+                }}
+              />
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  color: 'rgba(0, 255, 0, 0.7)', 
+                  mt: 1,
+                  textAlign: 'center',
+                  fontFamily: 'monospace'
+                }}
+              >
+                Deleting file...
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
+          <Button
+            onClick={() => {
+              setOpenDelete(false);
+              setFileToDelete(null);
+            }}
+            sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+            disabled={loading}
+          >
+            Cancel
+          </Button>
+          <CyberButton
+            onClick={handleDeleteConfirm}
+            size="small"
+            sx={{ 
+              minWidth: 100, 
+              fontSize: '0.95rem', 
+              height: 36, 
+              px: 2.5, 
+              py: 1,
+              backgroundColor: 'rgba(255, 0, 0, 0.2)',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 0, 0, 0.3)',
+              },
+            }}
+            disabled={loading}
+          >
+            Delete
+          </CyberButton>
         </DialogActions>
       </Dialog>
     </>
