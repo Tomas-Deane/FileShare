@@ -303,11 +303,23 @@ void MainWindow::onListFilesResult(bool success,
         Logger::log("Failed to list files: " + message);
         return;
     }
-    ui->downloadFileList->clear();
-    ui->downloadFileList->addItems(files);
-    ui->downloadFileNameLabel->setText("No file selected");
-    ui->downloadFileTypeLabel->setText("-");
-    ui->downloadPreviewStack->setCurrentIndex(0);
+
+    int currentTab = ui->tabWidget->currentIndex();
+    using TI = MainWindow::TabIndex;
+
+    if (currentTab == TI::Download) {
+        // Populate the Download tab’s list
+        ui->downloadFileList->clear();
+        ui->downloadFileList->addItems(files);
+        ui->downloadFileNameLabel->setText("No file selected");
+        ui->downloadFileTypeLabel->setText("-");
+        ui->downloadPreviewStack->setCurrentIndex(0);
+    }
+    else if (currentTab == TI::ShareNew) {
+        // Populate the Share New tab’s list
+        ui->shareNewFileList->clear();
+        ui->shareNewFileList->addItems(files);
+    }
 }
 
 void MainWindow::on_downloadFileList_itemSelectionChanged()
@@ -450,17 +462,20 @@ void MainWindow::refreshPage(int idx)
     using TI = MainWindow::TabIndex;
     switch (idx) {
     case TI::Download:
-        // always re-fetch your file list when switching to Download
+        // re-fetch file list for Download tab
+        fileController->listFiles();
+        break;
+
+    case TI::ShareNew:
+        // re-fetch file list for Share New tab
         fileController->listFiles();
         break;
 
     case TI::Verify:
-        // initialize (load) the verify page only when switching to Verify
         verifyController->initializeVerifyPage();
         break;
 
     default:
-        // no auto-refresh on other pages
         break;
     }
 }
