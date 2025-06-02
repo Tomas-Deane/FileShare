@@ -700,7 +700,7 @@ class UserDB:
         return row['owner_id'] if isinstance(row, dict) else row[0]
 
     def get_shared_file(self, share_id: int, recipient_id: int):
-        """Get a shared file's data for a specific recipient."""
+        """Get a shared file's data for a specific recipient, including the public OPK used for encryption."""
         self.ensure_connection()
         sql = """
             SELECT 
@@ -709,9 +709,11 @@ class UserDB:
                 sf.encrypted_file_key,
                 sf.EK_pub,
                 sf.IK_pub,
-                sf.OPK_id
+                sf.OPK_id,
+                o.pre_key as pre_key
             FROM shared_files sf
             JOIN files f ON sf.file_id = f.id
+            JOIN opks o ON sf.OPK_id = o.id
             WHERE sf.share_id = %s
             AND sf.recipient_id = %s
             LIMIT 1

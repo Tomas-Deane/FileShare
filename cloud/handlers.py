@@ -860,7 +860,7 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
         db.delete_challenge(user_id)
         raise HTTPException(404, "Shared file not found")
 
-    # 4) Return the file data
+    # 4) Return the file data, including the pre_key
     db.delete_challenge(user_id)
     return {
         "status": "ok",
@@ -869,5 +869,6 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
         "encrypted_file_key": base64.b64encode(shared_file["encrypted_file_key"]).decode(),
         "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode(),
         "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
-        "OPK_id": shared_file["OPK_id"]
+        "OPK_id": shared_file["OPK_id"],
+        "pre_key": base64.b64encode(shared_file["pre_key"]).decode() if shared_file["pre_key"] else None
     }

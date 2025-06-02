@@ -23,7 +23,7 @@ export interface KeyBundle {
     OPKs: string[];
     IK_priv: string;
     SPK_priv: string;
-    OPKs_priv: string[];
+    OPKs_priv: string[];  // Array of base64-encoded private OPKs
     secretKey: string;
     pdk: string;
     kek: string;

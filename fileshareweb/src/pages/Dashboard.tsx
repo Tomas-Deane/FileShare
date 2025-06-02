@@ -415,16 +415,30 @@ const Dashboard: React.FC = () => {
           throw new Error('Key bundle not found');
         }
 
-        // Get our private OPK that matches the OPK_id from the response
-        const myPrivateOPK = myKeyBundle.OPKs_priv?.[downloadResponse.OPK_id];
-        if (!myPrivateOPK) {
-          throw new Error('Private OPK not found - this OPK may have been used already');
+        // Get the public OPK that was used for encryption (base64)
+        const usedOPKPub = downloadResponse.pre_key;
+        console.log('Public OPK used for encryption:', usedOPKPub);
+
+        // Find our private OPK that corresponds to this public key
+        let matchingPrivateOPK: string | null = null;
+        for (let i = 0; i < myKeyBundle.OPKs.length; i++) {
+          const publicOPK = myKeyBundle.OPKs[i];
+          if (publicOPK === usedOPKPub) {
+            matchingPrivateOPK = myKeyBundle.OPKs_priv[i];
+            break;
+          }
         }
+
+        if (!matchingPrivateOPK) {
+          throw new Error('Private OPK not found - this OPK may have already been used');
+        }
+
+        console.log('Found matching private OPK');
 
         // Derive the shared secret using our private keys and sender's public keys
         const sharedSecret = await deriveX3DHSharedSecret({
           myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
-          myEKPriv: b64ToUint8Array(myPrivateOPK), // Use our private OPK
+          myEKPriv: b64ToUint8Array(matchingPrivateOPK),
           recipientIKPub: Uint8Array.from(atob(downloadResponse.IK_pub), c => c.charCodeAt(0)),
           recipientSPKPub: Uint8Array.from(atob(downloadResponse.SPK_pub), c => c.charCodeAt(0)),
           recipientSPKSignature: Uint8Array.from(atob(downloadResponse.SPK_signature), c => c.charCodeAt(0)),
@@ -458,6 +472,7 @@ const Dashboard: React.FC = () => {
       }, 100);
 
     } catch (err: any) {
+      console.error('Download error:', err);
       setError(err.message || 'Failed to download file');
     } finally {
       setLoading(false);
