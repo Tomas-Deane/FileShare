@@ -882,6 +882,5 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
         "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
         "SPK_pub": base64.b64encode(sender_bundle["SPK_pub"]).decode(),
         "SPK_signature": base64.b64encode(sender_bundle["SPK_signature"]).decode(),
-        "OPK_id": shared_file["OPK_id"],
-        "pre_key": base64.b64encode(shared_file["pre_key"]).decode() if shared_file["pre_key"] else None
+        "pre_key": base64.b64encode(shared_file["pre_key"]).decode()
     }
