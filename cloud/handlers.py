@@ -673,7 +673,6 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
         IK_pub = base64.b64decode(req.IK_pub)
         SPK_pub = base64.b64decode(req.SPK_pub)
         SPK_signature = base64.b64decode(req.SPK_signature)
-        pre_key = base64.b64decode(req.pre_key)
         
         # Create the shared file record using the correct parameters
         db.share_file(
@@ -685,8 +684,7 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
             IK_pub=IK_pub,
             SPK_pub=SPK_pub,
             SPK_signature=SPK_signature,
-            OPK_id=req.OPK_ID,
-            pre_key=pre_key
+            OPK_id=req.OPK_ID
         )
         
         return {"status": "ok"}

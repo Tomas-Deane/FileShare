@@ -531,15 +531,15 @@ class UserDB:
 
     def share_file(self, file_id: int, recipient_id: int, encrypted_file_key: bytes,
                           file_key_nonce: bytes, EK_pub: bytes, IK_pub: bytes, 
-                          SPK_pub: bytes, SPK_signature: bytes, OPK_id: int, pre_key: bytes):
+                          SPK_pub: bytes, SPK_signature: bytes, OPK_id: int):
         with self.conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO shared_files (
                     file_id, recipient_id, encrypted_file_key, file_key_nonce,
-                    EK_pub, IK_pub, SPK_pub, SPK_signature, OPK_id, pre_key
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    EK_pub, IK_pub, SPK_pub, SPK_signature, OPK_id
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (file_id, recipient_id, encrypted_file_key, file_key_nonce,
-                  EK_pub, IK_pub, SPK_pub, SPK_signature, OPK_id, pre_key))
+                  EK_pub, IK_pub, SPK_pub, SPK_signature, OPK_id))
         self.conn.commit()
 
     def get_shared_files(self, username: str) -> List[Tuple]:
