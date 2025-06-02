@@ -662,27 +662,31 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
     efk = payload
 
     # 4) Use the OPK_ID from the request
-    opk_id = req.OPK_ID  # Use the OPK ID from the request
+    opk_id = req.OPK_ID
     
     # 5) record the share
     try:
         # Convert base64 fields to bytes
         encrypted_file_key = base64.b64decode(req.encrypted_file_key)
         file_key_nonce = base64.b64decode(req.file_key_nonce)
+        EK_pub = base64.b64decode(req.EK_pub)
+        IK_pub = base64.b64decode(req.IK_pub)
+        SPK_pub = base64.b64decode(req.SPK_pub)
+        SPK_signature = base64.b64decode(req.SPK_signature)
+        pre_key = base64.b64decode(req.pre_key)
         
-        # Create the shared file record using the correct method name
+        # Create the shared file record using the correct parameters
         db.share_file(
             file_id=req.file_id,
             recipient_id=recipient["user_id"],
-            encrypted_file=efk,
-            file_nonce=file_key_nonce,
             encrypted_file_key=encrypted_file_key,
             file_key_nonce=file_key_nonce,
-            EK_pub=req.EK_pub,
-            IK_pub=req.IK_pub,
-            SPK_pub=req.SPK_pub,
-            SPK_signature=req.SPK_signature,
-            OPK_id=req.OPK_ID
+            EK_pub=EK_pub,
+            IK_pub=IK_pub,
+            SPK_pub=SPK_pub,
+            SPK_signature=SPK_signature,
+            OPK_id=req.OPK_ID,
+            pre_key=pre_key
         )
         
         return {"status": "ok"}
