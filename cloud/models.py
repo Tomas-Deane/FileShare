@@ -134,6 +134,8 @@ def init_db():
         recipient_id         BIGINT              NOT NULL,
         EK_pub               BLOB                NOT NULL,
         IK_pub               BLOB                NOT NULL,
+        SPK_pub              BLOB                NOT NULL,
+        SPK_signature        BLOB                NOT NULL,
         encrypted_file_key   BLOB                NOT NULL,
         OPK_id              BIGINT              NOT NULL,
         shared_at            DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -526,14 +528,14 @@ class UserDB:
         self.cursor.execute(sql, (opk_id,))
         self.conn.commit()
 
-    def share_file(self, file_id, recipient_id, EK_pub, IK_pub, encrypted_file_key, OPK_id):
+    def share_file(self, file_id, recipient_id, EK_pub, IK_pub, SPK_pub, SPK_signature, encrypted_file_key, OPK_id):
         self.ensure_connection()
         sql = """
             INSERT INTO shared_files
-                (file_id, recipient_id, EK_pub, IK_pub, encrypted_file_key, OPK_id)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                (file_id, recipient_id, EK_pub, IK_pub, SPK_pub, SPK_signature, encrypted_file_key, OPK_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
-        self.cursor.execute(sql, (file_id, recipient_id, EK_pub, IK_pub, encrypted_file_key, OPK_id))
+        self.cursor.execute(sql, (file_id, recipient_id, EK_pub, IK_pub, SPK_pub, SPK_signature, encrypted_file_key, OPK_id))
         self.conn.commit()
 
     def get_shared_files(self, username: str) -> List[Tuple]:
@@ -567,6 +569,8 @@ class UserDB:
                 sf.recipient_id,
                 sf.EK_pub,
                 sf.IK_pub,
+                sf.SPK_pub,
+                sf.SPK_signature,
                 sf.encrypted_file_key,
                 sf.OPK_id,
                 sf.shared_at,
@@ -751,6 +755,8 @@ class UserDB:
                 sf.encrypted_file_key,
                 sf.EK_pub,
                 sf.IK_pub,
+                sf.SPK_pub,
+                sf.SPK_signature,
                 sf.OPK_id,
                 o.opk_id as opk_id,
                 o.pre_key as pre_key

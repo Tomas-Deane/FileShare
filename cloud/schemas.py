@@ -137,6 +137,8 @@ class ShareFileRequest(BaseModel):
     encrypted_file_key: str
     EK_pub: str
     IK_pub: str
+    SPK_pub: str
+    SPK_signature: str
     OPK_ID: int
     nonce: str
     signature: str

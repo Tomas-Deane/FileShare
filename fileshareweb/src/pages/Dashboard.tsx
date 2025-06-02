@@ -20,7 +20,7 @@ import { apiClient } from '../utils/apiClient';
 import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
 import { storage } from '../utils/storage';
 import sodium from 'libsodium-wrappers-sumo';
-import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithAESGCM } from '../utils/crypto';
+import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithAESGCM, deriveX3DHSharedSecretRecipient } from '../utils/crypto';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -476,28 +476,24 @@ const Dashboard: React.FC = () => {
         }
         console.log('Found matching private OPK');
 
-        // Check for required fields with detailed error messages
-        const missingFields = [];
-        if (!downloadResponse.IK_pub) missingFields.push('IK_pub');
-        if (!downloadResponse.SPK_pub) missingFields.push('SPK_pub');
-        if (!downloadResponse.SPK_signature) missingFields.push('SPK_signature');
-        if (!downloadResponse.EK_pub) missingFields.push('EK_pub');
-        if (!downloadResponse.encrypted_file_key) missingFields.push('encrypted_file_key');
-
-        if (missingFields.length > 0) {
-          throw new Error(`Missing required key data from server: ${missingFields.join(', ')}`);
-        }
-
-        // Derive the shared secret using our private keys and sender's public keys
-        const sharedSecret = await deriveX3DHSharedSecret({
-          myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
-          myEKPriv: b64ToUint8Array(privateOPK),
-          recipientIKPub: b64ToUint8Array(downloadResponse.IK_pub),
-          recipientSPKPub: b64ToUint8Array(downloadResponse.SPK_pub),
-          recipientSPKSignature: b64ToUint8Array(downloadResponse.SPK_signature),
-          recipientOPKPub: b64ToUint8Array(downloadResponse.EK_pub)
+        console.log('Key lengths:', {
+          senderEKPub: b64ToUint8Array(downloadResponse.EK_pub).length,
+          senderIKPub: b64ToUint8Array(downloadResponse.IK_pub).length,
+          myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv).length,
+          mySPKPriv: b64ToUint8Array(myKeyBundle.SPK_priv).length,
+          myOPKPriv: b64ToUint8Array(privateOPK).length
         });
 
+        // Derive the shared secret using our private keys and sender's public keys
+        const sharedSecret = await deriveX3DHSharedSecretRecipient({
+          senderEKPub: b64ToUint8Array(downloadResponse.EK_pub),
+          senderIKPub: b64ToUint8Array(downloadResponse.IK_pub),
+          myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
+          mySPKPriv: b64ToUint8Array(myKeyBundle.SPK_priv),
+          myOPKPriv: b64ToUint8Array(privateOPK)
+        });
+
+        
         // Decrypt the file key using the shared secret
         const encryptedFileKey = b64ToUint8Array(downloadResponse.encrypted_file_key);
         const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileNonce);

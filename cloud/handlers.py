@@ -647,14 +647,13 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
     sig = base64.b64decode(req.signature)
     payload = base64.b64decode(req.encrypted_file_key)
     try:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, payload)
     except Exception:
         db.delete_challenge(uid)
         raise HTTPException(401, "Bad signature")
 
     # 3) lookup file and recipient
-    file_id = req.file_id  # Use file_id directly
+    file_id = req.file_id
     recipient = db.get_user(req.recipient_username)
     if not recipient:
         raise HTTPException(404, "Recipient not found")
@@ -662,7 +661,9 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
     rid = recipient["user_id"]
     ek_pub = base64.b64decode(req.EK_pub)
     ik_pub = base64.b64decode(req.IK_pub)
-    efk    = payload
+    spk_pub = base64.b64decode(req.SPK_pub)
+    spk_sig = base64.b64decode(req.SPK_signature)
+    efk = payload
 
     # 4) consume one‐time prekey
     opk = db.get_unused_opk(rid)
@@ -672,7 +673,7 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
     db.mark_opk_consumed(opk_id)
 
     # 5) record the share
-    db.share_file(file_id, rid, ek_pub, ik_pub, efk, opk_id)
+    db.share_file(file_id, rid, ek_pub, ik_pub, spk_pub, spk_sig, efk, opk_id)
 
     db.delete_challenge(uid)
     return {"status": "ok", "message": "file shared"}
@@ -879,6 +880,8 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
             "encrypted_file_key": base64.b64encode(shared_file["encrypted_file_key"]).decode(),
             "pre_key": base64.b64encode(shared_file["pre_key"]).decode(),
             "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
+            "SPK_pub": base64.b64encode(shared_file["SPK_pub"]).decode(),
+            "SPK_signature": base64.b64encode(shared_file["SPK_signature"]).decode(),
             "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode(),
             "opk_id": shared_file["opk_id"]
         }

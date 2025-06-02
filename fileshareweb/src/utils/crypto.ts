@@ -367,6 +367,55 @@ export async function deriveX3DHSharedSecret({
   }
 }
 
+export async function deriveX3DHSharedSecretRecipient({
+  senderEKPub,
+  senderIKPub,
+  myIKPriv,
+  mySPKPriv,
+  myOPKPriv,
+}: {
+  senderEKPub: Uint8Array,
+  senderIKPub: Uint8Array,
+  myIKPriv: Uint8Array,
+  mySPKPriv: Uint8Array,
+  myOPKPriv: Uint8Array
+}) {
+  await sodium.ready;  
+
+  try {
+    // Convert all Ed25519 keys to X25519
+    const senderEKPub_x = sodium.crypto_sign_ed25519_pk_to_curve25519(senderEKPub);
+    const senderIKPub_x = sodium.crypto_sign_ed25519_pk_to_curve25519(senderIKPub);
+    const myIKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(myIKPriv);
+    const mySPKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(mySPKPriv);
+    const myOPKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(myOPKPriv);
+
+    // DH computations
+    const DH1 = sodium.crypto_scalarmult(mySPKPriv_x, senderEKPub_x);  // DH(SPKb, EKa)
+    const DH2 = sodium.crypto_scalarmult(myIKPriv_x, senderEKPub_x);   // DH(IKb, EKa)
+    const DH3 = sodium.crypto_scalarmult(myOPKPriv_x, senderEKPub_x);  // DH(OPKb, EKa)
+    const DH4 = sodium.crypto_scalarmult(myOPKPriv_x, senderIKPub_x);  // DH(OPKb, IKa)
+
+    const combined = new Uint8Array(DH1.length + DH2.length + DH3.length + DH4.length);
+    combined.set(DH1, 0);
+    combined.set(DH2, DH1.length);
+    combined.set(DH3, DH1.length + DH2.length);
+    combined.set(DH4, DH1.length + DH2.length + DH3.length);
+
+    const sharedSecret = sodium.crypto_generichash(32, combined);
+    return sharedSecret;
+
+  } catch (error: unknown) {
+    console.error('Key conversion error:', error);
+    if (error instanceof Error) {
+      throw new Error(`Key conversion failed: ${error.message}`);
+    } else {
+      throw new Error('Key conversion failed: Unknown error');
+    }
+  }
+}
+
+
 export async function encryptWithAESGCM(key: Uint8Array, data: Uint8Array) {
   await sodium.ready;
   const nonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
