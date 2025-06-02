@@ -727,9 +727,8 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
     sig = base64.b64decode(req.signature)
     payload = base64.b64decode(req.encrypted_file_key)
     try:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, payload)
-    except Exception:
+    except InvalidSignature:
         db.delete_challenge(uid)
         raise HTTPException(401, "Bad signature")
 
@@ -771,10 +770,9 @@ def list_shared_files_handler(req: ListSharedFilesRequest, db: models.UserDB):
         raise HTTPException(400, "Invalid or expired challenge")
     # no extra signature payload
     sig = base64.b64decode(req.signature)
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, provided)
-    except Exception:
+    except InvalidSignature:
         db.delete_challenge(uid)
         raise HTTPException(401, "Bad signature")
 
@@ -806,10 +804,9 @@ def list_shared_to_handler(req: ListSharedToRequest, db: models.UserDB):
     if stored is None or provided != stored:
         raise HTTPException(400, "Invalid or expired challenge")
     sig = base64.b64decode(req.signature)
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, provided)
-    except Exception:
+    except InvalidSignature:
         db.delete_challenge(uid)
         raise HTTPException(401, "Bad signature")
 
@@ -841,10 +838,9 @@ def list_shared_from_handler(req: ListSharedFromRequest, db: models.UserDB):
     if stored is None or provided != stored:
         raise HTTPException(400, "Invalid or expired challenge")
     sig = base64.b64decode(req.signature)
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, provided)
-    except Exception:
+    except InvalidSignature:
         db.delete_challenge(uid)
         raise HTTPException(401, "Bad signature")
 
@@ -878,10 +874,9 @@ def remove_shared_file_handler(req: RemoveSharedFileRequest, db: models.UserDB):
     sig = base64.b64decode(req.signature)
     # verify signature on the share_id itself
     try:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(sig, str(req.share_id).encode())
-    except Exception:
+    except InvalidSignature:
         db.delete_challenge(uid)
         raise HTTPException(401, "Bad signature")
 
