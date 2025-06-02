@@ -298,7 +298,7 @@ async def list_shared_from(req: ListSharedFromRequest, db: models.UserDB = Depen
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     host     = os.environ.get('FS_HOST', '0.0.0.0')
-    port     = int(os.environ.get('FS_HTTPS_PORT', '3210'))
+    port     = int(os.environ.get('FS_HTTPS_PORT', '3220'))
     certfile = os.environ.get('SSL_CERTFILE', 'cert.pem')
     keyfile  = os.environ.get('SSL_KEYFILE', 'key.pem')
 
