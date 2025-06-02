@@ -393,8 +393,8 @@ export async function deriveX3DHSharedSecretRecipient({
     // DH computations
     const DH1 = sodium.crypto_scalarmult(mySPKPriv_x, senderEKPub_x);  // DH(SPKb, EKa)
     const DH2 = sodium.crypto_scalarmult(myIKPriv_x, senderEKPub_x);   // DH(IKb, EKa)
-    const DH3 = sodium.crypto_scalarmult(myOPKPriv_x, senderEKPub_x);  // DH(OPKb, EKa)
-    const DH4 = sodium.crypto_scalarmult(myOPKPriv_x, senderIKPub_x);  // DH(OPKb, IKa)
+    const DH3 = sodium.crypto_scalarmult(myOPKPriv_x, senderIKPub_x);  // DH(OPKb, IKa)
+    const DH4 = sodium.crypto_scalarmult(myOPKPriv_x, senderEKPub_x);  // DH(OPKb, EKa)
 
     const combined = new Uint8Array(DH1.length + DH2.length + DH3.length + DH4.length);
     combined.set(DH1, 0);

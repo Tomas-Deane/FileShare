@@ -224,15 +224,13 @@ interface DownloadResponse {
   detail?: string;
   encrypted_file?: string;
   file_nonce?: string;
-  encrypted_dek?: string;
-  dek_nonce?: string;
-  pre_key?: string;
+  encrypted_file_key?: string;  // Changed from encrypted_dek
+  EK_pub?: string;
   IK_pub?: string;
   SPK_pub?: string;
   SPK_signature?: string;
-  EK_pub?: string;
-  encrypted_file_key?: string;
-  opk_id?: number;  // Add opk_id to the interface
+  opk_id?: number;
+  pre_key?: string;
 }
 
 const Dashboard: React.FC = () => {
@@ -432,15 +430,13 @@ const Dashboard: React.FC = () => {
         detail: downloadResponse.detail,
         encrypted_file: downloadResponse.encrypted_file?.substring(0, 50) + '...',
         file_nonce: downloadResponse.file_nonce,
-        encrypted_dek: downloadResponse.encrypted_dek?.substring(0, 50) + '...',
-        dek_nonce: downloadResponse.dek_nonce,
-        pre_key: downloadResponse.pre_key?.substring(0, 50) + '...',
+        encrypted_file_key: downloadResponse.encrypted_file_key?.substring(0, 50) + '...',
+        EK_pub: downloadResponse.EK_pub?.substring(0, 50) + '...',
         IK_pub: downloadResponse.IK_pub?.substring(0, 50) + '...',
         SPK_pub: downloadResponse.SPK_pub?.substring(0, 50) + '...',
         SPK_signature: downloadResponse.SPK_signature?.substring(0, 50) + '...',
-        EK_pub: downloadResponse.EK_pub?.substring(0, 50) + '...',
-        encrypted_file_key: downloadResponse.encrypted_file_key?.substring(0, 50) + '...',
-        opk_id: downloadResponse.opk_id
+        opk_id: downloadResponse.opk_id,
+        pre_key: downloadResponse.pre_key?.substring(0, 50) + '...'
       });
 
       // Step 4: Decrypt file
@@ -502,10 +498,10 @@ const Dashboard: React.FC = () => {
         decrypted = await decryptFile(encryptedFile, fileKey, fileNonce);
       } else {
         // For regular files, just decrypt the file key with our KEK
-        if (!downloadResponse.encrypted_dek || !downloadResponse.dek_nonce) {
+        if (!downloadResponse.encrypted_file_key || !downloadResponse.file_nonce) {
           throw new Error('Missing required key data from server');
         }
-        const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
+        const dek = await decryptFileKey(downloadResponse.encrypted_file_key, kek!, downloadResponse.file_nonce);
         decrypted = await decryptFile(encryptedFile, dek, fileNonce);
       }
 
@@ -1007,7 +1003,7 @@ const Dashboard: React.FC = () => {
       // Step 4: Decrypt file
       const previewEncryptedFile = b64ToUint8Array(downloadResponse.encrypted_file);
       const previewFileNonce = b64ToUint8Array(downloadResponse.file_nonce);
-      const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
+      const dek = await decryptFileKey(downloadResponse.encrypted_file_key, kek!, downloadResponse.file_nonce);
       const decrypted = await decryptFile(previewEncryptedFile, dek, previewFileNonce);
 
       if (isTextFile(file.name)) {
@@ -1261,6 +1257,7 @@ const Dashboard: React.FC = () => {
         // Add more detailed logging
         console.log('OPK Response:', opkResponse);
 
+        // Check if the response has the required fields
         if (!opkResponse.opk_id || !opkResponse.pre_key) {
           throw new Error('Invalid OPK response: missing required fields');
         }
@@ -1324,6 +1321,8 @@ const Dashboard: React.FC = () => {
           IK_pub: myKeyBundle.IK_pub,
           encrypted_file_key: uint8ArrayToB64(ciphertext),
           file_key_nonce: uint8ArrayToB64(nonce),
+          SPK_pub: myKeyBundle.SPK_pub,
+          SPK_signature: myKeyBundle.SPK_signature,
           OPK_ID: opkResponse.opk_id,
           nonce: shareChallengeResponse.nonce,
           signature: uint8ArrayToB64(shareSignature)
