@@ -863,12 +863,13 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
     if 'file_id' not in shared_file:
         raise HTTPException(500, "Missing file_id in shared file data")
             
-    sender = db.get_user_by_file_id(shared_file["file_id"])
-    if not sender:
+    # Get the file owner's ID directly from the files table
+    owner_id = db.get_file_owner(shared_file["file_id"])
+    if not owner_id:
         db.delete_challenge(user_id)
         raise HTTPException(404, "File owner not found")
 
-    sender_bundle = db.get_prekey_bundle(sender["user_id"])
+    sender_bundle = db.get_prekey_bundle(owner_id)
     if not sender_bundle:
         db.delete_challenge(user_id)
         raise HTTPException(404, "Sender's pre-key bundle not found")
