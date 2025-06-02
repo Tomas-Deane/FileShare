@@ -17,10 +17,10 @@ import { useNavigate } from 'react-router-dom';
 import { CyberButton, MatrixBackground } from '../components';
 import { QRCodeSVG } from 'qrcode.react';
 import { apiClient } from '../utils/apiClient';
-import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
+import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode, verifySignature } from '../utils/crypto';
 import { storage } from '../utils/storage';
 import sodium from 'libsodium-wrappers-sumo';
-import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithAESGCM, deriveX3DHSharedSecretRecipient, encryptWithPublicKey } from '../utils/crypto';
+import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithXChaCha20, deriveX3DHSharedSecretRecipient, encryptWithPublicKey } from '../utils/crypto';
 import { testX3DHKeyExchange } from '../utils/crypto';
 
 // Styled components for cyberpunk look
@@ -281,6 +281,8 @@ const Dashboard: React.FC = () => {
   const [fileToDelete, setFileToDelete] = useState<number | null>(null);
   const [sharedFiles, setSharedFiles] = useState<SharedFileData[]>([]);
   const [loadingSharedFiles, setLoadingSharedFiles] = useState(false);
+  const [openUnverifiedWarning, setOpenUnverifiedWarning] = useState(false);
+  const [pendingDownload, setPendingDownload] = useState<{ fileId: number; isShared: boolean } | null>(null);
 
   // Get current user and their key bundle
   const currentUsername = storage.getCurrentUser();
@@ -391,6 +393,41 @@ const Dashboard: React.FC = () => {
     }
   };
   const handleDownload = async (fileId: number, isShared: boolean = false) => {
+    if (isShared) {
+      // Get the shared file
+      const file = sharedFiles.find(f => f.id === fileId);
+      if (!file) {
+        setError('File not found');
+        return;
+      }
+
+      // Check if the sender is verified
+      const myUsername = storage.getCurrentUser();
+      if (!myUsername) {
+        setError('No current user found');
+        return;
+      }
+
+      const myKeyBundle = storage.getKeyBundle(myUsername);
+      if (!myKeyBundle) {
+        setError('Key bundle not found');
+        return;
+      }
+
+      const senderBundle = myKeyBundle.recipients?.[file.shared_by];
+      if (!senderBundle?.verified) {
+        // Show warning dialog for unverified sender
+        setPendingDownload({ fileId, isShared });
+        setOpenUnverifiedWarning(true);
+        return;
+      }
+    }
+
+    // If we get here, either it's not a shared file or the sender is verified
+    await proceedWithDownload(fileId, isShared);
+  };
+
+  const proceedWithDownload = async (fileId: number, isShared: boolean = false) => {
     setLoading(true);
     setError(null);
 
@@ -919,7 +956,7 @@ const TestButton = () => {
       logDebug('Encrypting file', {
         fileSize: fileData.byteLength
       });
-      const { ciphertext: encryptedFile, nonce: fileNonce } = await encryptWithAESGCM(fileKey, new Uint8Array(fileData));
+      const { ciphertext: encryptedFile, nonce: fileNonce } = await encryptWithXChaCha20(fileKey, new Uint8Array(fileData));
       logDebug('File encrypted', {
         encryptedSize: encryptedFile.length,
         nonceLength: fileNonce.length
@@ -927,7 +964,7 @@ const TestButton = () => {
 
       // Step 3: Encrypt file key with KEK
       logDebug('Encrypting file key with KEK');
-      const { ciphertext: encryptedDek, nonce: kekNonce } = await encryptWithAESGCM(kek!, fileKey);
+      const { ciphertext: encryptedDek, nonce: kekNonce } = await encryptWithXChaCha20(kek!, fileKey);
       logDebug('File key encrypted', {
         encryptedDekLength: encryptedDek.length,
         kekNonceLength: kekNonce.length
@@ -1117,7 +1154,7 @@ const TestButton = () => {
       const listResponse = await apiClient.post<{ status: string; users: UserData[] }>('/list_matching_users', {
         username,
         nonce: challengeResponse.nonce,
-        signature: uint8ArrayToB64(signature)
+        signature: uint8ArrayToB64(signature),
         search_query: userSearchQuery
       });
 
@@ -1282,6 +1319,15 @@ const TestButton = () => {
             freshBundle.SPK_signature !== storedRecipientBundle.SPK_signature) {
           throw new Error('Key bundle mismatch - possible security issue');
         }
+        // // check if spk signature is valid
+        // const spkSignature = b64ToUint8Array(freshBundle.SPK_signature);
+        // const spkPub = b64ToUint8Array(freshBundle.SPK_pub);
+        // const spkMessage = b64ToUint8Array(freshBundle.IK_pub);
+        // const isValid = await verifySignature(spkSignature, spkPub, spkMessage);
+        // if (!isValid) {
+        //   throw new Error('Invalid SPK signature');
+        // }
+
         console.log('TOFU check passed');
 
         // 5. Get OPK for recipient
@@ -1341,7 +1387,7 @@ const TestButton = () => {
 
         // 8. Encrypt the file key (DEK) with the shared secret
         console.log('Encrypting file key with shared secret...');
-        const { ciphertext, nonce } = await encryptWithAESGCM(sharedSecret, fileKey);
+        const { ciphertext, nonce } = await encryptWithXChaCha20(sharedSecret, fileKey);
         console.log('Encrypted file key:', {
           ciphertext_length: ciphertext.length,
           nonce_length: nonce.length
@@ -1373,7 +1419,7 @@ const TestButton = () => {
           EK_pub: uint8ArrayToB64(ephemeralKeyPair.publicKey),
           IK_pub: myKeyBundle.IK_pub,
           encrypted_file_key: uint8ArrayToB64(ciphertext),
-          file_key_nonce: uint8ArrayToB64(nonce), // Use the nonce from encryptWithAESGCM
+          file_key_nonce: uint8ArrayToB64(nonce), // Use the nonce from encryptWithXChaCha20
           SPK_pub: myKeyBundle.SPK_pub,
           SPK_signature: myKeyBundle.SPK_signature,
           OPK_ID: opkResponse.opk_id,
@@ -2594,6 +2640,62 @@ const TestButton = () => {
             disabled={loading}
           >
             Delete
+          </CyberButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* Unverified Sender Warning Dialog */}
+      <Dialog
+        open={openUnverifiedWarning}
+        onClose={() => setOpenUnverifiedWarning(false)}
+        PaperProps={{
+          sx: {
+            background: 'rgba(0, 0, 0, 0.9)',
+            border: '1px solid rgba(255, 0, 0, 0.2)',
+            color: '#00ff00',
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#ff0000', borderBottom: '1px solid rgba(255, 0, 0, 0.2)' }}>
+          Warning: Unverified Sender
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Typography sx={{ color: '#ff0000', mb: 2 }}>
+            This file was shared by an unverified user. Downloading files from unverified users may pose security risks.
+          </Typography>
+          <Typography sx={{ color: 'rgba(255, 0, 0, 0.7)' }}>
+            Are you sure you want to proceed with the download?
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid rgba(255, 0, 0, 0.2)', p: 2 }}>
+          <Button
+            onClick={() => setOpenUnverifiedWarning(false)}
+            sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+          >
+            Cancel
+          </Button>
+          <CyberButton
+            onClick={() => {
+              setOpenUnverifiedWarning(false);
+              if (pendingDownload) {
+                proceedWithDownload(pendingDownload.fileId, pendingDownload.isShared);
+                setPendingDownload(null);
+              }
+            }}
+            size="small"
+            sx={{ 
+              minWidth: 100, 
+              fontSize: '0.95rem', 
+              height: 36, 
+              px: 2.5, 
+              py: 1,
+              backgroundColor: 'rgba(255, 0, 0, 0.2)',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 0, 0, 0.3)',
+              },
+            }}
+          >
+            Download Anyway
           </CyberButton>
         </DialogActions>
       </Dialog>

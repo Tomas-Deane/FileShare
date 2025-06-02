@@ -543,7 +543,7 @@ export async function deriveX3DHSharedSecretRecipient({
   }
 }
 
-export async function encryptWithAESGCM(key: Uint8Array, data: Uint8Array) {
+export async function encryptWithXChaCha20(key: Uint8Array, data: Uint8Array) {
   await sodium.ready;
   // Use the correct nonce length for XChaCha20-Poly1305 (24 bytes)
   const nonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
@@ -623,7 +623,7 @@ export async function testX3DHKeyExchange() {
 
   // Test encryption/decryption with shared secrets
   const testMessage = new TextEncoder().encode('Hello, X3DH!');
-  const { ciphertext, nonce } = await encryptWithAESGCM(aliceSharedSecret, testMessage);
+  const { ciphertext, nonce } = await encryptWithXChaCha20(aliceSharedSecret, testMessage);
   
   try {
     const decrypted = await decryptFile(ciphertext, bobSharedSecret, nonce);
@@ -642,7 +642,7 @@ export async function testX3DHKeyExchange() {
   // Test with a larger message
   const largeMessage = new TextEncoder().encode('This is a larger test message to verify X3DH works with bigger data. ' + 
     'It includes multiple sentences and special characters: !@#$%^&*()_+{}[]|\\:;"\'<>,.?/~`');
-  const { ciphertext: largeCiphertext, nonce: largeNonce } = await encryptWithAESGCM(aliceSharedSecret, largeMessage);
+  const { ciphertext: largeCiphertext, nonce: largeNonce } = await encryptWithXChaCha20(aliceSharedSecret, largeMessage);
   
   try {
     const decryptedLarge = await decryptFile(largeCiphertext, bobSharedSecret, largeNonce);
@@ -690,4 +690,17 @@ export async function encryptWithPublicKey(
   combined.set(encrypted, ephemeralKeyPair.publicKey.length);
   
   return { encrypted: combined, nonce };
+}
+
+export async function verifySignature(
+  signature: Uint8Array,
+  publicKey: Uint8Array,
+  message: Uint8Array
+): Promise<boolean> {
+  try {
+    await initSodium();
+    return sodium.crypto_sign_verify_detached(signature, message, publicKey);
+  } catch (error) {
+    throw new CryptoError("Failed to verify signature", error);
+  }
 }
