@@ -670,18 +670,19 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
         encrypted_file_key = base64.b64decode(req.encrypted_file_key)
         file_key_nonce = base64.b64decode(req.file_key_nonce)
         
-        # Store the shared file with the file_key_nonce
+        # Create the shared file record using the correct method name
         db.share_file(
             file_id=req.file_id,
             recipient_id=recipient["user_id"],
+            encrypted_file=efk,
+            file_nonce=file_key_nonce,
             encrypted_file_key=encrypted_file_key,
             file_key_nonce=file_key_nonce,
-            EK_pub=base64.b64decode(req.EK_pub),
-            IK_pub=base64.b64decode(req.IK_pub),
-            SPK_pub=base64.b64decode(req.SPK_pub),
-            SPK_signature=base64.b64decode(req.SPK_signature),
-            OPK_id=req.OPK_ID,
-            pre_key=req.pre_key
+            EK_pub=req.EK_pub,
+            IK_pub=req.IK_pub,
+            SPK_pub=req.SPK_pub,
+            SPK_signature=req.SPK_signature,
+            OPK_id=req.OPK_ID
         )
         
         return {"status": "ok"}
@@ -900,5 +901,4 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
         "SPK_signature": base64.b64encode(shared_file["SPK_signature"]).decode(),
         "opk_id": shared_file["OPK_id"],
         "pre_key": base64.b64encode(shared_file["pre_key"]).decode()  # Added pre_key
-
     }
