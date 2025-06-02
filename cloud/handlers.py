@@ -870,6 +870,11 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
         db.delete_challenge(user_id)
         raise HTTPException(404, "Shared file not found")
 
+    # Add debug logging
+    logging.debug(f"Shared file data: {shared_file}")
+    logging.debug(f"Pre key present: {shared_file.get('pre_key') is not None}")
+    logging.debug(f"OPK ID: {shared_file.get('OPK_id')}")
+
     # 5) Return the encrypted file and keys
     try:
         response = {
@@ -877,15 +882,17 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
             "encrypted_file": base64.b64encode(shared_file["encrypted_file"]).decode(),
             "file_nonce": base64.b64encode(shared_file["file_nonce"]).decode(),
             "encrypted_file_key": base64.b64encode(shared_file["encrypted_file_key"]).decode(),
-            "pre_key": base64.b64encode(shared_file["pre_key"]).decode(),
+            "pre_key": base64.b64encode(shared_file["pre_key"]).decode() if shared_file["pre_key"] else None,
             "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
             "SPK_pub": base64.b64encode(shared_file["SPK_pub"]).decode(),
             "SPK_signature": base64.b64encode(shared_file["SPK_signature"]).decode(),
             "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode(),
-            "opk_id": shared_file["opk_id"]
+            "opk_id": shared_file["OPK_id"]
         }
         return response
     except HTTPException:
         raise
     except Exception as e:
+        logging.error(f"Error preparing response: {str(e)}")
+        logging.error(f"Shared file data: {shared_file}")
         raise HTTPException(500, f"Error preparing response: {str(e)}")
