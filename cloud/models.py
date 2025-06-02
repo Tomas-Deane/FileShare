@@ -762,7 +762,7 @@ class UserDB:
                 sf.IK_pub,
                 sf.SPK_pub,
                 sf.SPK_signature,
-                sf.OPK_id,
+                sf.OPK_id
             FROM shared_files sf
             JOIN files f ON sf.file_id = f.id
             LEFT JOIN opks o ON o.opk_id = sf.OPK_id  -- Only join on opk_id
