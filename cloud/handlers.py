@@ -909,6 +909,8 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
             if value is not None:
                 print(f"Debug - {field} type: {type(value)}")
                 print(f"Debug - {field} length: {len(value) if hasattr(value, '__len__') else 'N/A'}")
+                if isinstance(value, bytes):
+                    print(f"Debug - {field} hex: {value.hex()[:50]}...")
 
         print("Debug - Checking sender bundle fields:")
         sender_fields = {
@@ -921,6 +923,8 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
             if value is not None:
                 print(f"Debug - {field} type: {type(value)}")
                 print(f"Debug - {field} length: {len(value) if hasattr(value, '__len__') else 'N/A'}")
+                if isinstance(value, bytes):
+                    print(f"Debug - {field} hex: {value.hex()[:50]}...")
 
         # Check if any required fields are missing
         missing_fields = [field for field, value in required_fields.items() if value is None]
