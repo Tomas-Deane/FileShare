@@ -881,7 +881,7 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
         raise HTTPException(401, "Bad signature")
 
     # 3) Get the shared file data
-    shared_file = db.get_shared_file(req.share_id)
+    shared_file = db.get_shared_file(req.share_id, user_id)
     if not shared_file:
         raise HTTPException(404, "Shared file not found")
 
