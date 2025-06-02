@@ -832,14 +832,15 @@ def opk_handler(req: GetOPKRequest, db: models.UserDB):
     if not opk:
         db.delete_challenge(requesting_user["user_id"])
         raise HTTPException(404, "No OPK available")
-    opk_id, raw_pre = opk
-    db.mark_opk_consumed(opk_id)
+    
+    # Mark the OPK as consumed using its database ID
+    db.mark_opk_consumed(opk["id"])
 
     # 6) done—return it
     db.delete_challenge(requesting_user["user_id"])
     return OPKResponse(
-        opk_id = opk_id,
-        pre_key = base64.b64encode(raw_pre).decode()
+        opk_id = opk["opk_id"],
+        pre_key = base64.b64encode(opk["pre_key"]).decode()
     )
 
 def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.UserDB):
