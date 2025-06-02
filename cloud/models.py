@@ -704,6 +704,7 @@ class UserDB:
         self.ensure_connection()
         sql = """
             SELECT 
+                f.id as file_id,
                 f.encrypted_file,
                 f.file_nonce,
                 sf.encrypted_file_key,
