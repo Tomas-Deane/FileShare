@@ -833,54 +833,81 @@ def opk_handler(req: GetOPKRequest, db: models.UserDB):
     )
 
 def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.UserDB):
-    """Handle downloading a shared file."""
-    # 1) Verify the user and challenge
-    user = db.get_user(req.username)
-    if not user:
-        raise HTTPException(404, "Unknown user")
-
-    user_id = user["user_id"]
-    provided = base64.b64decode(req.nonce)
-    stored = db.get_pending_challenge(user_id, "download_shared_file")
-    if stored is None or provided != stored:
-        raise HTTPException(400, "Invalid or expired challenge")
-
-    # 2) Verify signature
-    signature = base64.b64decode(req.signature)
     try:
-        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
-            .verify(signature, str(req.share_id).encode())
-    except InvalidSignature:
-        db.delete_challenge(user_id)
-        raise HTTPException(401, "Bad signature")
+        # 1) Verify challenge
+        user = db.get_user(req.username)
+        if not user:
+            raise HTTPException(404, "User not found")
+        
+        user_id = user["user_id"]
+        provided = base64.b64decode(req.nonce)
+        stored = db.get_pending_challenge(user_id, "download_shared_file")
+        if stored is None or provided != stored:
+            raise HTTPException(400, "Invalid or expired challenge")
 
-    # 3) Get the shared file data
-    shared_file = db.get_shared_file(req.share_id, user_id)
-    if not shared_file:
-        db.delete_challenge(user_id)
-        raise HTTPException(404, "Shared file not found")
+        # 2) Verify signature
+        signature = base64.b64decode(req.signature)
+        try:
+            Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+                .verify(signature, str(req.share_id).encode())
+        except InvalidSignature:
+            db.delete_challenge(user_id)
+            raise HTTPException(401, "Bad signature")
 
-    # 4) Get the sender's pre-key bundle
-    sender = db.get_user_by_file_id(shared_file["file_id"])
-    if not sender:
-        db.delete_challenge(user_id)
-        raise HTTPException(404, "File owner not found")
+        # 3) Get the shared file data
+        shared_file = db.get_shared_file(req.share_id, user_id)
+        if not shared_file:
+            db.delete_challenge(user_id)
+            raise HTTPException(404, "Shared file not found")
 
-    sender_bundle = db.get_prekey_bundle(sender["username"])
-    if not sender_bundle:
-        db.delete_challenge(user_id)
-        raise HTTPException(404, "Sender's pre-key bundle not found")
+        # 4) Get the sender's pre-key bundle
+        sender = db.get_user_by_file_id(shared_file["file_id"])
+        if not sender:
+            db.delete_challenge(user_id)
+            raise HTTPException(404, "File owner not found")
 
-    # 5) Return the file data, including all required keys
-    db.delete_challenge(user_id)
-    return {
-        "status": "ok",
-        "encrypted_file": base64.b64encode(shared_file["encrypted_file"]).decode(),
-        "file_nonce": base64.b64encode(shared_file["file_nonce"]).decode(),
-        "encrypted_file_key": base64.b64encode(shared_file["encrypted_file_key"]).decode(),
-        "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode(),
-        "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
-        "SPK_pub": base64.b64encode(sender_bundle["SPK_pub"]).decode(),
-        "SPK_signature": base64.b64encode(sender_bundle["SPK_signature"]).decode(),
-        "pre_key": base64.b64encode(shared_file["pre_key"]).decode()
-    }
+        sender_bundle = db.get_prekey_bundle(sender["username"])
+        if not sender_bundle:
+            db.delete_challenge(user_id)
+            raise HTTPException(404, "Sender's pre-key bundle not found")
+
+        # 5) Return the file data, including all required keys
+        db.delete_challenge(user_id)
+        
+        # Log the data we're about to return (excluding sensitive data)
+        print(f"Debug - Shared file data: {shared_file.keys()}")
+        print(f"Debug - Sender bundle data: {sender_bundle.keys()}")
+        
+        try:
+            response = {
+                "status": "ok",
+                "encrypted_file": base64.b64encode(shared_file["encrypted_file"]).decode(),
+                "file_nonce": base64.b64encode(shared_file["file_nonce"]).decode(),
+                "encrypted_file_key": base64.b64encode(shared_file["encrypted_file_key"]).decode(),
+                "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode(),
+                "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
+                "SPK_pub": base64.b64encode(sender_bundle["SPK_pub"]).decode(),
+                "SPK_signature": base64.b64encode(sender_bundle["SPK_signature"]).decode(),
+                "pre_key": base64.b64encode(shared_file["pre_key"]).decode()
+            }
+        except Exception as e:
+            print(f"Error during base64 encoding: {str(e)}")
+            print(f"Shared file data types: {[(k, type(v)) for k, v in shared_file.items()]}")
+            print(f"Sender bundle data types: {[(k, type(v)) for k, v in sender_bundle.items()]}")
+            raise HTTPException(500, f"Error encoding data: {str(e)}")
+        
+        # Log the response keys (excluding actual values)
+        print(f"Debug - Response keys: {list(response.keys())}")
+        
+        return response
+        
+    except HTTPException as e:
+        # Re-raise HTTP exceptions
+        raise e
+    except Exception as e:
+        # Log unexpected errors
+        print(f"Unexpected error in download_shared_file_handler: {str(e)}")
+        print(f"Error type: {type(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(500, f"Internal server error: {str(e)}")
