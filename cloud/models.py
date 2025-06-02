@@ -762,8 +762,6 @@ class UserDB:
             FROM shared_files sf
             JOIN files f ON sf.file_id = f.id
             LEFT JOIN opks o ON o.opk_id = sf.OPK_id 
-                AND o.user_id = sf.recipient_id
-                AND o.consumed = FALSE
             WHERE sf.share_id = %s
             AND sf.recipient_id = %s
             LIMIT 1
