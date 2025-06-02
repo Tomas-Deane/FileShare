@@ -879,10 +879,8 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
             "encrypted_file_key": base64.b64encode(shared_file["encrypted_file_key"]).decode(),
             "pre_key": base64.b64encode(shared_file["pre_key"]).decode(),
             "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
-            "SPK_pub": base64.b64encode(shared_file["SPK_pub"]).decode(),
-            "SPK_signature": base64.b64encode(shared_file["SPK_signature"]).decode(),
             "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode(),
-            "opk_id": shared_file["opk_id"]  # Add the opk_id to the response
+            "opk_id": shared_file["opk_id"]
         }
         return response
     except HTTPException:

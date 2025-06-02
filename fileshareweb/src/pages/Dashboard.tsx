@@ -1255,7 +1255,7 @@ const Dashboard: React.FC = () => {
         console.log('Got challenge for OPK');
 
         const opkSignature = await signChallenge(b64ToUint8Array(opkChallengeResponse.nonce), secretKey!);
-        const opkResponse = await apiClient.post<{ status: string; opk_id: number; pre_key: string }>('/opk', {
+        const opkResponse = await apiClient.post<{ opk_id: number; pre_key: string }>('/opk', {
           username: myUsername,
           target_username: recipientUsername,
           nonce: opkChallengeResponse.nonce,
