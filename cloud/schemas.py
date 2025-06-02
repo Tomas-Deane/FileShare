@@ -134,14 +134,15 @@ class ShareFileRequest(BaseModel):
     username: str
     file_id: int
     recipient_username: str
-    encrypted_file_key: str
+    signature: str
     EK_pub: str
     IK_pub: str
     SPK_pub: str
     SPK_signature: str
     OPK_ID: int
+    encrypted_file_key: str
+    file_key_nonce: str  
     nonce: str
-    signature: str
 
 
 class ListSharedFilesRequest(BaseModel):
