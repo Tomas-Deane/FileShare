@@ -219,9 +219,8 @@ function b64ToUint8Array(b64: string | undefined | null): Uint8Array {
 }
 
 function uint8ArrayToB64(bytes: Uint8Array): string {
-  const standardB64 = btoa(String.fromCharCode.apply(null, Array.from(bytes)));
-  // Convert to URL-safe base64
-  return standardB64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  // Use standard base64 encoding without URL-safe modifications
+  return btoa(String.fromCharCode.apply(null, Array.from(bytes)));
 }
 
 // Update the interface for the file list response
@@ -426,14 +425,13 @@ const Dashboard: React.FC = () => {
       );
 
       // Step 3: Download file
-      console.log('Downloading file...', { isShared, fileId, filename });
-      const downloadResponse = await apiClient.post<DownloadResponse>(
+      const downloadResponse = await apiClient.post<any>(
         isShared ? '/download_shared_file' : '/download_file',
         {
           username,
           ...(isShared ? { share_id: (file as SharedFileData).share_id } : { filename }),
           nonce: challengeResponse.nonce,
-          signature: uint8ArrayToB64(signature)
+          signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
         }
       );
 
@@ -441,28 +439,9 @@ const Dashboard: React.FC = () => {
         throw new Error(downloadResponse.detail || 'Failed to download file');
       }
 
-      // Log the full response for debugging
-      console.log('Download response:', {
-        status: downloadResponse.status,
-        detail: downloadResponse.detail,
-        encrypted_file_length: downloadResponse.encrypted_file?.length,
-        file_nonce_length: downloadResponse.file_nonce?.length,
-        encrypted_file_key_length: downloadResponse.encrypted_file_key?.length,
-        EK_pub_length: downloadResponse.EK_pub?.length,
-        IK_pub_length: downloadResponse.IK_pub?.length,
-        SPK_pub_length: downloadResponse.SPK_pub?.length,
-        SPK_signature_length: downloadResponse.SPK_signature?.length,
-        opk_id: downloadResponse.opk_id,
-        pre_key_length: downloadResponse.pre_key?.length
-      });
-
       // Step 4: Decrypt file
-      if (!downloadResponse.encrypted_file || !downloadResponse.file_nonce) {
-        throw new Error('Missing required encryption data from server');
-      }
-
-      const encryptedFile = b64ToUint8Array(downloadResponse.encrypted_file);
-      const fileNonce = b64ToUint8Array(downloadResponse.file_nonce);
+      const encryptedFile = Uint8Array.from(atob(downloadResponse.encrypted_file), c => c.charCodeAt(0));
+      const fileNonce = Uint8Array.from(atob(downloadResponse.file_nonce), c => c.charCodeAt(0));
       
       let decrypted: Uint8Array;
       if (isShared) {
@@ -475,68 +454,67 @@ const Dashboard: React.FC = () => {
           throw new Error('Key bundle not found');
         }
 
-        // Get the opk_id that was used
-        const usedOPKId = downloadResponse.opk_id;
-        if (usedOPKId === undefined) {
-          throw new Error('Missing opk_id in server response');
-        }
-        console.log('OPK ID used for encryption:', usedOPKId);
-
-        // Get our private OPK that corresponds to this opk_id
-        const privateOPK = myKeyBundle.OPKs_priv[usedOPKId];
-        if (!privateOPK) {
-          throw new Error(`Private OPK not found for ID ${usedOPKId} - this OPK may have already been used`);
-        }
-        console.log('Found matching private OPK');
-
-        console.log('Key lengths:', {
-          senderEKPub: b64ToUint8Array(downloadResponse.EK_pub).length,
-          senderIKPub: b64ToUint8Array(downloadResponse.IK_pub).length,
-          myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv).length,
-          mySPKPriv: b64ToUint8Array(myKeyBundle.SPK_priv).length,
-          myOPKPriv: b64ToUint8Array(privateOPK).length
+        // Get our private OPK that matches the OPK_id from the response
+        console.log('OPK Debug:', {
+          receivedOPKId: downloadResponse.opk_id, // Changed from OPK_id to opk_id
+          availableOPKs: myKeyBundle.OPKs_priv?.length,
+          keyBundle: {
+            hasOPKs: !!myKeyBundle.OPKs_priv,
+            OPKCount: myKeyBundle.OPKs_priv?.length,
+            OPKIds: myKeyBundle.OPKs_priv?.map((_, i) => i)
+          }
         });
+
+        const myOPK = myKeyBundle.OPKs_priv?.[downloadResponse.opk_id]; // Changed from OPK_id to opk_id
+        if (!myOPK) {
+          console.error('OPK Debug - Not Found:', {
+            requestedId: downloadResponse.opk_id, // Changed from OPK_id to opk_id
+            availableIds: myKeyBundle.OPKs_priv?.map((_, i) => i)
+          });
+          throw new Error('OPK not found in key bundle');
+        }
 
         // Derive the shared secret using our private keys and sender's public keys
-        console.log('Deriving shared secret for decryption...');
         const sharedSecret = await deriveX3DHSharedSecretRecipient({
-          senderEKPub: b64ToUint8Array(downloadResponse.EK_pub),
-          senderIKPub: b64ToUint8Array(downloadResponse.IK_pub),
-          senderSPKPub: b64ToUint8Array(downloadResponse.SPK_pub),
-          myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
-          mySPKPriv: b64ToUint8Array(myKeyBundle.SPK_priv),
-          myOPKPriv: b64ToUint8Array(privateOPK)
+          senderEKPub: Uint8Array.from(atob(downloadResponse.EK_pub), c => c.charCodeAt(0)),
+          senderIKPub: Uint8Array.from(atob(downloadResponse.IK_pub), c => c.charCodeAt(0)),
+          senderSPKPub: Uint8Array.from(atob(downloadResponse.SPK_pub), c => c.charCodeAt(0)),
+          myIKPriv: Uint8Array.from(atob(myKeyBundle.IK_priv), c => c.charCodeAt(0)),
+          mySPKPriv: Uint8Array.from(atob(myKeyBundle.SPK_priv), c => c.charCodeAt(0)),
+          myOPKPriv: Uint8Array.from(atob(myOPK), c => c.charCodeAt(0))
         });
-        console.log('Derived shared secret for decryption:', {
-          length: sharedSecret.length,
-          hex: Array.from(sharedSecret).map(b => b.toString(16).padStart(2, '0')).join('')
+
+        console.log('Shared Secret Debug:', {
+          hasSharedSecret: !!sharedSecret,
+          sharedSecretLength: sharedSecret?.length,
+          sharedSecretHex: sharedSecret ? Array.from(sharedSecret).map(b => b.toString(16).padStart(2, '0')).join('') : null
         });
 
         // Decrypt the file key using the shared secret
-        const encryptedFileKey = b64ToUint8Array(downloadResponse.encrypted_file_key);
-        const fileKeyNonce = b64ToUint8Array(downloadResponse.file_key_nonce); // Use the nonce from the response
-        console.log('File key decryption inputs:', {
-          encryptedFileKeyLength: encryptedFileKey.length,
-          sharedSecretLength: sharedSecret.length,
-          fileKeyNonceLength: fileKeyNonce.length
-        });
-        const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileKeyNonce);
-        console.log('File key decrypted successfully, length:', fileKey.length);
+        const encryptedFileKey = Uint8Array.from(atob(downloadResponse.encrypted_file_key), c => c.charCodeAt(0));
+        const fileKeyNonce = Uint8Array.from(atob(downloadResponse.file_key_nonce), c => c.charCodeAt(0)); // Add this line
 
-        // Decrypt the file using the file key
-        console.log('File decryption inputs:', {
-          encryptedFileLength: encryptedFile.length,
-          fileKeyLength: fileKey.length,
-          fileNonceLength: fileNonce.length
+        console.log('File Key Debug:', {
+          hasEncryptedFileKey: !!encryptedFileKey,
+          encryptedFileKeyLength: encryptedFileKey?.length,
+          hasFileKeyNonce: !!fileKeyNonce,
+          fileKeyNonceLength: fileKeyNonce?.length,
+          hasFileNonce: !!fileNonce,
+          fileNonceLength: fileNonce?.length
         });
+
+        // Use fileKeyNonce instead of fileNonce for decrypting the file key
+        const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileKeyNonce);
+        console.log('Decrypted File Key Debug:', {
+          hasFileKey: !!fileKey,
+          fileKeyLength: fileKey?.length
+        });
+
+        // Use fileNonce for decrypting the actual file
         decrypted = await decryptFile(encryptedFile, fileKey, fileNonce);
-        console.log('File decrypted successfully');
       } else {
         // For regular files, just decrypt the file key with our KEK
-        if (!downloadResponse.encrypted_file_key || !downloadResponse.file_nonce) {
-          throw new Error('Missing required key data from server');
-        }
-        const dek = await decryptFileKey(downloadResponse.encrypted_file_key, kek!, downloadResponse.file_nonce);
+        const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
         decrypted = await decryptFile(encryptedFile, dek, fileNonce);
       }
 
@@ -555,7 +533,6 @@ const Dashboard: React.FC = () => {
       }, 100);
 
     } catch (err: any) {
-      console.error('Download error:', err);
       setError(err.message || 'Failed to download file');
     } finally {
       setLoading(false);

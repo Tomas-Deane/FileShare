@@ -806,7 +806,7 @@ def remove_shared_file_handler(req: RemoveSharedFileRequest, db: models.UserDB):
     db.delete_challenge(uid)
     return {"status": "ok", "message": "share removed"}
 
-def opk_handler(req: GetOPKRequest, db: models.UserDB):
+def get_opk_handler(req: GetOPKRequest, db: models.UserDB):
     # 1) lookup target user (the one we want OPK for)
     target_user = db.get_user(req.target_username)  # Add target_username to GetOPKRequest
     if not target_user:
@@ -893,7 +893,8 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
             "SPK_pub": base64.b64encode(shared_file["SPK_pub"]).decode(),
             "SPK_signature": base64.b64encode(shared_file["SPK_signature"]).decode(),
             "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode(),
-            "opk_id": shared_file["OPK_id"]
+            "opk_id": shared_file["OPK_id"],
+            "file_key_nonce": base64.b64encode(shared_file["file_key_nonce"]).decode()
         }
         return response
     except HTTPException:
