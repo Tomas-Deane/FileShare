@@ -757,12 +757,12 @@ class UserDB:
                 f.encrypted_file,
                 f.file_nonce,
                 sf.encrypted_file_key,
+                sf.file_key_nonce,
                 sf.EK_pub,
                 sf.IK_pub,
                 sf.SPK_pub,
                 sf.SPK_signature,
                 sf.OPK_id,
-                o.pre_key as pre_key
             FROM shared_files sf
             JOIN files f ON sf.file_id = f.id
             LEFT JOIN opks o ON o.opk_id = sf.OPK_id  -- Only join on opk_id
