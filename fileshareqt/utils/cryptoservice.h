@@ -2,8 +2,6 @@
 #define CRYPTOSERVICE_H
 
 #include "icryptoservice.h"
-#include <QByteArray>
-#include <QString>
 
 class CryptoService : public ICryptoService
 {

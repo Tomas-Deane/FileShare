@@ -3,7 +3,6 @@
 
 #include <QMainWindow>
 #include <QString>
-#include <QStringList>
 #include <QByteArray>
 #include <QListWidgetItem>
 #include <QProgressBar>
