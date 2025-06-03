@@ -1,4 +1,3 @@
-# cloud/models.py
 #!/usr/bin/env python3
 import os
 import pymysql as connector
@@ -25,7 +24,8 @@ def init_db():
         password = DB_PASSWORD,
         host     = DB_HOST,
         port     = DB_PORT,
-        database = DB_NAME
+        database = DB_NAME,
+        charset='utf8mb4'
     )
     cursor = conn.cursor()
 
@@ -102,10 +102,10 @@ def init_db():
         SPK_signature       BLOB                NOT NULL,
         created_at          DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT fk_pre_key_user
-        FOREIGN KEY (user_id)
-        REFERENCES users(id)
-        ON DELETE CASCADE
-        ON UPDATE CASCADE
+          FOREIGN KEY (user_id)
+          REFERENCES users(id)
+          ON DELETE CASCADE
+          ON UPDATE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
@@ -119,16 +119,16 @@ def init_db():
         consumed            BOOLEAN             NOT NULL DEFAULT FALSE,
         created_at          DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT fk_opks_user
-        FOREIGN KEY (user_id)
-        REFERENCES users(id)
-        ON DELETE CASCADE
-        ON UPDATE CASCADE,
+          FOREIGN KEY (user_id)
+          REFERENCES users(id)
+          ON DELETE CASCADE
+          ON UPDATE CASCADE,
         INDEX idx_user_consumed (user_id, consumed),
         UNIQUE KEY unique_opk_id (user_id, opk_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
-# 7) shared_files
+    # 7) shared_files
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS shared_files (
         share_id             BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -140,18 +140,18 @@ def init_db():
         SPK_signature        BLOB                NOT NULL,
         encrypted_file_key   BLOB                NOT NULL,
         file_key_nonce       BLOB                NOT NULL,
-        OPK_id              BIGINT              NOT NULL,
+        OPK_id               BIGINT              NOT NULL,
         shared_at            DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT fk_shared_file
-        FOREIGN KEY (file_id)
-        REFERENCES files(id)
-        ON DELETE CASCADE
-        ON UPDATE CASCADE,
+          FOREIGN KEY (file_id)
+          REFERENCES files(id)
+          ON DELETE CASCADE
+          ON UPDATE CASCADE,
         CONSTRAINT fk_shared_recipient
-        FOREIGN KEY (recipient_id)
-        REFERENCES users(id)
-        ON DELETE CASCADE
-        ON UPDATE CASCADE,
+          FOREIGN KEY (recipient_id)
+          REFERENCES users(id)
+          ON DELETE CASCADE
+          ON UPDATE CASCADE,
         INDEX idx_file_recipient (file_id, recipient_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
@@ -161,8 +161,8 @@ def init_db():
     CREATE TABLE IF NOT EXISTS tofu_backups (
         id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
         user_id             BIGINT              NOT NULL,
-        encrypted_data      LONGBLOB            NOT NULL,  -- Encrypted backup data
-        backup_nonce        BLOB                NOT NULL,  -- Nonce for encrypted_data
+        encrypted_data      LONGBLOB            NOT NULL,
+        backup_nonce        BLOB                NOT NULL,
         created_at          DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
         last_verified       DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT fk_tofu_user
@@ -185,40 +185,44 @@ class UserDB:
     """
     _pool = None
     _local = threading.local()
-    
+
     def __init__(self):
         if UserDB._pool is None:
             UserDB._pool = PooledDB(
                 creator=connector,
-                maxconnections=50,  # Increased max connections
-                mincached=5,        # Increased min cached connections
-                maxcached=10,       # Increased max cached connections
-                blocking=True,      # Block when no connection is available
-                maxusage=100,       # Recycle connections after 100 uses
-                setsession=[],      # No session setup commands
-                ping=1,            # Ping on checkout to verify connection
+                maxconnections=50,
+                mincached=5,
+                maxcached=10,
+                blocking=True,
+                maxusage=100,
+                setsession=[],
+                ping=1,
                 user=DB_USER,
                 password=DB_PASSWORD,
                 host=DB_HOST,
                 port=DB_PORT,
                 database=DB_NAME,
-                charset='utf8mb4',  # Explicit charset
-                cursorclass=connector.cursors.DictCursor  # Always use dict cursor
+                charset='utf8mb4',
+                cursorclass=connector.cursors.DictCursor
             )
-    
+
     def _get_connection(self):
-        """Get thread-local database connection and cursor."""
+        """
+        Return (conn, cursor) for the current thread, creating them if necessary.
+        """
         try:
             if not hasattr(self._local, 'conn'):
-                self._local.conn = self._pool.connection()
+                self._local.conn = UserDB._pool.connection()
                 self._local.cursor = self._local.conn.cursor()
             return self._local.conn, self._local.cursor
         except Exception as e:
             logging.error(f"Error getting database connection: {str(e)}")
             raise
-    
+
     def ensure_connection(self):
-        """Ensure the connection is alive and reestablish if needed."""
+        """
+        Ping the current connection; if it fails, close it and re‐open.
+        """
         try:
             conn, cursor = self._get_connection()
             conn.ping(reconnect=True)
@@ -229,11 +233,16 @@ class UserDB:
                     self._local.conn.close()
                 except:
                     pass
+            if hasattr(self._local, 'cursor'):
+                try:
+                    self._local.cursor.close()
+                except:
+                    pass
             delattr(self._local, 'conn')
             delattr(self._local, 'cursor')
             self._get_connection()
 
-    def _get_user_id(self, username):
+    def _get_user_id(self, username: str):
         self.ensure_connection()
         conn, cursor = self._get_connection()
         sql = "SELECT user_id FROM username_map WHERE username = %s"
@@ -271,7 +280,7 @@ class UserDB:
         conn.commit()
         return user_id
 
-    def get_user(self, username):
+    def get_user(self, username: str):
         self.ensure_connection()
         conn, cursor = self._get_connection()
         sql = """
@@ -295,9 +304,9 @@ class UserDB:
         row = cursor.fetchone()
         if not row:
             return None
-        return row
+        return row  # dict with keys ["user_id","salt",... ]
 
-    def add_challenge(self, user_id, operation, challenge: bytes):
+    def add_challenge(self, user_id: int, operation: str, challenge: bytes):
         self.ensure_connection()
         conn, cursor = self._get_connection()
         cursor.execute(
@@ -312,7 +321,7 @@ class UserDB:
         cursor.execute(sql, (user_id, operation, challenge))
         conn.commit()
 
-    def get_pending_challenge(self, user_id, operation, expiry_seconds=300):
+    def get_pending_challenge(self, user_id: int, operation: str, expiry_seconds: int = 300):
         self.ensure_connection()
         conn, cursor = self._get_connection()
         sql = """
@@ -337,7 +346,7 @@ class UserDB:
         logging.debug(f"Challenge age: {(datetime.datetime.utcnow() - created_at).total_seconds()} seconds")
         return challenge
 
-    def delete_challenge(self, user_id):
+    def delete_challenge(self, user_id: int):
         self.ensure_connection()
         conn, cursor = self._get_connection()
         cursor.execute(
@@ -346,7 +355,7 @@ class UserDB:
         )
         conn.commit()
 
-    def update_username(self, old_username, new_username):
+    def update_username(self, old_username: str, new_username: str):
         self.ensure_connection()
         conn, cursor = self._get_connection()
         sql = """
@@ -357,14 +366,14 @@ class UserDB:
         cursor.execute(sql, (new_username, old_username))
         conn.commit()
 
-    def update_password(self, username, salt, opslimit, memlimit,
-                        encrypted_privkey, privkey_nonce,
-                        encrypted_kek, kek_nonce):
+    def update_password(self, username: str, salt: bytes, opslimit: int, memlimit: int,
+                        encrypted_privkey: bytes, privkey_nonce: bytes,
+                        encrypted_kek: bytes, kek_nonce: bytes):
         self.ensure_connection()
-        conn, cursor = self._get_connection()
         user_id = self._get_user_id(username)
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
+        conn, cursor = self._get_connection()
         sql = """
             UPDATE users
             SET salt               = %s,
@@ -388,8 +397,8 @@ class UserDB:
         ))
         conn.commit()
 
-    def add_file(self, username, filename, encrypted_file, file_nonce,
-                 encrypted_dek, dek_nonce):
+    def add_file(self, username: str, filename: str, encrypted_file: bytes, file_nonce: bytes,
+                 encrypted_dek: bytes, dek_nonce: bytes):
         conn, cursor = self._get_connection()
         user_id = self._get_user_id(username)
         if user_id is None:
@@ -410,7 +419,7 @@ class UserDB:
         ))
         conn.commit()
 
-    def list_files(self, username):
+    def list_files(self, username: str) -> List[dict]:
         conn, cursor = self._get_connection()
         user_id = self._get_user_id(username)
         if user_id is None:
@@ -425,12 +434,17 @@ class UserDB:
         rows = cursor.fetchall()
         if not rows:
             return []
-        if isinstance(rows[0], dict):
-            return [{"filename": row['filename'], "id": row['id'], "created_at": row['created_at'].isoformat()} for row in rows]
-        else:
-            return [{"filename": row[0], "id": row[1], "created_at": row[2].isoformat()} for row in rows]
+        # Each row is a dict from DictCursor
+        return [
+            {
+                "filename": row['filename'],
+                "id": row['id'],
+                "created_at": row['created_at'].isoformat()
+            }
+            for row in rows
+        ]
 
-    def get_file(self, username, filename):
+    def get_file(self, username: str, filename: str):
         conn, cursor = self._get_connection()
         user_id = self._get_user_id(username)
         if user_id is None:
@@ -446,12 +460,9 @@ class UserDB:
         row = cursor.fetchone()
         if not row:
             return None
-        if isinstance(row, dict):
-            return row
-        columns = [col[0] for col in cursor.description]
-        return dict(zip(columns, row))
+        return row  # dict with keys ["encrypted_file","file_nonce","encrypted_dek","dek_nonce"]
 
-    def delete_file(self, username, filename):
+    def delete_file(self, username: str, filename: str):
         conn, cursor = self._get_connection()
         user_id = self._get_user_id(username)
         if user_id is None:
@@ -466,7 +477,7 @@ class UserDB:
         cursor.execute(sql, (user_id, filename))
         conn.commit()
 
-    def add_pre_key_bundle(self, user_id, IK_pub, SPK_pub, SPK_signature):
+    def add_pre_key_bundle(self, user_id: int, IK_pub: bytes, SPK_pub: bytes, SPK_signature: bytes):
         conn, cursor = self._get_connection()
         sql = """
             INSERT INTO pre_key_bundle
@@ -476,7 +487,7 @@ class UserDB:
         cursor.execute(sql, (user_id, IK_pub, SPK_pub, SPK_signature))
         conn.commit()
 
-    def get_pre_key_bundle(self, user_id):
+    def get_pre_key_bundle(self, user_id: int):
         conn, cursor = self._get_connection()
         sql = """
             SELECT IK_pub, SPK_pub, SPK_signature
@@ -486,33 +497,31 @@ class UserDB:
             LIMIT 1
         """
         cursor.execute(sql, (user_id,))
-        return cursor.fetchone()
+        return cursor.fetchone()  # dict with keys ["IK_pub","SPK_pub","SPK_signature"]
 
-    def get_highest_opk_id(self, user_id):
+    def get_highest_opk_id(self, user_id: int) -> int:
         """Get the highest opk_id for a user, or -1 if none exist."""
         self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             SELECT MAX(opk_id) as max_id
             FROM opks
             WHERE user_id = %s
         """
-        self.cursor.execute(sql, (user_id,))
-        row = self.cursor.fetchone()
-        if not row:
+        cursor.execute(sql, (user_id,))
+        row = cursor.fetchone()
+        if not row or row['max_id'] is None:
             return -1
-        max_id = row['max_id'] if isinstance(row, dict) else row[0]
-        return max_id if max_id is not None else -1
+        return row['max_id']
 
-    def add_opks(self, user_id, pre_keys):
-        conn, cursor = self._get_connection()
-        """Add one-time pre-keys for a user.
-        Args:
-            user_id: The user's ID
-            pre_keys: List of tuples (opk_id, pre_key) where opk_id is a non-negative integer
-                     and pre_key is the binary pre-key data
+    def add_opks(self, user_id: int, pre_keys: List[Tuple[int, bytes]]):
+        """
+        Add one-time pre-keys for a user.
+        pre_keys: List of tuples (opk_id, pre_key_bytes).
         """
         self.ensure_connection()
-        #Validate input format,
+        conn, cursor = self._get_connection()
+
         if not isinstance(pre_keys, list):
             raise ValueError("pre_keys must be a list")
 
@@ -527,12 +536,11 @@ class UserDB:
                 (user_id, opk_id, pre_key)
             VALUES (%s, %s, %s)
         """
-        
         for opk_id, pre_key in pre_keys:
             cursor.execute(sql, (user_id, opk_id, pre_key))
         conn.commit()
 
-    def get_unused_opk(self, user_id):
+    def get_unused_opk(self, user_id: int):
         conn, cursor = self._get_connection()
         sql = """
             SELECT id, opk_id, pre_key
@@ -541,47 +549,53 @@ class UserDB:
             ORDER BY created_at ASC
             LIMIT 1
         """
-        
         cursor.execute(sql, (user_id,))
         row = cursor.fetchone()
         if not row:
             return None
-        if isinstance(row, dict):
-            return row
-        columns = [col[0] for col in self.cursor.description]
-        return dict(zip(columns, row))
+        return row  # dict with keys ["id","opk_id","pre_key"]
 
-    def mark_opk_consumed(self, opk_id):
+    def mark_opk_consumed(self, id: int):
         conn, cursor = self._get_connection()
         sql = """
             UPDATE opks
             SET consumed = TRUE
             WHERE id = %s
         """
-        cursor.execute(sql, (opk_id,))
+        cursor.execute(sql, (id,))
         conn.commit()
 
     def share_file(self, file_id: int, recipient_id: int, encrypted_file_key: bytes,
-                          file_key_nonce: bytes, EK_pub: bytes, IK_pub: bytes, 
-                          SPK_pub: bytes, SPK_signature: bytes, OPK_id: int):
+                   file_key_nonce: bytes, EK_pub: bytes, IK_pub: bytes, 
+                   SPK_pub: bytes, SPK_signature: bytes, OPK_id: int):
         conn, cursor = self._get_connection()
         sql = """
             INSERT INTO shared_files
                 (file_id, recipient_id, encrypted_file_key, file_key_nonce,
-                    EK_pub, IK_pub, SPK_pub, SPK_signature, OPK_id)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                 EK_pub, IK_pub, SPK_pub, SPK_signature, OPK_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        cursor.execute(sql, (file_id, recipient_id, encrypted_file_key, file_key_nonce,
-                  EK_pub, IK_pub, SPK_pub, SPK_signature, OPK_id)))
+        cursor.execute(sql, (
+            file_id,
+            recipient_id,
+            encrypted_file_key,
+            file_key_nonce,
+            EK_pub,
+            IK_pub,
+            SPK_pub,
+            SPK_signature,
+            OPK_id
+        ))
         conn.commit()
 
     def get_shared_files(self, username: str) -> List[Tuple]:
-        """Get all files shared with the given user."""
-        # First get the user's ID
+        """
+        Get all files shared with the given user.
+        Returns a list of dicts (share_id, id, filename, shared_by, created_at).
+        """
         user_id = self._get_user_id(username)
         if user_id is None:
             return []
-          
         conn, cursor = self._get_connection()
         sql = """
             SELECT s.share_id, f.id, f.filename, um.username as shared_by, f.created_at
@@ -591,10 +605,10 @@ class UserDB:
             WHERE s.recipient_id = %s
             ORDER BY f.created_at DESC
         """
-        cursor.execute(sql, (recipient_id,))
+        cursor.execute(sql, (user_id,))
         return cursor.fetchall()
 
-    def get_shared_file_details(self, share_id):
+    def get_shared_file_details(self, share_id: int):
         conn, cursor = self._get_connection()
         sql = """
             SELECT 
@@ -617,7 +631,7 @@ class UserDB:
         cursor.execute(sql, (share_id,))
         return cursor.fetchone()
 
-    def remove_shared_file(self, share_id):
+    def remove_shared_file(self, share_id: int):
         conn, cursor = self._get_connection()
         sql = """
             DELETE FROM shared_files
@@ -633,14 +647,8 @@ class UserDB:
                 (user_id, encrypted_data, backup_nonce)
             VALUES (%s, %s, %s)
         """
-        cursor.execute(sql, (
-            user_id,
-            encrypted_data,
-            backup_nonce
-        ))
-        
+        cursor.execute(sql, (user_id, encrypted_data, backup_nonce))
         conn.commit()
-
         # Clean up old backups, keeping only the most recent one
         self.cleanup_old_tofu_backups(user_id, 1)
 
@@ -657,20 +665,17 @@ class UserDB:
         row = cursor.fetchone()
         if not row:
             return None
-        
-        # Convert tuple to dictionary
-        if isinstance(row, dict):
-            return row
-        else:
-            return {
-                "encrypted_data": row[0],
-                "backup_nonce": row[1],
-                "created_at": row[2],
-                "last_verified": row[3]
-            }
+        return {
+            "encrypted_data": row["encrypted_data"],
+            "backup_nonce": row["backup_nonce"],
+            "created_at": row["created_at"],
+            "last_verified": row["last_verified"]
+        }
 
     def get_all_users(self) -> list:
-        """Get all users in the system."""
+        """
+        Get all users in the system as a list of (id, username).
+        """
         conn, cursor = self._get_connection()
         sql = """
             SELECT u.id, m.username
@@ -680,108 +685,118 @@ class UserDB:
         """
         cursor.execute(sql)
         return cursor.fetchall()
-    
+
     def get_file_id(self, username: str, filename: str) -> int:
-         """Lookup the internal file ID for a given owner+filename."""
-         conn, cursor = self._get_connection()
-         user_id = self._get_user_id(username)
-         if user_id is None:
-             raise ValueError(f"Unknown user '{username}'")
-         sql = """
-             SELECT id
-             FROM files
-             WHERE owner_id = %s
-               AND filename = %s
-             LIMIT 1
-         """
-         cursor.execute(sql, (user_id, filename))
-         row = cursor.fetchone()
-         if not row:
-             return None
-         return row['id'] if isinstance(row, dict) else row[0]
+        """
+        Lookup the internal file ID for a given owner+filename.
+        """
+        conn, cursor = self._get_connection()
+        user_id = self._get_user_id(username)
+        if user_id is None:
+            raise ValueError(f"Unknown user '{username}'")
+        sql = """
+            SELECT id
+            FROM files
+            WHERE owner_id = %s
+              AND filename = %s
+            LIMIT 1
+        """
+        cursor.execute(sql, (user_id, filename))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return row["id"]
 
     def get_shared_files_to(self, owner_id: int, recipient_id: int):
-        """Files *I* (owner_id) have shared *to* recipient_id."""
+        """
+        Files that owner_id has shared to recipient_id.
+        """
         conn, cursor = self._get_connection()
         sql = """
             SELECT sf.share_id, sf.file_id, f.filename,
-                sf.EK_pub, sf.IK_pub, sf.encrypted_file_key, sf.shared_at
+                   sf.EK_pub, sf.IK_pub, sf.encrypted_file_key, sf.shared_at
             FROM shared_files sf
             JOIN files f ON sf.file_id = f.id
             WHERE f.owner_id    = %s
-            AND sf.recipient_id = %s
+              AND sf.recipient_id = %s
             ORDER BY sf.shared_at DESC
         """
         cursor.execute(sql, (owner_id, recipient_id))
         return cursor.fetchall()
 
     def get_shared_files_from(self, recipient_id: int, owner_id: int):
-        """Files that owner_id has shared *to* me (recipient_id)."""
+        """
+        Files that owner_id has shared to recipient_id (i.e., shared *from* owner_id *to* me).
+        """
         conn, cursor = self._get_connection()
         sql = """
             SELECT sf.share_id, sf.file_id, f.filename,
-                sf.EK_pub, sf.IK_pub, sf.encrypted_file_key, sf.shared_at
+                   sf.EK_pub, sf.IK_pub, sf.encrypted_file_key, sf.shared_at
             FROM shared_files sf
             JOIN files f ON sf.file_id = f.id
             WHERE sf.recipient_id = %s
-            AND f.owner_id      = %s
+              AND f.owner_id      = %s
             ORDER BY sf.shared_at DESC
         """
         cursor.execute(sql, (recipient_id, owner_id))
         return cursor.fetchall()
 
     def cleanup_old_tofu_backups(self, user_id: int, keep_last_n: int = 1):
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             DELETE FROM tofu_backups 
             WHERE user_id = %s 
-            AND id NOT IN (
-                SELECT id FROM (
-                    SELECT id 
-                    FROM tofu_backups 
-                    WHERE user_id = %s 
-                    ORDER BY created_at DESC 
-                    LIMIT %s
-                ) as latest
-            )
+              AND id NOT IN (
+                  SELECT id FROM (
+                      SELECT id 
+                      FROM tofu_backups 
+                      WHERE user_id = %s 
+                      ORDER BY created_at DESC 
+                      LIMIT %s
+                  ) as latest
+              )
         """
-        self.cursor.execute(sql, (user_id, user_id, keep_last_n))
-        self.conn.commit()
+        cursor.execute(sql, (user_id, user_id, keep_last_n))
+        conn.commit()
 
     def retrieve_file_dek(self, file_id: int):
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             SELECT encrypted_dek, dek_nonce
             FROM files
             WHERE id = %s
         """
-        self.cursor.execute(sql, (file_id,))
-        row = self.cursor.fetchone()
+        cursor.execute(sql, (file_id,))
+        row = cursor.fetchone()
         if not row:
             return None
-        if isinstance(row, dict):
-            return row
-        columns = [col[0] for col in self.cursor.description]
-        return dict(zip(columns, row))
+        return {
+            "encrypted_dek": row["encrypted_dek"],
+            "dek_nonce": row["dek_nonce"]
+        }
 
-    def get_file_owner(self, file_id: int) -> int | None:
-        """Get the owner ID of a file."""
-        self.ensure_connection()
+    def get_file_owner(self, file_id: int) -> int:
+        """
+        Get the owner ID of a file.
+        """
+        conn, cursor = self._get_connection()
         sql = """
             SELECT owner_id
             FROM files
             WHERE id = %s
             LIMIT 1
         """
-        self.cursor.execute(sql, (file_id,))
-        row = self.cursor.fetchone()
+        cursor.execute(sql, (file_id,))
+        row = cursor.fetchone()
         if not row:
             return None
-        return row['owner_id'] if isinstance(row, dict) else row[0]
+        return row["owner_id"]
 
     def get_shared_file(self, share_id: int, recipient_id: int):
-        """Get a shared file's data for a specific recipient, including the public OPK used for encryption."""
-        self.ensure_connection()
+        """
+        Fetch a shared file record (with encryption info) for a specific recipient.
+        """
+        conn, cursor = self._get_connection()
         sql = """
             SELECT 
                 f.id as file_id,
@@ -796,35 +811,45 @@ class UserDB:
                 sf.OPK_id
             FROM shared_files sf
             JOIN files f ON sf.file_id = f.id
-            LEFT JOIN opks o ON o.opk_id = sf.OPK_id  -- Only join on opk_id
             WHERE sf.share_id = %s
-            AND sf.recipient_id = %s
+              AND sf.recipient_id = %s
             LIMIT 1
         """
-        self.cursor.execute(sql, (share_id, recipient_id))
-        row = self.cursor.fetchone()
+        cursor.execute(sql, (share_id, recipient_id))
+        row = cursor.fetchone()
         if not row:
             return None
-        if isinstance(row, dict):
-            return row
-        columns = [col[0] for col in self.cursor.description]
-        return dict(zip(columns, row))
+        return {
+            "file_id": row["file_id"],
+            "encrypted_file": row["encrypted_file"],
+            "file_nonce": row["file_nonce"],
+            "encrypted_file_key": row["encrypted_file_key"],
+            "file_key_nonce": row["file_key_nonce"],
+            "EK_pub": row["EK_pub"],
+            "IK_pub": row["IK_pub"],
+            "SPK_pub": row["SPK_pub"],
+            "SPK_signature": row["SPK_signature"],
+            "OPK_id": row["OPK_id"]
+        }
 
     def get_file_nonce(self, file_id: int) -> bytes:
-        with self.conn.cursor() as cur:
-            cur.execute("SELECT file_nonce FROM files WHERE id = %s", (file_id,))
-            result = cur.fetchone()
-            return result[0] if result else None
+        conn, cursor = self._get_connection()
+        sql = "SELECT file_nonce FROM files WHERE id = %s"
+        cursor.execute(sql, (file_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return row["file_nonce"]
 
     def get_matching_users(self, search_query: str) -> list:
-        """Get all users whose usernames match the given search query."""
+        """
+        Get all users whose usernames match the given search query.
+        """
         self.ensure_connection()
+        conn, cursor = self._get_connection()
         
-        # Sanitize the search query by removing any special regex characters
-        # and escape any remaining special characters
+        # Escape wildcards
         sanitized_query = search_query.replace('%', '\\%').replace('_', '\\_')
-        
-        # Use LIKE with wildcards for a more user-friendly search
         sql = """
             SELECT u.id, m.username
             FROM users u
@@ -833,18 +858,16 @@ class UserDB:
             ORDER BY m.username
             LIMIT 50
         """
-        
-        # Add wildcards to make the search more flexible
         search_pattern = f"%{sanitized_query}%"
-        
-        self.cursor.execute(sql, (search_pattern,))
-        return self.cursor.fetchall()
-    
-    def get_sharers(self, recipient_id: int) -> list[str]:
+        cursor.execute(sql, (search_pattern,))
+        return cursor.fetchall()
+
+    def get_sharers(self, recipient_id: int) -> list:
         """
-        Return a list of all distinct usernames who have shared at least one file to `recipient_id`.
+        Return a list of all distinct usernames who have shared at least one file to recipient_id.
         """
         self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             SELECT DISTINCT um.username
             FROM shared_files sf
@@ -852,15 +875,11 @@ class UserDB:
             JOIN username_map um ON f.owner_id = um.user_id
             WHERE sf.recipient_id = %s
         """
-        self.cursor.execute(sql, (recipient_id,))
-        rows = self.cursor.fetchall()
+        cursor.execute(sql, (recipient_id,))
+        rows = cursor.fetchall()
         if not rows:
             return []
-        # Depending on cursor type, each row might be a dict or tuple
-        if isinstance(rows[0], dict):
-            return [row["username"] for row in rows]
-        else:
-            return [row[0] for row in rows]
+        return [row["username"] for row in rows]
 
     def get_file_by_id(self, file_id: int):
         """
@@ -868,35 +887,24 @@ class UserDB:
         by its internal ID.
         """
         self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             SELECT owner_id, filename, encrypted_file, file_nonce, encrypted_dek, dek_nonce
             FROM files
             WHERE id = %s
             LIMIT 1
         """
-        self.cursor.execute(sql, (file_id,))
-        row = self.cursor.fetchone()
+        cursor.execute(sql, (file_id,))
+        row = cursor.fetchone()
         if not row:
             return None
-        if isinstance(row, dict):
-            # Convert BLOBs & keep owner_id and filename
-            return {
-                "owner_id": row["owner_id"],
-                "filename": row["filename"],
-                "encrypted_file": row["encrypted_file"],
-                "file_nonce": row["file_nonce"],
-                "encrypted_dek": row["encrypted_dek"],
-                "dek_nonce": row["dek_nonce"],
-            }
-        cols = [col[0] for col in self.cursor.description]
-        mapped = dict(zip(cols, row))
         return {
-            "owner_id": mapped["owner_id"],
-            "filename": mapped["filename"],
-            "encrypted_file": mapped["encrypted_file"],
-            "file_nonce": mapped["file_nonce"],
-            "encrypted_dek": mapped["encrypted_dek"],
-            "dek_nonce": mapped["dek_nonce"],
+            "owner_id": row["owner_id"],
+            "filename": row["filename"],
+            "encrypted_file": row["encrypted_file"],
+            "file_nonce": row["file_nonce"],
+            "encrypted_dek": row["encrypted_dek"],
+            "dek_nonce": row["dek_nonce"]
         }
 
     def delete_file_by_id(self, file_id: int, username: str):
@@ -907,12 +915,12 @@ class UserDB:
         user_id = self._get_user_id(username)
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
-
-        # Only delete if owner_id matches
+        conn, cursor = self._get_connection()
         sql = """
             DELETE FROM files
             WHERE id = %s
-                AND owner_id = %s
+              AND owner_id = %s
         """
-        self.cursor.execute(sql, (file_id, user_id))
-        self.conn.commit()
+        cursor.execute(sql, (file_id, user_id))
+        conn.commit()
+
