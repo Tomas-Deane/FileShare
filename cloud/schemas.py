@@ -269,3 +269,9 @@ class ClearUserOPKsRequest(BaseModel):
     target_username: str  # The user whose OPKs we want to clear
     nonce: str
     signature: str
+
+class PreviewSharedFileRequest(BaseModel):
+    username: str
+    share_id: int
+    nonce: str
+    signature: str

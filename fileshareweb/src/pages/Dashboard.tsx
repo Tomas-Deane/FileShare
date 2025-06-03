@@ -1118,7 +1118,7 @@ const TestButton = () => {
       const listResponse = await apiClient.post<{ status: string; users: UserData[] }>('/list_matching_users', {
         username,
         nonce: challengeResponse.nonce,
-        signature: uint8ArrayToB64(signature)
+        signature: uint8ArrayToB64(signature),
         search_query: userSearchQuery
       });
 
