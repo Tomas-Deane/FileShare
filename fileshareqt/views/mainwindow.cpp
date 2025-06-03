@@ -510,37 +510,41 @@ void MainWindow::on_downloadFileList_itemSelectionChanged()
         return;
     }
 
-    QString name = item->text();
+    QString  name = item->text();
     ui->downloadFileNameLabel->setText(name);
     ui->downloadFileTypeLabel->setText(QFileInfo(name).suffix());
 
+    // If it’s already in cache, show it immediately:
     const auto &cache = fileController->downloadCache();
-    if (!cache.contains(name)) {
-        fileController->downloadFile(name);
+    if (cache.contains(name)) {
+        auto data = cache.value(name);
+        QMimeDatabase db;
+        auto mime = db.mimeTypeForFile(name);
+        if (mime.name().startsWith("text/")) {
+            ui->downloadTextPreview->setPlainText(QString::fromUtf8(data));
+            ui->downloadPreviewStack->setCurrentIndex(0);
+        }
+        else if (mime.name().startsWith("image/")) {
+            QPixmap pix;
+            pix.loadFromData(data);
+            ui->downloadImagePreview->setPixmap(
+                pix.scaled(ui->downloadImagePreview->size(),
+                           Qt::KeepAspectRatio,
+                           Qt::SmoothTransformation)
+                );
+            ui->downloadPreviewStack->setCurrentIndex(1);
+        }
         return;
     }
 
-    const QByteArray data = cache.value(name);
-    QMimeDatabase db;
-    auto mime = db.mimeTypeForFile(name);
-    if (mime.name().startsWith("text/")) {
-        ui->downloadTextPreview->setPlainText(QString::fromUtf8(data));
-        ui->downloadPreviewStack->setCurrentIndex(0);
+    // ─── Not in cache: request from server by ID ───
+    bool ok = false;
+    qint64 fileId = item->data(Qt::UserRole).toLongLong(&ok);
+    if (!ok) {
+        Logger::log("Invalid file ID; cannot download");
+        return;
     }
-    else if (mime.name().startsWith("image/")) {
-        QPixmap pix;
-        pix.loadFromData(data);
-        ui->downloadImagePreview->setPixmap(
-            pix.scaled(ui->downloadImagePreview->size(),
-                       Qt::KeepAspectRatio,
-                       Qt::SmoothTransformation)
-            );
-        ui->downloadPreviewStack->setCurrentIndex(1);
-    }
-    else {
-        ui->downloadTextPreview->setPlainText(tr("No preview"));
-        ui->downloadPreviewStack->setCurrentIndex(0);
-    }
+    fileController->downloadFile(fileId, name);
 }
 
 void MainWindow::onDownloadFileResult(bool success,
@@ -567,16 +571,26 @@ void MainWindow::on_downloadFileButton_clicked()
         Logger::log("No file selected to download");
         return;
     }
-    const QString filename = item->text();
-    const auto &cache = fileController->downloadCache();
-    if (!cache.contains(filename)) {
-        Logger::log("No data available for '" + filename + "'");
+    QString name = item->text();
+
+    // Grab the ID out of UserRole
+    bool ok = false;
+    qint64 fileId = item->data(Qt::UserRole).toLongLong(&ok);
+    if (!ok) {
+        Logger::log("Invalid file ID; cannot download");
         return;
     }
-    const QByteArray data = cache.value(filename);
 
+    const auto &cache = fileController->downloadCache();
+    if (!cache.contains(name)) {
+        Logger::log("No data available for '" + name + "'");
+        return;
+    }
+    const QByteArray data = cache.value(name);
+
+    // Use 'name' here, not 'filename'
     QString path = QFileDialog::getSaveFileName(this,
-                                                tr("Save File As"), filename);
+                                                tr("Save File As"), name);
     if (path.isEmpty()) return;
 
     QFile f(path);
