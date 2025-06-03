@@ -545,7 +545,7 @@ def add_prekey_bundle_handler(req: AddPreKeyBundleRequest, db: models.UserDB):
         signature = base64.b64decode(req.signature)
         try:
             Ed25519PublicKey.from_public_bytes(user["public_key"]) \
-                .verify(signature, provided)
+                .verify(signature, stored)
             
             # Decode base64 data before passing to database
             try:
@@ -590,7 +590,7 @@ def list_users_handler(req: ListUsersRequest, db: models.UserDB) -> ListUsersRes
     signature = base64.b64decode(req.signature)
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
-            .verify(signature, provided)
+            .verify(signature, stored)
         
         # Get all users
         users = db.get_all_users()
@@ -629,7 +629,7 @@ def add_opks_handler(req: AddOPKsRequest, db: models.UserDB):
     signature = base64.b64decode(req.signature)
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
-            .verify(signature, provided)
+            .verify(signature, stored)
         
         # Decode base64 data before passing to database
         try:
@@ -752,7 +752,7 @@ def list_shared_to_handler(req: ListSharedToRequest, db: models.UserDB):
     sig = base64.b64decode(req.signature)
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     try:
-        Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, provided)
+        Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, stored)
     except Exception:
         db.delete_challenge(uid)
         raise HTTPException(401, "Bad signature")

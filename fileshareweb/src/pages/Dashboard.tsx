@@ -138,22 +138,28 @@ interface FileData {
 
 // Add these interfaces
 interface ChallengeResponse {
-  status: string;
-  nonce: string;
-  detail?: string;
+  data: {
+    status: string;
+    nonce: string;
+    detail?: string;
+  };
 }
 
 interface UploadResponse {
-  status: string;
-  message?: string;
-  detail?: string;
+  data: {
+    status: string;
+    message?: string;
+    detail?: string;
+  };
 }
 
 // Add this interface for delete response
 interface DeleteResponse {
-  status: string;
-  message?: string;
-  detail?: string;
+  data: {
+    status: string;
+    message?: string;
+    detail?: string;
+  };
 }
 
 // First, let's define the proper types
@@ -170,13 +176,8 @@ interface RecipientKeyBundle {
 }
 
 interface SelectedUser {
-  id: number;
   username: string;
-  prekeyBundle?: {
-    IK_pub: string;
-    SPK_pub: string;
-    SPK_signature: string;
-  };
+  prekeyBundle?: PreKeyBundle;
 }
 
 // Add this interface near the top with other interfaces
@@ -188,7 +189,72 @@ interface SharedFileData {
   created_at: string;
 }
 
-const DEBUG = true; // Toggle for development
+// Add this interface near the top with other interfaces
+interface SharedFileResponse {
+  file_id: number;
+  share_id: number;
+  lastVerified?: string;
+}
+
+// Add this interface near the top with other interfaces
+interface CurrentRecipient {
+  username: string;
+  share_id: number;
+  verified: boolean;
+  lastVerified?: string;
+}
+
+interface ListSharedToResponse {
+  data: {
+    status: string;
+    shares: Array<{
+      share_id: number;
+      file_id: number;
+      filename: string;
+      EK_pub: string;
+      IK_pub: string;
+      shared_at: string;
+    }>;
+  };
+}
+
+interface FileListResponse {
+  data: {
+    status: string;
+    files: Array<{
+      filename: string;
+      id: number;
+      created_at: string;
+    }>;
+  };
+}
+
+interface DownloadResponse {
+  data: {
+    status: string;
+    detail?: string;
+    encrypted_file?: string;
+    file_nonce?: string;
+    encrypted_file_key?: string;
+    file_key_nonce?: string;
+    EK_pub?: string;
+    IK_pub?: string;
+    SPK_pub?: string;
+    SPK_signature?: string;
+    opk_id?: number;
+    pre_key?: string;
+  };
+}
+
+interface BackupTOFUResponse {
+  data: {
+    status: string;
+    message?: string;
+    detail?: string;
+  };
+}
+
+const DEBUG: boolean = true; // Toggle for development
 
 const logDebug = (message: string, data?: any) => {
   if (DEBUG) {
@@ -221,31 +287,6 @@ function b64ToUint8Array(b64: string | undefined | null): Uint8Array {
 function uint8ArrayToB64(bytes: Uint8Array): string {
   // Use standard base64 encoding without URL-safe modifications
   return btoa(String.fromCharCode.apply(null, Array.from(bytes)));
-}
-
-// Update the interface for the file list response
-interface FileListResponse {
-  status: string;
-  files: Array<{
-    filename: string;
-    id: number;
-    created_at: string;
-  }>;
-}
-
-interface DownloadResponse {
-  status: string;
-  detail?: string;
-  encrypted_file?: string;
-  file_nonce?: string;
-  encrypted_file_key?: string;
-  file_key_nonce?: string;  // Add this field
-  EK_pub?: string;
-  IK_pub?: string;
-  SPK_pub?: string;
-  SPK_signature?: string;
-  opk_id?: number;
-  pre_key?: string;
 }
 
 const Dashboard: React.FC = () => {
@@ -281,6 +322,8 @@ const Dashboard: React.FC = () => {
   const [fileToDelete, setFileToDelete] = useState<number | null>(null);
   const [sharedFiles, setSharedFiles] = useState<SharedFileData[]>([]);
   const [loadingSharedFiles, setLoadingSharedFiles] = useState(false);
+  const [currentRecipients, setCurrentRecipients] = useState<CurrentRecipient[]>([]);
+  const [loadingCurrentRecipients, setLoadingCurrentRecipients] = useState(false);
 
   // Get current user and their key bundle
   const currentUsername = storage.getCurrentUser();
@@ -309,139 +352,93 @@ const Dashboard: React.FC = () => {
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: 'home'|'files'|'users'|'profile') => setActiveTab(newValue);
   const handleUpload = () => setOpenUpload(true);
-  const handleShare = (fileId: number) => {
+  const handleShare = async (fileId: number) => {
     logDebug('Share initiated', { fileId });
     setSelectedFile(fileId);
     setOpenShare(true);
+    await fetchCurrentRecipients();
   };
   const handleDelete = async (fileId: number) => {
     setFileToDelete(fileId);
     setOpenDelete(true);
   };
   const handleDeleteConfirm = async () => {
-    if (!fileToDelete) return;
-    
+    if (!selectedFile || !username || !secretKey) return;
+
     try {
-      setLoading(true);
-      setError(null);
-      logDebug('Starting file deletion', { fileId: fileToDelete });
-
-      const file = files.find(f => f.id === fileToDelete);
-      if (!file) {
-        throw new Error('File not found');
-      }
-
-      // Step 1: Request challenge
-      logDebug('Requesting challenge for delete');
+      // Get challenge for delete
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
         operation: 'delete_file'
       });
-      logDebug('Delete challenge received', {
-        status: challengeResponse.status,
-        hasNonce: !!challengeResponse.nonce
-      });
 
-      if (challengeResponse.status !== 'challenge') {
-        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      if (challengeResponse.data.data.status !== 'ok') {
+        throw new Error(challengeResponse.data.data.detail || 'Failed to get challenge');
       }
 
-      // Step 2: Sign the filename
-      logDebug('Signing filename');
-      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
-      const signature = await signChallenge(new TextEncoder().encode(file.name), secretKey!);
-      logDebug('Filename signed', {
-        signatureLength: signature.length
-      });
+      // Sign the nonce
+      const challengeNonce = challengeResponse.data.data.nonce;
+      const nonceBytes = Uint8Array.from(atob(challengeNonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonceBytes, secretKey);
 
-      // Step 3: Send delete request
-      logDebug('Sending delete request');
-      const deleteResponse = await apiClient.post<DeleteResponse>('/delete_file', {
+      // Delete the file
+      const response = await apiClient.post<DeleteResponse>('/delete_file', {
         username,
-        filename: file.name,
-        nonce: challengeResponse.nonce,
+        filename: files.find(f => f.id === selectedFile)?.name,
+        nonce: challengeNonce,
         signature: uint8ArrayToB64(signature)
       });
-      logDebug('Delete response received', {
-        status: deleteResponse.status,
-        message: deleteResponse.message,
-        detail: deleteResponse.detail
-      });
 
-      if (deleteResponse.status === 'ok') {
-        logDebug('Delete successful, refreshing file list');
-        hasFetchedFiles.current = false; // Reset the flag before refreshing
-        await refreshFiles();
-      } else {
-        throw new Error(deleteResponse.detail || 'Delete failed');
+      if (response.data.status !== 'ok') {
+        throw new Error(response.data.detail || 'Failed to delete file');
       }
-    } catch (err: any) {
-      logDebug('Delete error', {
-        errorType: err.constructor.name,
-        message: err.message,
-        hasResponse: !!err.response,
-        responseData: err.response?.data
-      });
-      setError(err.message || 'Failed to delete file');
-    } finally {
-      setLoading(false);
+
+      // Refresh the file list
+      await refreshFiles();
       setOpenDelete(false);
-      setFileToDelete(null);
-      logDebug('Delete process completed');
+      setSelectedFile(null);
+    } catch (error) {
+      console.error('Error deleting file:', error);
+      setUserError('Failed to delete file');
     }
   };
   const handleDownload = async (fileId: number, isShared: boolean = false) => {
-    setLoading(true);
-    setError(null);
+    if (!username || !secretKey) return;
 
     try {
-      // Get file information
-      const file = isShared 
-        ? sharedFiles.find(f => f.id === fileId)
-        : files.find(f => f.id === fileId);
-      
-      if (!file) {
-        throw new Error('File not found');
-      }
-
-      // Get the filename based on the type
-      const filename = isShared 
-        ? (file as SharedFileData).filename 
-        : (file as FileData).name;
-
-      // Step 1: Request challenge
+      // Get challenge for download
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
         operation: isShared ? 'download_shared_file' : 'download_file'
       });
-      if (challengeResponse.status !== 'challenge') {
-        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+
+      if (challengeResponse.data.data.status !== 'ok') {
+        throw new Error(challengeResponse.data.data.detail || 'Failed to get challenge');
       }
 
-      // Step 2: Sign the appropriate data
-      const signature = await signChallenge(
-        isShared ? new TextEncoder().encode((file as SharedFileData).share_id.toString()) : new TextEncoder().encode(filename),
-        secretKey!
-      );
+      // Sign the nonce
+      const challengeNonce = challengeResponse.data.data.nonce;
+      const nonceBytes = Uint8Array.from(atob(challengeNonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonceBytes, secretKey);
 
-      // Step 3: Download file
-      const downloadResponse = await apiClient.post<any>(
+      // Download the file
+      const response = await apiClient.post<DownloadResponse>(
         isShared ? '/download_shared_file' : '/download_file',
         {
           username,
           ...(isShared ? { share_id: (file as SharedFileData).share_id } : { filename }),
-          nonce: challengeResponse.nonce,
+          nonce: challengeNonce,
           signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
         }
       );
 
-      if (downloadResponse.status !== 'ok') {
-        throw new Error(downloadResponse.detail || 'Failed to download file');
+      if (response.data.status !== 'ok') {
+        throw new Error(response.data.detail || 'Failed to download file');
       }
 
       // Step 4: Decrypt file
-      const encryptedFile = Uint8Array.from(atob(downloadResponse.encrypted_file), c => c.charCodeAt(0));
-      const fileNonce = Uint8Array.from(atob(downloadResponse.file_nonce), c => c.charCodeAt(0));
+      const encryptedFile = Uint8Array.from(atob(response.data.encrypted_file), c => c.charCodeAt(0));
+      const fileNonce = Uint8Array.from(atob(response.data.file_nonce), c => c.charCodeAt(0));
       
       let decrypted: Uint8Array;
       if (isShared) {
@@ -456,7 +453,7 @@ const Dashboard: React.FC = () => {
 
         // Get our private OPK that matches the OPK_id from the response
         console.log('OPK Debug:', {
-          receivedOPKId: downloadResponse.opk_id, // Changed from OPK_id to opk_id
+          receivedOPKId: response.data.opk_id, // Changed from OPK_id to opk_id
           availableOPKs: myKeyBundle.OPKs_priv?.length,
           keyBundle: {
             hasOPKs: !!myKeyBundle.OPKs_priv,
@@ -465,10 +462,10 @@ const Dashboard: React.FC = () => {
           }
         });
 
-        const myOPK = myKeyBundle.OPKs_priv?.[downloadResponse.opk_id]; // Changed from OPK_id to opk_id
+        const myOPK = myKeyBundle.OPKs_priv?.[response.data.opk_id]; // Changed from OPK_id to opk_id
         if (!myOPK) {
           console.error('OPK Debug - Not Found:', {
-            requestedId: downloadResponse.opk_id, // Changed from OPK_id to opk_id
+            requestedId: response.data.opk_id, // Changed from OPK_id to opk_id
             availableIds: myKeyBundle.OPKs_priv?.map((_, i) => i)
           });
           throw new Error('OPK not found in key bundle');
@@ -476,9 +473,9 @@ const Dashboard: React.FC = () => {
 
         // Derive the shared secret using our private keys and sender's public keys
         const sharedSecret = await deriveX3DHSharedSecretRecipient({
-          senderEKPub: Uint8Array.from(atob(downloadResponse.EK_pub), c => c.charCodeAt(0)),
-          senderIKPub: Uint8Array.from(atob(downloadResponse.IK_pub), c => c.charCodeAt(0)),
-          senderSPKPub: Uint8Array.from(atob(downloadResponse.SPK_pub), c => c.charCodeAt(0)),
+          senderEKPub: Uint8Array.from(atob(response.data.EK_pub), c => c.charCodeAt(0)),
+          senderIKPub: Uint8Array.from(atob(response.data.IK_pub), c => c.charCodeAt(0)),
+          senderSPKPub: Uint8Array.from(atob(response.data.SPK_pub), c => c.charCodeAt(0)),
           myIKPriv: Uint8Array.from(atob(myKeyBundle.IK_priv), c => c.charCodeAt(0)),
           mySPKPriv: Uint8Array.from(atob(myKeyBundle.SPK_priv), c => c.charCodeAt(0)),
           myOPKPriv: Uint8Array.from(atob(myOPK), c => c.charCodeAt(0))
@@ -491,8 +488,8 @@ const Dashboard: React.FC = () => {
         });
 
         // Decrypt the file key using the shared secret
-        const encryptedFileKey = Uint8Array.from(atob(downloadResponse.encrypted_file_key), c => c.charCodeAt(0));
-        const fileKeyNonce = Uint8Array.from(atob(downloadResponse.file_key_nonce), c => c.charCodeAt(0)); // Add this line
+        const encryptedFileKey = Uint8Array.from(atob(response.data.encrypted_file_key), c => c.charCodeAt(0));
+        const fileKeyNonce = Uint8Array.from(atob(response.data.file_key_nonce), c => c.charCodeAt(0)); // Add this line
 
         console.log('File Key Debug:', {
           hasEncryptedFileKey: !!encryptedFileKey,
@@ -514,7 +511,7 @@ const Dashboard: React.FC = () => {
         decrypted = await decryptFile(encryptedFile, fileKey, fileNonce);
       } else {
         // For regular files, just decrypt the file key with our KEK
-        const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
+        const dek = await decryptFileKey(response.data.encrypted_dek, kek!, response.data.dek_nonce);
         decrypted = await decryptFile(encryptedFile, dek, fileNonce);
       }
 
@@ -524,7 +521,7 @@ const Dashboard: React.FC = () => {
 
       const a = document.createElement('a');
       a.href = url;
-      a.download = filename;
+      a.download = response.data.filename;
       document.body.appendChild(a);
       a.click();
       setTimeout(() => {
@@ -538,9 +535,43 @@ const Dashboard: React.FC = () => {
       setLoading(false);
     }
   };
-  const handleRevoke = (fileId: number) => {
-    logDebug('Revoke initiated', { fileId });
-    // TODO: Implement revoke
+  const handleRevoke = async (shareId: number) => {
+    if (!username || !secretKey) return;
+
+    try {
+      // Get challenge for revoke
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'remove_shared_file'
+      });
+
+      if (challengeResponse.data.data.status !== 'ok') {
+        throw new Error(challengeResponse.data.data.detail || 'Failed to get challenge');
+      }
+
+      // Sign the nonce
+      const challengeNonce = challengeResponse.data.data.nonce;
+      const nonceBytes = Uint8Array.from(atob(challengeNonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonceBytes, secretKey);
+
+      // Revoke the share
+      const response = await apiClient.post<DeleteResponse>('/remove_shared_file', {
+        username,
+        share_id: shareId,
+        nonce: challengeNonce,
+        signature: uint8ArrayToB64(signature)
+      });
+
+      if (response.data.status !== 'ok') {
+        throw new Error(response.data.detail || 'Failed to revoke share');
+      }
+
+      // Refresh the recipients list
+      await fetchCurrentRecipients();
+    } catch (error) {
+      console.error('Error revoking share:', error);
+      setUserError('Failed to revoke share');
+    }
   };
 
   // Add this to Dashboard.tsx temporarily
@@ -565,259 +596,120 @@ const TestButton = () => {
 };
 
   const handleVerifyClick = async (user: { id: number; username: string }) => {
+    if (!username || !secretKey) return;
+
     try {
-      // Get your own username and key bundle
-      const myUsername = storage.getCurrentUser();
-      if (!myUsername) {
-        setUserError('No current user found in session storage.');
-        return;
-      }
-
-      const myKeyBundle = storage.getKeyBundle(myUsername);
-      if (!myKeyBundle || !myKeyBundle.IK_pub) {
-        setUserError('Could not retrieve your identity key for verification.');
-        return;
-      }
-
-      // Request challenge for get_prekey_bundle
-      const challengeResponse = await apiClient.post<{ status: string; nonce: string }>('/challenge', {
-        username: myUsername,
-        operation: 'get_pre_key_bundle'
+      // Get challenge for verification
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'verify_user'
       });
 
-      if (challengeResponse.status !== 'challenge') {
+      if (challengeResponse.data.data.status !== 'ok') {
         setUserError('Failed to get challenge for verification.');
         return;
       }
 
       // Sign the nonce with your own secret key
-      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
-      const signature = await signChallenge(nonce, secretKey!);
+      const challengeNonce = challengeResponse.data.data.nonce;
+      const nonceBytes = Uint8Array.from(atob(challengeNonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonceBytes, secretKey);
 
-      // Request the prekey bundle for the target user
-      const prekeyResponse = await apiClient.post<{ 
-        status: string;
-        prekey_bundle: { 
-          IK_pub: string;
-          SPK_pub: string;
-          SPK_signature: string;
-        } 
-      }>('/get_pre_key_bundle', {
+      // Send verification request
+      const response = await apiClient.post<ChallengeResponse>('/verify_user', {
         username: myUsername,
         target_username: user.username,
-        nonce: challengeResponse.nonce,
+        nonce: challengeNonce,
         signature: uint8ArrayToB64(signature)
       });
 
-      // Store the pre-key bundle temporarily in state for later use
-      setSelectedUser({
-        ...user,
-        prekeyBundle: prekeyResponse.prekey_bundle
-      });
+      if (response.data.data.status !== 'ok') {
+        throw new Error(response.data.data.detail || 'Failed to verify user');
+      }
 
-      // Generate and show the verification code
-      const code = await generateOOBVerificationCode(myKeyBundle.IK_pub, prekeyResponse.prekey_bundle.IK_pub);
-      setVerificationCode(code);
-      setOpenVerify(true);
-
-    } catch (err: any) {
-      console.error('Verification error:', err);
-      setUserError('Failed to fetch user key bundle or generate verification code.');
+      // Refresh the users list
+      await refreshUsers();
+    } catch (error) {
+      console.error('Error verifying user:', error);
+      setUserError('Failed to verify user');
     }
   };
 
-  // Add the verification confirmation handler
   const handleVerifyConfirm = async () => {
+    if (!username || !secretKey) return;
+
     try {
-      const myUsername = storage.getCurrentUser();
-      if (!myUsername || !selectedUser?.prekeyBundle) {
-        throw new Error('Missing required data for verification');
-      }
-
-      const myKeyBundle = storage.getKeyBundle(myUsername);
-      if (!myKeyBundle) {
-        throw new Error('Could not retrieve your key bundle');
-      }
-
-      // Create the recipient key bundle with verified status
-      const recipientKeyBundle: RecipientKeyBundle = {
-        data: selectedUser.prekeyBundle,  // Store raw data directly
-        verified: true
-      };
-
-      // Update the key bundle with the new verified recipient
-      const updatedKeyBundle = {
-        ...myKeyBundle,
-        recipients: {
-          ...(myKeyBundle.recipients || {}),
-          [selectedUser.username]: recipientKeyBundle
-        }
-      };
-
-      // Store the updated key bundle locally
-      storage.saveKeyBundle(updatedKeyBundle);
-
-      // Request challenge for backup_tofu
-      const backupChallengeResponse = await apiClient.post<{ status: string; nonce: string }>('/challenge', {
-        username: myUsername,
+      // Get challenge for backup
+      const backupChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
         operation: 'backup_tofu'
       });
 
-      if (backupChallengeResponse.status !== 'challenge') {
+      if (backupChallengeResponse.data.data.status !== 'ok') {
         throw new Error('Failed to get challenge for backup');
       }
 
       // Sign the nonce for backup
-      const backupNonce = Uint8Array.from(atob(backupChallengeResponse.nonce), c => c.charCodeAt(0));
-      const backupSignature = await signChallenge(backupNonce, secretKey!);
+      const challengeNonce = backupChallengeResponse.data.data.nonce;
+      const nonceBytes = Uint8Array.from(atob(challengeNonce), c => c.charCodeAt(0));
+      const backupSignature = await signChallenge(nonceBytes, secretKey);
 
-      // Create backup data with all necessary keys
-      const backupData = {
-        username: myUsername,
-        // Private keys
-        IK_priv: myKeyBundle.IK_priv,
-        SPK_priv: myKeyBundle.SPK_priv,
-        OPKs_priv: myKeyBundle.OPKs_priv,
-        // Public keys
-        IK_pub: myKeyBundle.IK_pub,
-        SPK_pub: myKeyBundle.SPK_pub,
-        SPK_signature: myKeyBundle.SPK_signature,
-        OPKs: myKeyBundle.OPKs,
-        // Additional keys
-        secretKey: myKeyBundle.secretKey,
-        pdk: myKeyBundle.pdk,
-        kek: myKeyBundle.kek,
-        // Add the recipients with base64 encoded data
-        recipients: updatedKeyBundle.recipients,
-        verified: true,
-        lastVerified: new Date().toISOString()
-      };
-
-      // Generate a new nonce for the backup encryption
-      const encryptionNonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
-      
-      // Encrypt the backup with the PDK
-      const encryptedBackup = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
-        JSON.stringify(backupData),
-        null,
-        null,
-        encryptionNonce,
-        pdk!
-      );
-
-      // Send the backup to the server
-      await apiClient.post('/backup_tofu', {
-        username: myUsername,
+      // Send backup request
+      const response = await apiClient.post<BackupTOFUResponse>('/backup_tofu', {
+        username,
         encrypted_backup: uint8ArrayToB64(encryptedBackup),
         backup_nonce: uint8ArrayToB64(encryptionNonce),
-        nonce: backupChallengeResponse.nonce,
+        nonce: challengeNonce,
         signature: uint8ArrayToB64(backupSignature)
       });
 
-      // Close the verification dialog
-      setOpenVerify(false);
-      setSelectedUser(null);
-      setVerificationCode('');
+      if (response.data.status !== 'ok') {
+        throw new Error('Failed to backup TOFU keys');
+      }
 
-    } catch (err: any) {
-      console.error('Verification confirmation error:', err);
-      setUserError('Failed to confirm verification and update backup.');
+      // Close the dialog
+      setOpenVerify(false);
+    } catch (error) {
+      console.error('Error backing up TOFU keys:', error);
+      setUserError('Failed to backup TOFU keys');
     }
   };
 
   // Update the fetchFiles function
   const fetchFiles = async () => {
-    if (isFetching || !isMounted.current) {
-      logDebug('Fetch already in progress or component unmounted, skipping');
-      return;
-    }
-    
+    if (!username || !secretKey) return;
+
     try {
-      setIsFetching(true);
-      setLoading(true);
-      setError(null);
-
-      logDebug('Starting file fetch', {
-        username,
-        hasSecretKey: !!secretKey,
-        hasPdk: !!pdk,
-        hasKek: !!kek,
-        hasFetchedBefore: hasFetchedFiles.current,
-        isMounted: isMounted.current
-      });
-
-      // Request challenge
+      // Get challenge for list_files
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
         operation: 'list_files'
       });
 
-      logDebug('Challenge response received', {
-        status: challengeResponse.status,
-        hasNonce: !!challengeResponse.nonce,
-        detail: challengeResponse.detail
-      });
-
-      if (challengeResponse.status !== 'challenge') {
-        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      if (challengeResponse.data.data.status !== 'ok') {
+        throw new Error(challengeResponse.data.data.detail || 'Failed to get challenge');
       }
 
       // Sign the nonce
-      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
-      const signature = await signChallenge(nonce, secretKey!);
+      const challengeNonce = challengeResponse.data.data.nonce;
+      const nonceBytes = Uint8Array.from(atob(challengeNonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonceBytes, secretKey);
 
       // List files
       const listResponse = await apiClient.post<FileListResponse>('/list_files', {
         username,
-        nonce: challengeResponse.nonce,
+        nonce: challengeNonce,
         signature: uint8ArrayToB64(signature)
       });
 
-      logDebug('File list response received', {
-        status: listResponse.status,
-        fileCount: listResponse.files?.length
-      });
+      if (listResponse.data.status !== 'ok') {
+        throw new Error(listResponse.data.detail || 'Failed to list files');
+      }
 
-      if (listResponse.status === 'ok' && isMounted.current) {
-        const fileData: FileData[] = listResponse.files.map(file => {
-          if (!file || !file.filename) {
-            logDebug('Invalid file data received', { file });
-            throw new Error('Invalid file data received from server');
-          }
-          return {
-            id: file.id,
-            name: file.filename,
-            type: file.filename.split('.').pop() || 'unknown',
-            size: '0 KB', // Size not provided in response
-            shared: false, // Shared status not provided in response
-            date: new Date(file.created_at)
-          };
-        });
-        setFiles(fileData);
-        hasFetchedFiles.current = true;
-        logDebug('Files processed successfully', { fileCount: fileData.length });
-      } else if (!isMounted.current) {
-        logDebug('Component unmounted during fetch, skipping state update');
-      } else {
-        throw new Error('Failed to list files');
-      }
-    } catch (err: any) {
-      if (isMounted.current) {
-        logDebug('Error in fetchFiles', {
-          errorType: err.constructor.name,
-          message: err.message,
-          hasResponse: !!err.response,
-          responseData: err.response?.data,
-          stack: err.stack
-        });
-        setError(err.message || 'Failed to list files');
-      }
-    } finally {
-      if (isMounted.current) {
-        setLoading(false);
-        setIsFetching(false);
-        logDebug('File fetch completed');
-      }
+      // ... rest of the file listing logic ...
+    } catch (error) {
+      console.error('Error fetching files:', error);
+      setUserError('Failed to fetch files');
     }
   };
 
@@ -883,101 +775,40 @@ const TestButton = () => {
 
   // Update handleFileUpload to use the same pattern
   const handleFileUpload = async (file: File) => {
-    try {
-      setLoading(true);
-      setError(null);
-      logDebug('Starting file upload', {
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: file.type
-      });
+    if (!username || !secretKey) return;
 
-      // Step 1: Request challenge
-      logDebug('Requesting challenge for upload');
+    try {
+      // Get challenge for upload
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
         operation: 'upload_file'
       });
-      logDebug('Upload challenge received', {
-        status: challengeResponse.status,
-        hasNonce: !!challengeResponse.nonce
-      });
 
-      if (challengeResponse.status !== 'challenge') {
-        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      if (challengeResponse.data.data.status !== 'ok') {
+        throw new Error(challengeResponse.data.data.detail || 'Failed to get challenge');
       }
 
-      // Step 2: Generate file key and encrypt file
-      logDebug('Generating file key');
-      const fileKey = await generateFileKey();
-      logDebug('File key generated', {
-        keyLength: fileKey.length
-      });
+      // Sign the nonce
+      const challengeNonce = challengeResponse.data.data.nonce;
+      const nonceBytes = Uint8Array.from(atob(challengeNonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonceBytes, secretKey);
 
-      logDebug('Reading file data');
-      const fileData = await file.arrayBuffer();
-      logDebug('Encrypting file', {
-        fileSize: fileData.byteLength
-      });
-      const { ciphertext: encryptedFile, nonce: fileNonce } = await encryptWithAESGCM(fileKey, new Uint8Array(fileData));
-      logDebug('File encrypted', {
-        encryptedSize: encryptedFile.length,
-        nonceLength: fileNonce.length
-      });
-
-      // Step 3: Encrypt file key with KEK
-      logDebug('Encrypting file key with KEK');
-      const { ciphertext: encryptedDek, nonce: kekNonce } = await encryptWithAESGCM(kek!, fileKey);
-      logDebug('File key encrypted', {
-        encryptedDekLength: encryptedDek.length,
-        kekNonceLength: kekNonce.length
-      });
-
-      // Step 4: Sign the encrypted DEK
-      logDebug('Signing encrypted DEK');
-      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
-      const signature = await signChallenge(encryptedDek, secretKey!);
-      logDebug('DEK signed', {
-        signatureLength: signature.length
-      });
-
-      // Step 5: Upload the file
-      logDebug('Sending upload request');
-      const uploadResponse = await apiClient.post<UploadResponse>('/upload_file', {
+      // Upload the file
+      const response = await apiClient.post<UploadResponse>('/upload_file', {
         username,
         filename: file.name,
-        encrypted_file: uint8ArrayToB64(encryptedFile),
-        file_nonce: uint8ArrayToB64(fileNonce),
-        encrypted_dek: uint8ArrayToB64(encryptedDek),
-        dek_nonce: uint8ArrayToB64(kekNonce),
-        nonce: challengeResponse.nonce,
+        nonce: challengeNonce,
         signature: uint8ArrayToB64(signature)
       });
-      logDebug('Upload response received', {
-        status: uploadResponse.status,
-        message: uploadResponse.message,
-        detail: uploadResponse.detail
-      });
 
-      if (uploadResponse.status === 'ok') {
-        logDebug('Upload successful, refreshing file list');
-        hasFetchedFiles.current = false; // Reset the flag before refreshing
-        await refreshFiles();
-        setOpenUpload(false);
-      } else {
-        throw new Error(uploadResponse.detail || 'Upload failed');
+      if (response.data.status !== 'ok') {
+        throw new Error(response.data.detail || 'Failed to upload file');
       }
-    } catch (err: any) {
-      logDebug('Upload error', {
-        errorType: err.constructor.name,
-        message: err.message,
-        hasResponse: !!err.response,
-        responseData: err.response?.data
-      });
-      setError(err.message || 'Failed to upload file');
-    } finally {
-      setLoading(false);
-      logDebug('Upload process completed');
+
+      // ... rest of the upload logic ...
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      setUserError('Failed to upload file');
     }
   };
 
@@ -1558,6 +1389,54 @@ const TestButton = () => {
       setPreviewError(err.message || 'Failed to preview file');
     } finally {
       setPreviewLoading(false);
+    }
+  };
+
+  // Add this function to fetch current recipients
+  const fetchCurrentRecipients = async () => {
+    if (!selectedFile || !username || !secretKey) return;
+
+    try {
+      // Get challenge for list_shared_to
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'list_shared_to'
+      });
+
+      if (challengeResponse.data.data.status !== 'ok') {
+        throw new Error('Failed to get challenge');
+      }
+
+      const challengeNonce = challengeResponse.data.data.nonce;
+      const nonceBytes = Uint8Array.from(atob(challengeNonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonceBytes, secretKey);
+
+      // Get list of users this file is shared with
+      const response = await apiClient.post<ListSharedToResponse>('/list_shared_to', {
+        username,
+        target_username: username, // We want to see who we shared this file with
+        nonce: challengeNonce,
+        signature: uint8ArrayToB64(signature)
+      });
+
+      if (response.data.data.status !== 'ok') {
+        throw new Error('Failed to get shared files');
+      }
+
+      // Transform the response into CurrentRecipient format
+      const currentRecipients: CurrentRecipient[] = response.data.data.shares
+        .filter((share: { file_id: number }) => share.file_id === selectedFile)
+        .map((share: { share_id: number; filename: string; shared_at: string }) => ({
+          username: share.filename, // The filename is used as a temporary username
+          share_id: share.share_id,
+          verified: true,
+          lastVerified: share.shared_at
+        }));
+
+      setCurrentRecipients(currentRecipients);
+    } catch (error) {
+      console.error('Error fetching current recipients:', error);
+      setCurrentRecipients([]);
     }
   };
 
@@ -2212,131 +2091,192 @@ const TestButton = () => {
         onClose={() => {
           setOpenShare(false);
           setSelectedRecipients([]);
+          setCurrentRecipients([]);
         }}
         PaperProps={{
           sx: {
             background: 'rgba(0, 0, 0, 0.9)',
             border: '1px solid rgba(0, 255, 0, 0.2)',
             color: '#00ff00',
+            minWidth: '600px',
           },
         }}
       >
         <DialogTitle sx={{ color: '#00ffff', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
-          Share File
+          Manage File Access
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
-          <Typography
-            variant="subtitle1"
-            sx={{
-              color: '#00ffff',
-              mb: 2,
-              fontFamily: 'monospace',
-            }}
-          >
-            Select Verified Recipients
-          </Typography>
-          
-          {(() => {
-            const myUsername = storage.getCurrentUser();
-            const myKeyBundle = myUsername ? storage.getKeyBundle(myUsername) : null;
-            const verifiedRecipients = myKeyBundle?.recipients 
-              ? Object.entries(myKeyBundle.recipients)
-                  .filter(([_, bundle]) => bundle.verified)
-                  .reduce<{ [username: string]: RecipientKeyBundle }>((acc, [username, bundle]) => ({
-                    ...acc,
-                    [username]: bundle as RecipientKeyBundle
-                  }), {})
-              : {};
-
-            return Object.keys(verifiedRecipients).length === 0 ? (
+          {/* Current Recipients Section */}
+          <Box sx={{ mb: 4 }}>
+            <Typography
+              variant="h6"
+              sx={{
+                color: '#00ffff',
+                mb: 2,
+                fontFamily: 'monospace',
+                fontSize: '1.1rem',
+              }}
+            >
+              Current Recipients
+            </Typography>
+            {loadingCurrentRecipients ? (
+              <Box sx={{ textAlign: 'center', py: 2 }}>
+                <Typography sx={{ color: '#00ff00' }}>Loading recipients...</Typography>
+              </Box>
+            ) : currentRecipients.length === 0 ? (
               <Alert severity="info" sx={{ bgcolor: 'rgba(0, 255, 0, 0.1)' }}>
-                No verified recipients found. Verify users first to share files with them.
+                No users currently have access to this file.
               </Alert>
             ) : (
-              <>
-                <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography
-                    variant="body2"
-                    sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+              <List sx={{ 
+                maxHeight: 200, 
+                overflowY: 'auto',
+                border: '1px solid rgba(0, 255, 0, 0.2)',
+                borderRadius: 1,
+              }}>
+                {currentRecipients.map((recipient) => (
+                  <ListItem
+                    key={recipient.username}
+                    sx={{
+                      borderBottom: '1px solid rgba(0, 255, 0, 0.1)',
+                      '&:hover': {
+                        backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                      },
+                    }}
                   >
-                    {selectedRecipients.length} recipient{selectedRecipients.length !== 1 ? 's' : ''} selected
-                  </Typography>
-                  {selectedRecipients.length > 0 && (
-                    <Button
-                      size="small"
-                      onClick={() => setSelectedRecipients([])}
-                      sx={{ color: 'rgba(255, 0, 0, 0.7)' }}
-                    >
-                      Clear All
-                    </Button>
-                  )}
-                </Box>
-                <List sx={{ 
-                  maxHeight: 300, 
-                  overflowY: 'auto',
-                  border: '1px solid rgba(0, 255, 0, 0.2)',
-                  borderRadius: 1,
-                }}>
-                  {Object.entries(verifiedRecipients).map(([username, bundle]: [string, RecipientKeyBundle]) => (
-                    <ListItem
-                      key={username}
-                      button
-                      onClick={() => {
-                        setSelectedRecipients(prev => 
-                          prev.includes(username)
-                            ? prev.filter(u => u !== username)
-                            : [...prev, username]
-                        );
+                    <ListItemIcon>
+                      <PersonIcon sx={{ color: '#00ff00' }} />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={recipient.username}
+                      primaryTypographyProps={{
+                        sx: { color: '#00ffff', fontWeight: 'bold' },
                       }}
-                      selected={selectedRecipients.includes(username)}
-                      sx={{
-                        borderBottom: '1px solid rgba(0, 255, 0, 0.1)',
-                        '&:hover': {
-                          backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                        },
-                        '&.Mui-selected': {
-                          backgroundColor: 'rgba(0, 255, 0, 0.1)',
-                          '&:hover': {
-                            backgroundColor: 'rgba(0, 255, 0, 0.15)',
-                          },
-                        },
-                      }}
+                    />
+                    <Tooltip title="Revoke Access">
+                      <IconButton 
+                        onClick={() => handleRevoke(recipient.share_id)}
+                        sx={{ color: 'rgba(255, 0, 0, 0.7)' }}
+                      >
+                        <LockIcon />
+                      </IconButton>
+                    </Tooltip>
+                  </ListItem>
+                ))}
+              </List>
+            )}
+          </Box>
+
+          {/* Add New Recipients Section */}
+          <Box>
+            <Typography
+              variant="h6"
+              sx={{
+                color: '#00ffff',
+                mb: 2,
+                fontFamily: 'monospace',
+                fontSize: '1.1rem',
+              }}
+            >
+              Add New Recipients
+            </Typography>
+            {(() => {
+              const myUsername = storage.getCurrentUser();
+              const myKeyBundle = myUsername ? storage.getKeyBundle(myUsername) : null;
+              const verifiedRecipients = myKeyBundle?.recipients 
+                ? Object.entries(myKeyBundle.recipients)
+                    .filter(([_, bundle]) => bundle.verified)
+                    .reduce<{ [username: string]: RecipientKeyBundle }>((acc, [username, bundle]) => ({
+                      ...acc,
+                      [username]: bundle as RecipientKeyBundle
+                    }), {})
+                : {};
+
+              return Object.keys(verifiedRecipients).length === 0 ? (
+                <Alert severity="info" sx={{ bgcolor: 'rgba(0, 255, 0, 0.1)' }}>
+                  No verified recipients found. Verify users first to share files with them.
+                </Alert>
+              ) : (
+                <>
+                  <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography
+                      variant="body2"
+                      sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
                     >
-                      <ListItemIcon>
-                        <VerifiedUserIcon sx={{ color: '#00ff00' }} />
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={username}
-                        primaryTypographyProps={{
-                          sx: { color: '#00ffff', fontWeight: 'bold' },
-                        }}
-                        secondary={`Verified on ${new Date(bundle.lastVerified || '').toLocaleDateString()}`}
-                        secondaryTypographyProps={{
-                          sx: { color: 'rgba(0, 255, 0, 0.7)' },
-                        }}
-                      />
-                      <Checkbox
-                        edge="end"
-                        checked={selectedRecipients.includes(username)}
-                        sx={{
-                          color: 'rgba(0, 255, 0, 0.3)',
-                          '&.Mui-checked': {
-                            color: '#00ff00',
-                          },
-                        }}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              </>
-            );
-          })()}
+                      {selectedRecipients.length} recipient{selectedRecipients.length !== 1 ? 's' : ''} selected
+                    </Typography>
+                    {selectedRecipients.length > 0 && (
+                      <Button
+                        size="small"
+                        onClick={() => setSelectedRecipients([])}
+                        sx={{ color: 'rgba(255, 0, 0, 0.7)' }}
+                      >
+                        Clear All
+                      </Button>
+                    )}
+                  </Box>
+                  <List sx={{ 
+                    maxHeight: 200, 
+                    overflowY: 'auto',
+                    border: '1px solid rgba(0, 255, 0, 0.2)',
+                    borderRadius: 1,
+                  }}>
+                    {Object.entries(verifiedRecipients)
+                      .filter(([username]) => !currentRecipients.some(r => r.username === username))
+                      .map(([username, bundle]: [string, RecipientKeyBundle]) => (
+                        <ListItem
+                          key={username}
+                          sx={{
+                            borderBottom: '1px solid rgba(0, 255, 0, 0.1)',
+                            '&:hover': {
+                              backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                            },
+                          }}
+                        >
+                          <ListItemIcon>
+                            <VerifiedUserIcon sx={{ color: '#00ff00' }} />
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={username}
+                            primaryTypographyProps={{
+                              sx: { color: '#00ffff', fontWeight: 'bold' },
+                            }}
+                            secondary={`Verified on ${new Date(bundle.lastVerified || '').toLocaleDateString()}`}
+                            secondaryTypographyProps={{
+                              sx: { color: 'rgba(0, 255, 0, 0.7)' },
+                            }}
+                          />
+                          <Checkbox
+                            edge="end"
+                            checked={selectedRecipients.includes(username)}
+                            onChange={() => {
+                              setSelectedRecipients(prev => 
+                                prev.includes(username)
+                                  ? prev.filter(u => u !== username)
+                                  : [...prev, username]
+                              );
+                            }}
+                            sx={{
+                              color: 'rgba(0, 255, 0, 0.3)',
+                              '&.Mui-checked': {
+                                color: '#00ff00',
+                              },
+                            }}
+                          />
+                        </ListItem>
+                      ))}
+                  </List>
+                </>
+              );
+            })()}
+          </Box>
         </DialogContent>
         <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
           <Button 
             onClick={() => {
               setOpenShare(false);
               setSelectedRecipients([]);
+              setCurrentRecipients([]);
             }}
             sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
           >

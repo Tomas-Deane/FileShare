@@ -221,7 +221,8 @@ const Login: React.FC = () => {
                 pdk: backupData.pdk,
                 kek: backupData.kek,
                 verified: true,
-                lastVerified: new Date().toISOString()
+                lastVerified: new Date().toISOString(),
+                recipients: backupData.recipients || {}
             };
         } catch (err) {
             console.error('Error processing backup data:', err);
