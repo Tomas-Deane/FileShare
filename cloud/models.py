@@ -174,17 +174,6 @@ def init_db():
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
-    # Migrate OPK_id to be nullable
-    try:
-        cursor.execute("""
-            ALTER TABLE shared_files
-            MODIFY COLUMN OPK_id BIGINT NULL;
-        """)
-        conn.commit()
-    except Exception as e:
-        logging.warning(f"Migration to make OPK_id nullable failed (this is normal if already migrated): {str(e)}")
-        conn.rollback()
-
     conn.commit()
     cursor.close()
     conn.close()
