@@ -28,23 +28,25 @@ public:
     void clear();
 
     // Load from an encrypted remote backup (base64‐encoded strings), decrypting
-    // with sessionKek, then populate m_list. Emits listChanged().
+    // with sessionKek, then populate m_list. Emits listChanged()
     void loadFromRemote(const QString &encryptedB64,
                         const QString &nonceB64);
 
-    // Given the current in‐memory list, serialize to JSON, encrypt with sessionKek,
-    // and return base64‐encoded ciphertext + nonce. (Called when performing a backup.)
+    // given the current in‐memory list, serialise to JSON, encrypt with sessionKek,
+    // and return base64‐encoded ciphertext + nonce. (called when performing a backup)
     void getEncryptedBackup(QString &outEncryptedB64,
                             QString &outNonceB64) const;
 
-    // Add a newly verified user (username + raw 32‐byte ikPub). Emits listChanged() and backupNeeded().
+    // Add a newly verified user (username + raw 32‐byte ikPub). emits listChanged() and backupNeeded().
+    // PASS BY REFERENCE | we pass by reference here as both values *could* be large.
+    // we want to avoid making large unnecessary copies, even if we do not intend to modify the caller's original
     void addVerifiedUser(const QString     &username,
                          const QByteArray  &ikPub);
 
-    // Remove a user by username. Emits listChanged() and backupNeeded() if removed.
+    // Removes a user by username. emits listChanged() and backupNeeded() if removed
     void removeVerifiedUser(const QString &username);
 
-    // Return a const reference to the current in‐memory list.
+    // Return a const reference to the current in‐memory list
     QVector<VerifiedUser> verifiedUsers() const;
 
 signals:
