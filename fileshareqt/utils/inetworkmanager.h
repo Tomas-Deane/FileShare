@@ -48,6 +48,9 @@ public:
     virtual void listSharers(const QJsonObject &payload) = 0;
     virtual void downloadSharedFile(const QJsonObject &payload) = 0;
 
+    // revoke a share (POST /remove_shared_file)
+    virtual void removeSharedFile(const QJsonObject &payload) = 0;
+
     // Misc
     virtual void checkConnection() = 0;
 
@@ -80,6 +83,8 @@ signals:
                             const QString &dekNonceB64,
                             const QString &message);
     void deleteFileResult(bool success, const QString &message);
+
+    void removeSharedFileResult(bool success, const QString &message);
 
     void downloadSharedFileResult(bool   success,
                                   const QString &encryptedFileB64,
