@@ -5,6 +5,7 @@
 #include "profilecontroller.h"
 #include "filecontroller.h"
 #include "verifycontroller.h"
+#include "sharecontroller.h"
 #include "logger.h"
 
 #include <QPixmap>
@@ -18,6 +19,7 @@ MainWindow::MainWindow(AuthController* authCtrl,
                        FileController* fileCtrl,
                        ProfileController* profileCtrl,
                        VerifyController* verifyCtrl,
+                       ShareController*    shareCtrl,
                        QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -25,6 +27,7 @@ MainWindow::MainWindow(AuthController* authCtrl,
     , profileController(profileCtrl)
     , fileController(fileCtrl)
     , verifyController(verifyCtrl)
+    , shareController(shareCtrl)
     , pendingDeleteItem(nullptr)
 {
     ui->setupUi(this);
@@ -45,6 +48,44 @@ MainWindow::MainWindow(AuthController* authCtrl,
             ui->verifiedUsersList->addItem(vu.username);
         }
     });
+
+    // Listen for the result of shareController->shareFile(...)
+    connect(shareController, &ShareController::shareFileResult, this, [=](bool success, const QString &message){
+        if (success) {
+                Logger::log("File shared successfully");
+            } else {
+                Logger::log("File share failed: " + message);
+            }
+        });
+
+    connect(verifyController, &VerifyController::updateVerifiedUsersList, this,
+            [=](const QList<VerifiedUser> &list){
+                ui->sharesToVerifiedUsersList->clear();
+                for (auto &vu : list) {
+                    ui->sharesToVerifiedUsersList->addItem(vu.username);
+                }
+            });
+
+    // 2) When the user clicks/selects a verified username in Shares To:
+    connect(ui->sharesToVerifiedUsersList, &QListWidget::itemSelectionChanged,
+            this, &MainWindow::on_sharesToVerifiedUsersList_itemSelectionChanged);
+
+    // 3) When shareController returns “listSharedTo” result:
+    connect(shareController, &ShareController::listSharedToResult,
+            this, &MainWindow::onSharesToFilesResult);
+
+    // 4) If you want to automatically refresh when the tab becomes active:
+    connect(ui->tabWidget, &QTabWidget::currentChanged,
+            this, [=](int idx){
+                using TI = MainWindow::TabIndex;
+                if (idx == TI::SharesTo) {
+                    // Ensure we have an up‐to‐date verified‐user list:
+                    verifyController->initializeVerifyPage();
+
+                    // Clear file list for the moment, until a user is picked:
+                    ui->sharesToFilesList->clear();
+                }
+            });
 
     // Populate “shareNewUserList” in the Share New tab in exactly the same way:
     connect(verifyController, &VerifyController::updateVerifiedUsersList, this,
@@ -72,6 +113,31 @@ MainWindow::MainWindow(AuthController* authCtrl,
                     Logger::log("Loaded TOFU list (“" + QString::number(list.size()) + "” users) from server");
                 }
             });
+
+    // ➊ When ShareController emits listSharersResult, populate sharedFromUsersList:
+    connect(shareController, &ShareController::listSharersResult,
+            this, [=](bool success, const QStringList &users, const QString &message) {
+                ui->sharesFromUsersList->clear();
+                if (!success) {
+                    Logger::log("Failed to fetch sharers: " + message);
+                    return;
+                }
+                for (const QString &u : users) {
+                    ui->sharesFromUsersList->addItem(u);
+                }
+            });
+
+    // ➋ When the user selects one of those sharers, call listFilesSharedFrom:
+    connect(ui->sharesFromUsersList, &QListWidget::itemSelectionChanged,
+            this, &MainWindow::on_sharedFromUsersList_itemSelectionChanged);
+
+    // ➌ We already have a slot for listSharedFromResult in ShareController:
+    connect(shareController, &ShareController::listSharedFromResult,
+            this, &MainWindow::onSharesFromFilesResult);
+
+    // Whenever ShareController finishes downloading a shared file, update the cache:
+    connect(shareController, &ShareController::downloadSharedFileResult,
+            this, &MainWindow::on_downloadSharedFileResult);
 
     connect(ui->generateCodeButton, &QPushButton::clicked, this, [=]{
         QString target = ui->targetUsernameLineEdit->text().trimmed();
@@ -304,8 +370,83 @@ void MainWindow::on_uploadFileButton_clicked()
     fileController->uploadFile(currentUploadPath, b64);
 }
 
+void MainWindow::on_shareFileButton_clicked()
+{
+    // 1) Find which file is currently selected in the “Share New” file list:
+    QListWidgetItem *fileItem = ui->shareNewFileList->currentItem();
+    if (!fileItem) {
+        Logger::log("No file selected to share");
+        return;
+    }
+
+    // We stored a placeholder “fileId” in Qt::UserRole when populating that list.
+    bool ok = false;
+    int fileId = fileItem->data(Qt::UserRole).toInt(&ok);
+    if (!ok) {
+        Logger::log("Invalid file ID; cannot share");
+        return;
+    }
+
+    // 2) Find which verified user is selected in the “Share New” user list:
+    QListWidgetItem *userItem = ui->shareNewUserList->currentItem();
+    if (!userItem) {
+        Logger::log("No recipient selected to share");
+        return;
+    }
+
+    QString recipientUsername = userItem->text();
+    if (recipientUsername.isEmpty()) {
+        Logger::log("Empty recipient username; cannot share");
+        return;
+    }
+
+    // 3) Finally, ask the ShareController to do the share flow:
+    shareController->shareFile(static_cast<qint64>(fileId), recipientUsername);
+}
+
+void MainWindow::on_sharesToVerifiedUsersList_itemSelectionChanged()
+{
+    // Which username is selected?
+    QListWidgetItem *item = ui->sharesToVerifiedUsersList->currentItem();
+    if (!item) {
+        ui->sharesToFilesList->clear();
+        return;
+    }
+
+    QString targetUsername = item->text();
+    if (targetUsername.isEmpty()) {
+        ui->sharesToFilesList->clear();
+        return;
+    }
+
+    // Ask shareController for all files CURRENT_USER has shared TO targetUsername:
+    shareController->listFilesSharedTo(targetUsername);
+}
+
+// When shareController returns the shares → populate the files list
+void MainWindow::onSharesToFilesResult(bool success,
+                                       const QList<SharedFile> &shares,
+                                       const QString &message)
+{
+    ui->sharesToFilesList->clear();
+
+    if (!success) {
+        Logger::log("Failed to fetch files shared TO user: " + message);
+        return;
+    }
+
+    // Each SharedFile has: share_id, file_id, filename, shared_by, shared_at
+    for (auto &sf : shares) {
+        auto item = new QListWidgetItem(sf.filename, ui->sharesToFilesList);
+        // Store the share_id or file_id if you need later—for now, we just show filenames:
+        item->setData(Qt::UserRole, QVariant::fromValue(sf.share_id));
+        // Optionally, show the timestamp as tooltip:
+        item->setToolTip(QString("Shared at: %1").arg(sf.shared_at));
+    }
+}
+
 void MainWindow::onListFilesResult(bool success,
-                                   const QStringList &files,
+                                   const QList<FileEntry> &files,
                                    const QString &message)
 {
     if (!success) {
@@ -319,15 +460,23 @@ void MainWindow::onListFilesResult(bool success,
     if (currentTab == TI::Download) {
         // Populate the Download tab’s list
         ui->downloadFileList->clear();
-        ui->downloadFileList->addItems(files);
+        for (const FileEntry &fe : files) {
+            auto item = new QListWidgetItem(fe.filename, ui->downloadFileList);
+            // Store the real file‐ID (from server) in UserRole
+            item->setData(Qt::UserRole, QVariant::fromValue(fe.id));
+        }
         ui->downloadFileNameLabel->setText("No file selected");
         ui->downloadFileTypeLabel->setText("-");
         ui->downloadPreviewStack->setCurrentIndex(0);
     }
     else if (currentTab == TI::ShareNew) {
-        // Populate the Share New tab’s list
+        // Populate the Share New tab’s list with (filename, id)
         ui->shareNewFileList->clear();
-        ui->shareNewFileList->addItems(files);
+        for (const auto &fe : files) {
+            auto item = new QListWidgetItem(fe.filename, ui->shareNewFileList);
+            // Now set the actual server‐provided file ID
+            item->setData(Qt::UserRole, QVariant::fromValue(fe.id));
+        }
     }
 }
 
@@ -454,6 +603,139 @@ void MainWindow::onDeleteFileResult(bool success, const QString &message)
     Logger::log("File deleted successfully");
 }
 
+void MainWindow::on_sharedFromUsersList_itemSelectionChanged()
+{
+    // Which sharer‐username is selected?
+    QListWidgetItem *item = ui->sharesFromUsersList->currentItem();
+    if (!item) {
+        ui->sharesFromFilesList->clear();
+        return;
+    }
+
+    QString sharer = item->text();
+    if (sharer.isEmpty()) {
+        ui->sharesFromFilesList->clear();
+        return;
+    }
+
+    // Tell ShareController to fetch all files that `sharer` shared to me:
+    shareController->listFilesSharedFrom(sharer);
+}
+
+void MainWindow::onSharesFromFilesResult(bool success,
+                                         const QList<SharedFile> &shares,
+                                         const QString &message)
+{
+    ui->sharesFromFilesList->clear();
+    if (!success) {
+        Logger::log("Failed to fetch files shared FROM user: " + message);
+        return;
+    }
+
+    for (const auto &sf : shares) {
+        auto item = new QListWidgetItem(sf.filename, ui->sharesFromFilesList);
+        item->setData(Qt::UserRole, QVariant::fromValue(sf.share_id));
+        item->setToolTip(QString("Shared by %1 at %2")
+                             .arg(sf.shared_by)
+                             .arg(sf.shared_at));
+    }
+}
+
+void MainWindow::on_saveSharesFromFileButton_clicked()
+{
+    // 1) What did the user select?
+    QListWidgetItem *item = ui->sharesFromFilesList->currentItem();
+    if (!item) {
+        Logger::log("No shared file selected to save");
+        return;
+    }
+
+    // We stored share_id in Qt::UserRole when populating the list:
+    bool ok = false;
+    qint64 shareId = item->data(Qt::UserRole).toLongLong(&ok);
+    if (!ok) {
+        Logger::log("Invalid share ID; cannot save");
+        return;
+    }
+
+    // The user sees the filename as the item text:
+    QString filename = item->text();
+    if (filename.isEmpty()) {
+        Logger::log("Empty filename; cannot save");
+        return;
+    }
+
+    // 2) Check if we already have the raw bytes in cache:
+    if (sharedDownloadCache.contains(filename)) {
+        // We already downloaded it; pop up “Save As…” immediately.
+        QString path = QFileDialog::getSaveFileName(
+            this,
+            tr("Save Shared File As"),
+            filename
+            );
+        if (path.isEmpty()) {
+            // user canceled
+            return;
+        }
+        QFile f(path);
+        if (!f.open(QIODevice::WriteOnly)) {
+            Logger::log("Failed to open file for writing: " + path);
+            return;
+        }
+        QByteArray data = sharedDownloadCache.value(filename);
+        f.write(data);
+        f.close();
+        Logger::log("Shared file '" + filename + "' saved to " + path);
+        return;
+    }
+
+    // 3) If we do NOT yet have it, ask the ShareController to download it:
+    Logger::log("Requesting download of shared file '" + filename + "' (share_id=" + QString::number(shareId) + ")");
+    shareController->downloadSharedFile(shareId, filename);
+    // Once ShareController finishes, on_downloadSharedFileResult(...) will be called, where we will pop the dialog.
+}
+
+void MainWindow::on_downloadSharedFileResult(bool success,
+                                             const QString &filename,
+                                             const QByteArray &data,
+                                             const QString &message)
+{
+    if (!success) {
+        Logger::log("Failed to download shared file '" + filename + "': " + message);
+        return;
+    }
+
+    // Cache the bytes so that next time we can reuse them
+    sharedDownloadCache.insert(filename, data);
+
+    // Make sure the user still has that same file selected before popping a dialog:
+    QListWidgetItem *item = ui->sharesFromFilesList->currentItem();
+    if (!item || item->text() != filename) {
+        // The user may have changed selection; bail out.
+        Logger::log("Downloaded shared file '" + filename + "', but it's no longer selected.");
+        return;
+    }
+
+    // Now pop up “Save As…”:
+    QString path = QFileDialog::getSaveFileName(
+        this,
+        tr("Save Shared File As"),
+        filename
+        );
+    if (path.isEmpty()) {
+        // user canceled
+        return;
+    }
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly)) {
+        Logger::log("Failed to open file for writing: " + path);
+        return;
+    }
+    f.write(data);
+    f.close();
+    Logger::log("Shared file '" + filename + "' saved to " + path);
+}
+
 void MainWindow::on_tabWidget_currentChanged(int index)
 {
     // Do not clear anything on tab switch—just refresh the necessary pages
@@ -463,27 +745,31 @@ void MainWindow::on_tabWidget_currentChanged(int index)
 
 void MainWindow::clearPage(int /*idx*/)
 {
-    // No-op: we do not clear fields when switching tabs anymore.
+
 }
+
 void MainWindow::refreshPage(int idx)
 {
     using TI = MainWindow::TabIndex;
     switch (idx) {
     case TI::Download:
-        // re‐fetch file list for Download tab
         fileController->listFiles();
         break;
 
     case TI::ShareNew:
-        // ⬇️ NEW: reload the TOFU (verified‐users) before showing “Share New” UI
         verifyController->initializeVerifyPage();
-        // then fetch file list (as before)
         fileController->listFiles();
         break;
 
     case TI::Verify:
-        // re‐fetch TOFU (verified‐users) when Verify tab is shown
         verifyController->initializeVerifyPage();
+        break;
+
+    case TI::SharesFrom:
+        // Before listing “shares from”, load TOFU keys exactly like Verify/ShareNew/SharesTo:
+        verifyController->initializeVerifyPage();
+        // Now fetch all usernames who have shared files to us:
+        shareController->listSharers();
         break;
 
     default:

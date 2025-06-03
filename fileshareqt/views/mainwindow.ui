@@ -70,7 +70,7 @@
              <string/>
             </property>
             <property name="pixmap">
-             <pixmap resource="../resources.qrc">:/nrmc_image.png</pixmap>
+             <pixmap resource="../../../../projects/FileShare/fileshareqt/build/Desktop_Qt_6_9_0-Debug/qmake_qmake_immediate.qrc">:/nrmc_image.png</pixmap>
             </property>
             <property name="scaledContents">
              <bool>true</bool>
@@ -547,8 +547,8 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>163</width>
-                   <height>40</height>
+                   <width>171</width>
+                   <height>36</height>
                   </rect>
                  </property>
                  <layout class="QVBoxLayout" name="verticalLayout_10">
@@ -604,7 +604,7 @@
           <item>
            <widget class="QStackedWidget" name="downloadPreviewStack">
             <property name="currentIndex">
-             <number>0</number>
+             <number>1</number>
             </property>
             <widget class="QWidget" name="page_3">
              <layout class="QVBoxLayout" name="verticalLayout_14">
@@ -625,8 +625,8 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>163</width>
-                   <height>40</height>
+                   <width>713</width>
+                   <height>172</height>
                   </rect>
                  </property>
                  <layout class="QVBoxLayout" name="verticalLayout_12">
@@ -770,14 +770,14 @@
             <item>
              <layout class="QVBoxLayout" name="verticalLayout_24">
               <item>
-               <widget class="QLabel" name="sharesFromVerifiedUsersLabel">
+               <widget class="QLabel" name="sharesFromUsersLabel">
                 <property name="text">
                  <string>Select a verified user: </string>
                 </property>
                </widget>
               </item>
               <item>
-               <widget class="QListWidget" name="sharesFromVerifiedUsersList"/>
+               <widget class="QListWidget" name="sharesFromUsersList"/>
               </item>
              </layout>
             </item>
@@ -800,7 +800,7 @@
           <item>
            <widget class="QStackedWidget" name="downloadPreviewStack_2">
             <property name="currentIndex">
-             <number>0</number>
+             <number>1</number>
             </property>
             <widget class="QWidget" name="page_5">
              <layout class="QVBoxLayout" name="verticalLayout_25">
@@ -821,8 +821,8 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>163</width>
-                   <height>40</height>
+                   <width>713</width>
+                   <height>183</height>
                   </rect>
                  </property>
                  <layout class="QVBoxLayout" name="verticalLayout_32">
@@ -1144,7 +1144,7 @@
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
  <resources>
-  <include location="../resources.qrc"/>
+  <include location="../../../../projects/FileShare/fileshareqt/build/Desktop_Qt_6_9_0-Debug/qmake_qmake_immediate.qrc"/>
  </resources>
  <connections/>
 </ui>
