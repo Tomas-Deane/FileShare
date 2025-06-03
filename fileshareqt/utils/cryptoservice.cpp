@@ -1,7 +1,6 @@
 #include "cryptoservice.h"
 #include "crypto_utils.h"
 
-
 CryptoService::CryptoService()
 {
     CryptoUtils::initializeLibrary();
@@ -29,6 +28,24 @@ void CryptoService::generateKeyPair(QByteArray &publicKey,
 QByteArray CryptoService::generateAeadKey()
 {
     return CryptoUtils::generateAeadKey();
+}
+
+void CryptoService::generateX25519KeyPair(QByteArray &publicKey,
+                                          QByteArray &secretKey)
+{
+    CryptoUtils::generateX25519KeyPair(publicKey, secretKey);
+}
+
+void CryptoService::generateOneTimePreKey(QByteArray &opkPub,
+                                          QByteArray &opkPriv)
+{
+    CryptoUtils::generateOneTimePreKey(opkPub, opkPriv);
+}
+
+QString CryptoService::computeOOBVerificationCode(const QByteArray &ik1_pub,
+                                                  const QByteArray &ik2_pub)
+{
+    return CryptoUtils::computeOOBCode(ik1_pub, ik2_pub);
 }
 
 QByteArray CryptoService::encrypt(const QByteArray &plaintext,

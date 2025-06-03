@@ -19,6 +19,7 @@ class CryptoService;
 class AuthController;
 class ProfileController;
 class FileController;
+class VerifyController;
 class NetworkManager;
 
 class MainWindow : public QMainWindow
@@ -30,18 +31,22 @@ public:
     MainWindow(AuthController* authCtrl,
                 FileController* fileCtrl,
                 ProfileController* profileCtrl,
+                VerifyController* verifyCtrl,
                 QWidget *parent = nullptr);
 
     ~MainWindow();
 
     enum TabIndex {
-        Home     = 0,
-        Signup   = 1,
-        Login    = 2,
-        Upload   = 3,
-        Download = 4,
-        Share    = 5,
-        Profile  = 6
+        Home        = 0,
+        SignUp      = 1,
+        Login       = 2,
+        Verify      = 3,
+        Upload      = 4,
+        Download    = 5,
+        ShareNew    = 6,
+        SharesTo    = 7,
+        SharesFrom  = 8,
+        Profile     = 9
     };
 
 private slots:
@@ -82,6 +87,7 @@ private:
     AuthController        *authController;
     ProfileController     *profileController;
     FileController        *fileController;
+    VerifyController      *verifyController;
     PasswordStrength       pwEvaluator;
 
     QString                currentUploadPath;
@@ -92,6 +98,13 @@ private:
     void updatePasswordStrength(const QString &text,
                                 QProgressBar *bar,
                                 QLabel *label);
+
+    // track the last‐active tab so we can clear it when leaving
+    int m_prevTabIndex;
+
+    // helpers for resetting UI
+    void clearPage(int index);
+    void refreshPage(int index);
 };
 
 #endif // MAINWINDOW_H

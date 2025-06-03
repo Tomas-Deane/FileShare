@@ -34,7 +34,11 @@ from schemas import (
     GetBackupTOFURequest,
     ListUsersRequest,
     ListSharedToRequest, 
-    ListSharedFromRequest
+    ListSharedFromRequest,
+    RetrieveFileDEKRequest,
+    DownloadSharedFileRequest,
+    ListMatchingUsersRequest,
+    ListSharersRequest,
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -75,9 +79,13 @@ app = FastAPI(
 # ─── Security headers (HSTS) ───────────────────────────────────────────────────
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    return response
+    try:
+        response = await call_next(request)
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+    except Exception as e:
+        logger.error("Error in security headers middleware", exc_info=e)
+        raise
 
 # ─── CORS ───────────────────────────────────────────────────────────────────────
 app.add_middleware(
@@ -186,6 +194,13 @@ async def upload_file(req: UploadRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"UploadFile response: {resp}")
     return resp
 
+@app.post("/retrieve_file_dek")
+async def retrieve_file_dek(req: RetrieveFileDEKRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"RetrieveFileDEKRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.retrieve_file_dek_handler, req, db)
+    logger.debug(f"RetrieveFileDEK response: {resp}")
+    return resp
+
 @app.post("/list_files")
 async def list_files(req: ListFilesRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"ListFilesRequest body: {req.model_dump_json()}")
@@ -227,7 +242,7 @@ async def add_prekey_bundle(req: AddPreKeyBundleRequest, db: models.UserDB = Dep
 @app.post("/opk")
 async def opk(req: GetOPKRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"GetOPKRequest body: {req.model_dump_json()}")
-    resp = await run_in_threadpool(handlers.opk_handler, req, db)
+    resp = await run_in_threadpool(handlers.get_opk_handler, req, db)
     logger.debug(f"OPK response: {resp}")
     return resp
 
@@ -259,6 +274,13 @@ async def list_shared_files(req: ListSharedFilesRequest, db: models.UserDB = Dep
     logger.debug(f"ListSharedFiles response: {resp}")
     return resp
 
+@app.post("/download_shared_file")
+async def download_shared_file(req: DownloadSharedFileRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"DownloadSharedFileRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.download_shared_file_handler, req, db)
+    logger.debug(f"DownloadSharedFile response: {resp}")
+    return resp
+
 @app.post("/backup_tofu")
 async def backup_tofu(req: BackupTOFURequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"BackupTOFURequest body: {req.model_dump_json()}")
@@ -280,7 +302,7 @@ async def list_users(req: ListUsersRequest, db: models.UserDB = Depends(get_db))
     logger.debug(f"ListUsers response: {resp}")
     return resp
 
-# New: list the files I have shared *to* a given user
+# list the files I have shared *to* a given user
 @app.post("/list_shared_to")
 async def list_shared_to(req: ListSharedToRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"ListSharedToRequest body: {req.model_dump_json()}")
@@ -288,7 +310,7 @@ async def list_shared_to(req: ListSharedToRequest, db: models.UserDB = Depends(g
     logger.debug(f"ListSharedTo response: {resp}")
     return resp
 
-# New: list the files shared *to me* *from* a given user
+# list the files shared *to me* *from* a given user
 @app.post("/list_shared_from")
 async def list_shared_from(req: ListSharedFromRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"ListSharedFromRequest body: {req.model_dump_json()}")
@@ -296,10 +318,26 @@ async def list_shared_from(req: ListSharedFromRequest, db: models.UserDB = Depen
     logger.debug(f"ListSharedFrom response: {resp}")
     return resp
 
+
+@app.post("/list_matching_users")
+async def list_matching_users(req: ListMatchingUsersRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListMatchingUsersRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.list_matching_users_handler, req, db)
+    logger.debug(f"ListMatchingUsers response: {resp}")
+    return resp
+
+# list all distinct users who have shared files to a target user
+@app.post("/list_sharers")
+async def list_sharers(req: ListSharersRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListSharersRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.list_sharers_handler, req, db)
+    logger.debug(f"ListSharers response: {resp}")
+    return resp
+
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     host     = os.environ.get('FS_HOST', '0.0.0.0')
-    port     = int(os.environ.get('FS_HTTPS_PORT', '3210'))
+    port     = int(os.environ.get('FS_HTTPS_PORT', '3220'))
     certfile = os.environ.get('SSL_CERTFILE', 'cert.pem')
     keyfile  = os.environ.get('SSL_KEYFILE', 'key.pem')
 
@@ -316,4 +354,3 @@ if __name__ == "__main__":
         ssl_keyfile=keyfile,
         log_config=None,
     )
-

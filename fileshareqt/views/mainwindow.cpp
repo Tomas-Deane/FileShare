@@ -4,6 +4,7 @@
 #include "authcontroller.h"
 #include "profilecontroller.h"
 #include "filecontroller.h"
+#include "verifycontroller.h"
 #include "logger.h"
 
 #include <QPixmap>
@@ -16,15 +17,76 @@
 MainWindow::MainWindow(AuthController* authCtrl,
                        FileController* fileCtrl,
                        ProfileController* profileCtrl,
+                       VerifyController* verifyCtrl,
                        QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
     , authController(authCtrl)
     , profileController(profileCtrl)
     , fileController(fileCtrl)
+    , verifyController(verifyCtrl)
     , pendingDeleteItem(nullptr)
 {
     ui->setupUi(this);
+
+    // Update codeLabel when OOB code arrives:
+    connect(verifyController, &VerifyController::oobCodeReady, this, [=](const QString &code, const QString &err){
+        if (!err.isEmpty()) {
+            ui->codeLabel->setText(err);
+        } else {
+            ui->codeLabel->setText(code);
+        }
+    });
+
+    // Populate the “verifiedUsersList” whenever updated:
+    connect(verifyController, &VerifyController::updateVerifiedUsersList, this, [=](const QList<VerifiedUser> &list){
+        ui->verifiedUsersList->clear();
+        for (auto &vu : list) {
+            ui->verifiedUsersList->addItem(vu.username);
+        }
+    });
+
+    // Optionally, show success/errors from backup:
+    connect(verifyController, &VerifyController::tofuBackupResult, this, [=](bool success, const QString &msg){
+        if (success) {
+            Logger::log("TOFU backup succeeded");
+        } else {
+            Logger::log("TOFU backup failed: " + msg);
+        }
+    });
+
+    connect(verifyController, &VerifyController::tofuLoadCompleted,
+            this, [=](const QList<VerifiedUser> &list, const QString &err){
+                if (!err.isEmpty()) {
+                    Logger::log("Failed to load TOFU from server: " + err);
+                } else {
+                    Logger::log("Loaded TOFU list (“" + QString::number(list.size()) + "” users) from server");
+                }
+            });
+
+    connect(ui->generateCodeButton, &QPushButton::clicked, this, [=]{
+        QString target = ui->targetUsernameLineEdit->text().trimmed();
+        verifyController->generateOOBCode(target);
+    });
+
+    connect(ui->verifyNewUserButton, &QPushButton::clicked, this, [=]{
+        QString target = ui->targetUsernameLineEdit->text().trimmed();
+        verifyController->verifyNewUser(target);
+    });
+
+    connect(ui->deleteVerifiedUserButton, &QPushButton::clicked, this, [=]{
+        // Get the currently‐selected username from the verified list
+        QListWidgetItem *item = ui->verifiedUsersList->currentItem();
+        if (!item) {
+            // nothing selected → no action
+            return;
+        }
+        QString toDelete = item->text();
+        verifyController->deleteVerifiedUser(toDelete);
+    });
+
+    // remember starting tab so refreshPage knows what to run first if needed
+    m_prevTabIndex = ui->tabWidget->currentIndex();
 
     // FileController signals
     connect(fileController, &FileController::uploadFileResult,
@@ -53,7 +115,7 @@ MainWindow::MainWindow(AuthController* authCtrl,
     connect(authController, &AuthController::connectionStatusChanged,
             this, &MainWindow::updateConnectionStatus);
 
-    // When switching tabs
+    // When switching tabs: only refresh, no clearing
     connect(ui->tabWidget, &QTabWidget::currentChanged,
             this, &MainWindow::on_tabWidget_currentChanged);
 
@@ -135,6 +197,9 @@ void MainWindow::handleLoggedOut()
     ui->downloadFileList->clear();
     ui->downloadFileNameLabel->setText("No file selected");
     ui->downloadFileTypeLabel->setText("-");
+    // We do want to clear Verify-page widgets on logout:
+    ui->targetUsernameLineEdit->clear();
+    ui->verifiedUsersList->clear();
 }
 
 void MainWindow::on_changeUsernameButton_clicked()
@@ -370,31 +435,33 @@ void MainWindow::onDeleteFileResult(bool success, const QString &message)
 
 void MainWindow::on_tabWidget_currentChanged(int index)
 {
-    constexpr int uploadIndex   = MainWindow::Upload;
-    constexpr int downloadIndex = MainWindow::Download;
+    // Do not clear anything on tab switch—just refresh the necessary pages
+    refreshPage(index);
+    m_prevTabIndex = index;
+}
 
-    if (index != uploadIndex) {
-        ui->fileNameLabel->setText(tr("No file selected"));
-        ui->fileTypeLabel->setText(tr("-"));
-        ui->uploadTextPreview->clear();
-        ui->uploadImagePreview->clear();
-        ui->uploadImagePreview->setText(tr("No Image File Selected"));
-        ui->uploadPreviewStack->setCurrentIndex(1);
-        currentUploadData.clear();
-        currentUploadPath.clear();
-    }
+void MainWindow::clearPage(int /*idx*/)
+{
+    // No-op: we do not clear fields when switching tabs anymore.
+}
 
-    if (index == downloadIndex) {
-        ui->downloadTextPreview->clear();
-        ui->downloadImagePreview->clear();
-        ui->downloadImagePreview->setText(tr("No Image File Selected"));
-        ui->downloadPreviewStack->setCurrentIndex(0);
+void MainWindow::refreshPage(int idx)
+{
+    using TI = MainWindow::TabIndex;
+    switch (idx) {
+    case TI::Download:
+        // always re-fetch your file list when switching to Download
         fileController->listFiles();
-    } else {
-        ui->downloadTextPreview->clear();
-        ui->downloadImagePreview->clear();
-        ui->downloadImagePreview->setText(tr("No Image File Selected"));
-        ui->downloadPreviewStack->setCurrentIndex(0);
+        break;
+
+    case TI::Verify:
+        // initialize (load) the verify page only when switching to Verify
+        verifyController->initializeVerifyPage();
+        break;
+
+    default:
+        // no auto-refresh on other pages
+        break;
     }
 }
 

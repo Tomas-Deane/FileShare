@@ -408,6 +408,75 @@ void NetworkManager::deleteFile(const QJsonObject &payload)
     }
 }
 
+void NetworkManager::getPreKeyBundle(const QJsonObject &payload)
+{
+    Logger::log("Sending getPreKeyBundle request: " +
+                QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3210, "/get_pre_key_bundle", payload, ok, message);
+    Logger::log("Received getPreKeyBundle response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit getPreKeyBundleResult(false, "", "", "", message);
+        return;
+    }
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        QJsonObject bundle = obj["prekey_bundle"].toObject();
+        QString ik_pub     = bundle["IK_pub"].toString();
+        QString spk_pub    = bundle["SPK_pub"].toString();
+        QString spk_sig    = bundle["SPK_signature"].toString();
+        emit getPreKeyBundleResult(true, ik_pub, spk_pub, spk_sig, "");
+    } else {
+        emit getPreKeyBundleResult(false, "", "", "", obj["detail"].toString());
+    }
+}
+
+void NetworkManager::backupTOFU(const QJsonObject &payload)
+{
+    Logger::log("Sending backupTOFU request: " +
+                QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3210, "/backup_tofu", payload, ok, message);
+    Logger::log("Received backupTOFU response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit backupTOFUResult(false, message);
+        return;
+    }
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj.contains("status") && obj["status"].toString() == "ok") {
+        emit backupTOFUResult(true, obj["message"].toString());
+    } else {
+        emit backupTOFUResult(false, obj["detail"].toString());
+    }
+}
+
+void NetworkManager::getBackupTOFU(const QJsonObject &payload)
+{
+    Logger::log("Sending getBackupTOFU request: " +
+                QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3210, "/get_backup_tofu", payload, ok, message);
+    Logger::log("Received getBackupTOFU response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit getBackupTOFUResult(false, "", "", message);
+        return;
+    }
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        QString enc      = obj["encrypted_backup"].toString();
+        QString nonce    = obj["backup_nonce"].toString();
+        emit getBackupTOFUResult(true, enc, nonce, "");
+    } else {
+        emit getBackupTOFUResult(false, "", "", obj["detail"].toString());
+    }
+}
+
 void NetworkManager::checkConnection()
 {
     int sock = -1;

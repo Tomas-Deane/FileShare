@@ -6,6 +6,7 @@ import logging
 import datetime
 import threading
 from dbutils.pooled_db import PooledDB
+from typing import List, Tuple
 
 # Database connection parameters (will use env variables)
 DB_USER     = os.environ.get('DB_USER',     'nrmc')
@@ -113,6 +114,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS opks (
         id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
         user_id             BIGINT              NOT NULL,
+        opk_id              BIGINT              NOT NULL CHECK (opk_id >= 0),
         pre_key             BLOB                NOT NULL,
         consumed            BOOLEAN             NOT NULL DEFAULT FALSE,
         created_at          DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -121,7 +123,8 @@ def init_db():
         REFERENCES users(id)
         ON DELETE CASCADE
         ON UPDATE CASCADE,
-        INDEX idx_user_consumed (user_id, consumed)
+        INDEX idx_user_consumed (user_id, consumed),
+        UNIQUE KEY unique_opk_id (user_id, opk_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
@@ -133,7 +136,10 @@ def init_db():
         recipient_id         BIGINT              NOT NULL,
         EK_pub               BLOB                NOT NULL,
         IK_pub               BLOB                NOT NULL,
+        SPK_pub              BLOB                NOT NULL,
+        SPK_signature        BLOB                NOT NULL,
         encrypted_file_key   BLOB                NOT NULL,
+        file_key_nonce       BLOB                NOT NULL,
         OPK_id              BIGINT              NOT NULL,
         shared_at            DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT fk_shared_file
@@ -410,7 +416,7 @@ class UserDB:
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
         sql = """
-            SELECT filename
+            SELECT filename, id, created_at
             FROM files
             WHERE owner_id = %s
             ORDER BY created_at
@@ -420,9 +426,9 @@ class UserDB:
         if not rows:
             return []
         if isinstance(rows[0], dict):
-            return [row['filename'] for row in rows]
+            return [{"filename": row['filename'], "id": row['id'], "created_at": row['created_at'].isoformat()} for row in rows]
         else:
-            return [row[0] for row in rows]
+            return [{"filename": row[0], "id": row[1], "created_at": row[2].isoformat()} for row in rows]
 
     def get_file(self, username, filename):
         conn, cursor = self._get_connection()
@@ -482,28 +488,68 @@ class UserDB:
         cursor.execute(sql, (user_id,))
         return cursor.fetchone()
 
+    def get_highest_opk_id(self, user_id):
+        """Get the highest opk_id for a user, or -1 if none exist."""
+        self.ensure_connection()
+        sql = """
+            SELECT MAX(opk_id) as max_id
+            FROM opks
+            WHERE user_id = %s
+        """
+        self.cursor.execute(sql, (user_id,))
+        row = self.cursor.fetchone()
+        if not row:
+            return -1
+        max_id = row['max_id'] if isinstance(row, dict) else row[0]
+        return max_id if max_id is not None else -1
+
     def add_opks(self, user_id, pre_keys):
         conn, cursor = self._get_connection()
+        """Add one-time pre-keys for a user.
+        Args:
+            user_id: The user's ID
+            pre_keys: List of tuples (opk_id, pre_key) where opk_id is a non-negative integer
+                     and pre_key is the binary pre-key data
+        """
+        self.ensure_connection()
+        #Validate input format,
+        if not isinstance(pre_keys, list):
+            raise ValueError("pre_keys must be a list")
+
+        for opk_id, pre_key in pre_keys:
+            if not isinstance(opk_id, int) or opk_id < 0:
+                raise ValueError(f"Invalid opk_id: {opk_id}. Must be a non-negative integer.")
+            if not isinstance(pre_key, bytes):
+                raise ValueError("pre_key must be bytes")
+
         sql = """
             INSERT INTO opks
-                (user_id, pre_key)
-            VALUES (%s, %s)
+                (user_id, opk_id, pre_key)
+            VALUES (%s, %s, %s)
         """
-        for pre_key in pre_keys:
-            cursor.execute(sql, (user_id, pre_key))
+        
+        for opk_id, pre_key in pre_keys:
+            cursor.execute(sql, (user_id, opk_id, pre_key))
         conn.commit()
 
     def get_unused_opk(self, user_id):
         conn, cursor = self._get_connection()
         sql = """
-            SELECT id, pre_key
+            SELECT id, opk_id, pre_key
             FROM opks
             WHERE user_id = %s AND consumed = FALSE
             ORDER BY created_at ASC
             LIMIT 1
         """
+        
         cursor.execute(sql, (user_id,))
-        return cursor.fetchone()
+        row = cursor.fetchone()
+        if not row:
+            return None
+        if isinstance(row, dict):
+            return row
+        columns = [col[0] for col in self.cursor.description]
+        return dict(zip(columns, row))
 
     def mark_opk_consumed(self, opk_id):
         conn, cursor = self._get_connection()
@@ -515,32 +561,35 @@ class UserDB:
         cursor.execute(sql, (opk_id,))
         conn.commit()
 
-    def share_file(self, file_id, recipient_id, EK_pub, IK_pub, encrypted_file_key, OPK_id):
+    def share_file(self, file_id: int, recipient_id: int, encrypted_file_key: bytes,
+                          file_key_nonce: bytes, EK_pub: bytes, IK_pub: bytes, 
+                          SPK_pub: bytes, SPK_signature: bytes, OPK_id: int):
         conn, cursor = self._get_connection()
         sql = """
             INSERT INTO shared_files
-                (file_id, recipient_id, EK_pub, IK_pub, encrypted_file_key, OPK_id)
+                (file_id, recipient_id, encrypted_file_key, file_key_nonce,
+                    EK_pub, IK_pub, SPK_pub, SPK_signature, OPK_id)
             VALUES (%s, %s, %s, %s, %s, %s)
         """
-        cursor.execute(sql, (file_id, recipient_id, EK_pub, IK_pub, encrypted_file_key, OPK_id))
+        cursor.execute(sql, (file_id, recipient_id, encrypted_file_key, file_key_nonce,
+                  EK_pub, IK_pub, SPK_pub, SPK_signature, OPK_id)))
         conn.commit()
 
-    def get_shared_files(self, recipient_id):
+    def get_shared_files(self, username: str) -> List[Tuple]:
+        """Get all files shared with the given user."""
+        # First get the user's ID
+        user_id = self._get_user_id(username)
+        if user_id is None:
+            return []
+          
         conn, cursor = self._get_connection()
         sql = """
-            SELECT 
-                sf.share_id,
-                sf.file_id,
-                sf.EK_pub,
-                sf.IK_pub,
-                sf.encrypted_file_key,
-                sf.OPK_id,
-                sf.shared_at,
-                f.filename
-            FROM shared_files sf
-            JOIN files f ON sf.file_id = f.id
-            WHERE sf.recipient_id = %s
-            ORDER BY sf.shared_at DESC
+            SELECT s.share_id, f.id, f.filename, um.username as shared_by, f.created_at
+            FROM shared_files s
+            JOIN files f ON s.file_id = f.id
+            JOIN username_map um ON f.owner_id = um.user_id
+            WHERE s.recipient_id = %s
+            ORDER BY f.created_at DESC
         """
         cursor.execute(sql, (recipient_id,))
         return cursor.fetchall()
@@ -554,6 +603,8 @@ class UserDB:
                 sf.recipient_id,
                 sf.EK_pub,
                 sf.IK_pub,
+                sf.SPK_pub,
+                sf.SPK_signature,
                 sf.encrypted_file_key,
                 sf.OPK_id,
                 sf.shared_at,
@@ -587,7 +638,11 @@ class UserDB:
             encrypted_data,
             backup_nonce
         ))
+        
         conn.commit()
+
+        # Clean up old backups, keeping only the most recent one
+        self.cleanup_old_tofu_backups(user_id, 1)
 
     def get_tofu_backup(self, user_id: int):
         conn, cursor = self._get_connection()
@@ -675,3 +730,189 @@ class UserDB:
         cursor.execute(sql, (recipient_id, owner_id))
         return cursor.fetchall()
 
+    def cleanup_old_tofu_backups(self, user_id: int, keep_last_n: int = 1):
+        self.ensure_connection()
+        sql = """
+            DELETE FROM tofu_backups 
+            WHERE user_id = %s 
+            AND id NOT IN (
+                SELECT id FROM (
+                    SELECT id 
+                    FROM tofu_backups 
+                    WHERE user_id = %s 
+                    ORDER BY created_at DESC 
+                    LIMIT %s
+                ) as latest
+            )
+        """
+        self.cursor.execute(sql, (user_id, user_id, keep_last_n))
+        self.conn.commit()
+
+    def retrieve_file_dek(self, file_id: int):
+        self.ensure_connection()
+        sql = """
+            SELECT encrypted_dek, dek_nonce
+            FROM files
+            WHERE id = %s
+        """
+        self.cursor.execute(sql, (file_id,))
+        row = self.cursor.fetchone()
+        if not row:
+            return None
+        if isinstance(row, dict):
+            return row
+        columns = [col[0] for col in self.cursor.description]
+        return dict(zip(columns, row))
+
+    def get_file_owner(self, file_id: int) -> int | None:
+        """Get the owner ID of a file."""
+        self.ensure_connection()
+        sql = """
+            SELECT owner_id
+            FROM files
+            WHERE id = %s
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (file_id,))
+        row = self.cursor.fetchone()
+        if not row:
+            return None
+        return row['owner_id'] if isinstance(row, dict) else row[0]
+
+    def get_shared_file(self, share_id: int, recipient_id: int):
+        """Get a shared file's data for a specific recipient, including the public OPK used for encryption."""
+        self.ensure_connection()
+        sql = """
+            SELECT 
+                f.id as file_id,
+                f.encrypted_file,
+                f.file_nonce,
+                sf.encrypted_file_key,
+                sf.file_key_nonce,
+                sf.EK_pub,
+                sf.IK_pub,
+                sf.SPK_pub,
+                sf.SPK_signature,
+                sf.OPK_id
+            FROM shared_files sf
+            JOIN files f ON sf.file_id = f.id
+            LEFT JOIN opks o ON o.opk_id = sf.OPK_id  -- Only join on opk_id
+            WHERE sf.share_id = %s
+            AND sf.recipient_id = %s
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (share_id, recipient_id))
+        row = self.cursor.fetchone()
+        if not row:
+            return None
+        if isinstance(row, dict):
+            return row
+        columns = [col[0] for col in self.cursor.description]
+        return dict(zip(columns, row))
+
+    def get_file_nonce(self, file_id: int) -> bytes:
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT file_nonce FROM files WHERE id = %s", (file_id,))
+            result = cur.fetchone()
+            return result[0] if result else None
+
+    def get_matching_users(self, search_query: str) -> list:
+        """Get all users whose usernames match the given search query."""
+        self.ensure_connection()
+        
+        # Sanitize the search query by removing any special regex characters
+        # and escape any remaining special characters
+        sanitized_query = search_query.replace('%', '\\%').replace('_', '\\_')
+        
+        # Use LIKE with wildcards for a more user-friendly search
+        sql = """
+            SELECT u.id, m.username
+            FROM users u
+            JOIN username_map m ON u.id = m.user_id
+            WHERE m.username LIKE %s
+            ORDER BY m.username
+            LIMIT 50
+        """
+        
+        # Add wildcards to make the search more flexible
+        search_pattern = f"%{sanitized_query}%"
+        
+        self.cursor.execute(sql, (search_pattern,))
+        return self.cursor.fetchall()
+    
+    def get_sharers(self, recipient_id: int) -> list[str]:
+        """
+        Return a list of all distinct usernames who have shared at least one file to `recipient_id`.
+        """
+        self.ensure_connection()
+        sql = """
+            SELECT DISTINCT um.username
+            FROM shared_files sf
+            JOIN files f ON sf.file_id = f.id
+            JOIN username_map um ON f.owner_id = um.user_id
+            WHERE sf.recipient_id = %s
+        """
+        self.cursor.execute(sql, (recipient_id,))
+        rows = self.cursor.fetchall()
+        if not rows:
+            return []
+        # Depending on cursor type, each row might be a dict or tuple
+        if isinstance(rows[0], dict):
+            return [row["username"] for row in rows]
+        else:
+            return [row[0] for row in rows]
+
+    def get_file_by_id(self, file_id: int):
+        """
+        Fetch the full file record (encrypted_file, file_nonce, encrypted_dek, dek_nonce, owner_id, filename)
+        by its internal ID.
+        """
+        self.ensure_connection()
+        sql = """
+            SELECT owner_id, filename, encrypted_file, file_nonce, encrypted_dek, dek_nonce
+            FROM files
+            WHERE id = %s
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (file_id,))
+        row = self.cursor.fetchone()
+        if not row:
+            return None
+        if isinstance(row, dict):
+            # Convert BLOBs & keep owner_id and filename
+            return {
+                "owner_id": row["owner_id"],
+                "filename": row["filename"],
+                "encrypted_file": row["encrypted_file"],
+                "file_nonce": row["file_nonce"],
+                "encrypted_dek": row["encrypted_dek"],
+                "dek_nonce": row["dek_nonce"],
+            }
+        cols = [col[0] for col in self.cursor.description]
+        mapped = dict(zip(cols, row))
+        return {
+            "owner_id": mapped["owner_id"],
+            "filename": mapped["filename"],
+            "encrypted_file": mapped["encrypted_file"],
+            "file_nonce": mapped["file_nonce"],
+            "encrypted_dek": mapped["encrypted_dek"],
+            "dek_nonce": mapped["dek_nonce"],
+        }
+
+    def delete_file_by_id(self, file_id: int, username: str):
+        """
+        Delete a file by its ID, after confirming that `username` is the owner.
+        """
+        self.ensure_connection()
+        user_id = self._get_user_id(username)
+        if user_id is None:
+            raise ValueError(f"Unknown user '{username}'")
+
+        # Only delete if owner_id matches
+        sql = """
+            DELETE FROM files
+            WHERE id = %s
+                AND owner_id = %s
+        """
+        self.cursor.execute(sql, (file_id, user_id))
+        self.conn.commit()

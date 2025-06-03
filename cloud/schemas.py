@@ -26,6 +26,10 @@ class SignupRequest(BaseModel):
     signed_pre_key_sig: str  # X3DH SPK_signature (base64)
     one_time_pre_keys: list[str]  # X3DH OPKs_pub (base64 list)
 
+    # ← NEW: initial TOFU/key backup, encrypted under sessionKek
+    encrypted_backup: str
+    backup_nonce: str
+
 
 class LoginRequest(BaseModel):
     username: str
@@ -81,14 +85,14 @@ class ListFilesRequest(BaseModel):
 
 class DownloadFileRequest(BaseModel):
     username: str
-    filename: str
+    file_id: int
     nonce: str
     signature: str
 
 
 class DeleteFileRequest(BaseModel):
     username: str
-    filename: str
+    file_id: int
     nonce: str
     signature: str
 
@@ -99,6 +103,7 @@ class GetPreKeyBundleRequest(BaseModel):
     nonce: str
     signature: str
 
+
 class AddPreKeyBundleRequest(BaseModel):
     username: str
     nonce: str
@@ -107,10 +112,12 @@ class AddPreKeyBundleRequest(BaseModel):
     SPK_pub: str
     SPK_signature: str
 
+
 class PreKeyBundleResponse(BaseModel):
     IK_pub: str
     SPK_pub: str
     SPK_signature: str
+
 
 class AddPreKeyBundleResponse(BaseModel):
     status: str
@@ -125,7 +132,8 @@ class AddOPKsRequest(BaseModel):
 
 
 class GetOPKRequest(BaseModel):
-    username: str
+    username: str  # The requesting user (for signature verification)
+    target_username: str  # The user we want OPK for
     nonce: str
     signature: str
 
@@ -137,14 +145,17 @@ class OPKResponse(BaseModel):
 
 class ShareFileRequest(BaseModel):
     username: str
-    filename: str
+    file_id: int
     recipient_username: str
-    encrypted_file_key: str
+    signature: str
     EK_pub: str
     IK_pub: str
+    SPK_pub: str
+    SPK_signature: str
+    OPK_ID: int
+    encrypted_file_key: str
+    file_key_nonce: str  
     nonce: str
-    signature: str
-
 
 class ListSharedFilesRequest(BaseModel):
     """List *all* files shared to me (no filter)."""
@@ -152,12 +163,14 @@ class ListSharedFilesRequest(BaseModel):
     nonce: str
     signature: str
 
+
 # New: list files I shared TO a particular user
 class ListSharedToRequest(BaseModel):
     username: str
     target_username: str
     nonce: str
     signature: str
+
 
 # New: list files shared FROM a particular user to me
 class ListSharedFromRequest(BaseModel):
@@ -190,6 +203,7 @@ class BackupTOFURequest(BaseModel):
     nonce: str
     signature: str
 
+
 class BackupTOFUResponse(BaseModel):
     status: str
     encrypted_backup: str
@@ -216,6 +230,36 @@ class UserData(BaseModel):
     id: int
     username: str
 
+
 class ListUsersResponse(BaseModel):
     status: str
     users: list[UserData]
+
+class RetrieveFileDEKRequest(BaseModel):
+    username: str
+    file_id: int
+    nonce: str
+    signature: str
+
+class RetrieveFileDEKResponse(BaseModel):
+    status: str
+    encrypted_dek: str
+    dek_nonce: str
+
+class DownloadSharedFileRequest(BaseModel):
+    username: str
+    share_id: int
+    nonce: str
+    signature: str
+
+class ListMatchingUsersRequest(BaseModel):
+    username: str  # The user making the request
+    nonce: str     # Challenge nonce
+    signature: str # Signature of the nonce
+    search_query: str  # The search query from the user
+
+# list every user who has ever shared at least one file with the challenge initiator
+class ListSharersRequest(BaseModel):
+    username: str
+    nonce: str
+    signature: str

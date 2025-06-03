@@ -1,4 +1,3 @@
-// utils/inetworkmanager.h
 #ifndef INETWORKMANAGER_H
 #define INETWORKMANAGER_H
 
@@ -31,6 +30,13 @@ public:
     virtual void downloadFile(const QJsonObject &payload) = 0;
     virtual void deleteFile(const QJsonObject &payload) = 0;
 
+    // X3DH: getPreKeyBundle
+    virtual void getPreKeyBundle(const QJsonObject &payload) = 0;
+
+    // TOFU backup
+    virtual void backupTOFU(const QJsonObject &payload) = 0;
+    virtual void getBackupTOFU(const QJsonObject &payload) = 0;
+
     // Misc
     virtual void checkConnection() = 0;
 
@@ -61,6 +67,20 @@ signals:
                             const QString &dekNonceB64,
                             const QString &message);
     void deleteFileResult(bool success, const QString &message);
+
+    // X3DH
+    void getPreKeyBundleResult(bool success,
+                               const QString &ik_pub_b64,
+                               const QString &spk_pub_b64,
+                               const QString &spk_sig_b64,
+                               const QString &message);
+
+    // TOFU backup
+    void backupTOFUResult(bool success, const QString &message);
+    void getBackupTOFUResult(bool success,
+                             const QString &encrypted_backup_b64,
+                             const QString &backup_nonce_b64,
+                             const QString &message);
 
     void connectionStatusChanged(bool online);
 };
