@@ -833,14 +833,27 @@ void MainWindow::previewSharedFile(const QString &filename, const QByteArray &da
 
 void MainWindow::on_tabWidget_currentChanged(int index)
 {
-    // Do not clear anything on tab switch—just refresh the necessary pages
+    // First, clear anything from the previously‐active tab:
+    clearPage(m_prevTabIndex);
+   // Then refresh the newly‐active tab:
     refreshPage(index);
     m_prevTabIndex = index;
 }
 
-void MainWindow::clearPage(int /*idx*/)
+// Clear out any UI elements when leaving a tab
+void MainWindow::clearPage(int idx)
 {
-
+    using TI = MainWindow::TabIndex;
+    switch (idx) {
+        case TI::SharesFrom:
+            // When leaving “Shares From”, blank out both image/text previews
+            ui->downloadImagePreview_2->clear();
+            ui->downloadTextPreview_2->clear();
+            ui->downloadPreviewStack_2->setCurrentIndex(0);
+            break;
+        default:
+            break;
+    }
 }
 
 void MainWindow::refreshPage(int idx)
