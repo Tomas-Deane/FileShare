@@ -20,16 +20,17 @@ QByteArray CryptoUtils::randomBytes(int length)
     return buf;
 }
 
-QByteArray CryptoUtils::generateAeadKey() {
+QByteArray CryptoUtils::generateAeadKey()
+{
     return randomBytes(crypto_aead_xchacha20poly1305_ietf_KEYBYTES);
 }
 
 void CryptoUtils::generateX25519KeyPair(QByteArray &publicKey,
                                         QByteArray &secretKey)
 {
-    // libsodium: crypto_kx_keypair or crypto_box_keypair both produce X25519 keys.
-    publicKey .resize(crypto_kx_PUBLICKEYBYTES);
-    secretKey .resize(crypto_kx_SECRETKEYBYTES);
+    // libsodium: crypto_kx_keypair (or crypto_box_keypair) produces X25519 keys
+    publicKey.resize(crypto_kx_PUBLICKEYBYTES);
+    secretKey.resize(crypto_kx_SECRETKEYBYTES);
     crypto_kx_keypair(
         reinterpret_cast<unsigned char*>(publicKey.data()),
         reinterpret_cast<unsigned char*>(secretKey.data())
@@ -37,37 +38,30 @@ void CryptoUtils::generateX25519KeyPair(QByteArray &publicKey,
     Logger::log("Generated X25519 keypair (Curve25519)");
 }
 
-void CryptoUtils::generateOneTimePreKey(QByteArray &opkPub,
-                                        QByteArray &opkPriv)
-{
-    // identical to generateX25519KeyPair
-    generateX25519KeyPair(opkPub, opkPriv);
-}
-
 QString CryptoUtils::computeOOBCode(const QByteArray &ik1_pub,
                                     const QByteArray &ik2_pub)
 {
-    // 1. Sort the two QByteArrays bytewise:
+    // Sort the two QByteArrays bytewise:
     QByteArray a = ik1_pub, b = ik2_pub;
     if (a < b) {
         // keep as-is
     } else {
-        std::swap(a,b);
+        std::swap(a, b);
     }
-    // 2. Concatenate:
+    // Concatenate
     QByteArray concat = a + b;
-    // 3. SHA256:
+    // SHA256
     unsigned char hash[crypto_hash_sha256_BYTES];
     crypto_hash_sha256(hash,
                        reinterpret_cast<const unsigned char*>(concat.constData()),
                        (unsigned long long)concat.size());
-    // 4. Convert to lowercase hex:
+    // Convert to lowercase hex:
     char hexOut[crypto_hash_sha256_BYTES * 2 + 1];
     sodium_bin2hex(hexOut,
                    sizeof(hexOut),
                    hash,
                    crypto_hash_sha256_BYTES);
-    // 5. Take the first 60 hex chars:
+    // Take the first 60 hex chars
     QString hexStr = QString::fromUtf8(hexOut);
     return hexStr.left(60).toLower();
 }
@@ -163,7 +157,6 @@ QByteArray CryptoUtils::signMessage(const QByteArray &message,
 QByteArray CryptoUtils::computeSharedKey(const QByteArray &ourPriv,
                                          const QByteArray &theirPub)
 {
-    // --- Perform a Curve25519 ECDH: crypto_scalarmult(scalar, base) ---
     if (ourPriv.size() != crypto_scalarmult_SCALARBYTES ||
         theirPub.size() != crypto_scalarmult_BYTES) {
         return {};
@@ -182,19 +175,16 @@ QByteArray CryptoUtils::computeSharedKey(const QByteArray &ourPriv,
 }
 
 QByteArray CryptoUtils::hkdfSha256(const QByteArray &salt,
-                                     const QByteArray &ikm,
-                                     int outputLength)
+                                   const QByteArray &ikm,
+                                   int outputLength)
 {
-    // 1) Extract: PRK = HMAC-SHA256(salt, ikm)
+    // Extract: PRK = HMAC-SHA256(salt, ikm)
     unsigned char prk[crypto_auth_hmacsha256_BYTES];
     crypto_auth_hmacsha256_state state;
     crypto_auth_hmacsha256_init(&state, (const unsigned char*)salt.constData(), salt.size());
     crypto_auth_hmacsha256_update(&state, (const unsigned char*)ikm.constData(), ikm.size());
     crypto_auth_hmacsha256_final(&state, prk);
 
-    // 2) Expand: OKM = HKDF-Expand(PRK, info="", L)
-    //    We will do a single-block expand (since 32 bytes ≤ 32).
-    //    T(1) = HMAC-SHA256(PRK, T(0)=empty || 0x01).
     unsigned char okm[crypto_auth_hmacsha256_BYTES];
     unsigned char info_and_counter[1];
     info_and_counter[0] = 0x01; // single block
@@ -206,7 +196,6 @@ QByteArray CryptoUtils::hkdfSha256(const QByteArray &salt,
 
     return QByteArray((char*)okm, outputLength);
 }
-
 
 void CryptoUtils::secureZeroMemory(QByteArray &data)
 {
