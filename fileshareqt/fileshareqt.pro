@@ -25,9 +25,11 @@ HEADERS += \
     controllers/authcontroller.h \
     controllers/filecontroller.h \
     controllers/profilecontroller.h \
+    controllers/sharecontroller.h \
     models/crypto_utils.h \
     models/networkmanager.h \
     models/passwordstrength.h \
+    utils/fileentry.h \
     utils/tofumanager.h \
     utils/cryptoservice.h \
     utils/icryptoservice.h \
@@ -40,6 +42,7 @@ SOURCES += \
     controllers/authcontroller.cpp \
     controllers/filecontroller.cpp \
     controllers/profilecontroller.cpp \
+    controllers/sharecontroller.cpp \
     main.cpp \
     models/crypto_utils.cpp \
     models/networkmanager.cpp \
