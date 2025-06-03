@@ -679,6 +679,27 @@ void NetworkManager::downloadSharedFile(const QJsonObject &payload)
     }
 }
 
+void NetworkManager::removeSharedFile(const QJsonObject &payload)
+{
+    // Send POST to /remove_shared_file
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3220, "/remove_shared_file", payload, ok, message);
+    Logger::log("Received removeSharedFile response: " + QString::fromUtf8(resp));
+
+    if (!ok) {
+        emit removeSharedFileResult(false, message);
+        return;
+    }
+
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        emit removeSharedFileResult(true, obj.value("message").toString());
+    } else {
+        emit removeSharedFileResult(false, obj.value("detail").toString());
+    }
+}
+
 void NetworkManager::checkConnection()
 {
     int sock = -1;
