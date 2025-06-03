@@ -30,6 +30,7 @@ HEADERS += \
     models/networkmanager.h \
     models/passwordstrength.h \
     utils/fileentry.h \
+    utils/sharedfilemanager.h \
     utils/tofumanager.h \
     utils/cryptoservice.h \
     utils/icryptoservice.h \
@@ -47,6 +48,7 @@ SOURCES += \
     models/crypto_utils.cpp \
     models/networkmanager.cpp \
     models/passwordstrength.cpp \
+    utils/sharedfilemanager.cpp \
     utils/tofumanager.cpp \
     utils/cryptoservice.cpp \
     utils/logger.cpp \
