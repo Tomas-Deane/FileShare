@@ -160,6 +160,27 @@ QByteArray CryptoUtils::signMessage(const QByteArray &message,
     return sig;
 }
 
+QByteArray CryptoUtils::computeSharedKey(const QByteArray &ourPriv,
+                                         const QByteArray &theirPub)
+{
+    // --- Perform a Curve25519 ECDH: crypto_scalarmult(scalar, base) ---
+    if (ourPriv.size() != crypto_scalarmult_SCALARBYTES ||
+        theirPub.size() != crypto_scalarmult_BYTES) {
+        return {};
+    }
+
+    QByteArray shared(crypto_scalarmult_BYTES, 0);
+    if (crypto_scalarmult(
+            reinterpret_cast<unsigned char*>(shared.data()),
+            reinterpret_cast<const unsigned char*>(ourPriv.constData()),
+            reinterpret_cast<const unsigned char*>(theirPub.constData())
+            ) != 0) {
+        Logger::log("ECDH (crypto_scalarmult) failed");
+        return {};
+    }
+    return shared;
+}
+
 void CryptoUtils::secureZeroMemory(QByteArray &data)
 {
     if (!data.isEmpty()) {
