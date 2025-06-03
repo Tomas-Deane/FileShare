@@ -250,7 +250,7 @@ interface DownloadResponse {
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const test_empty_opk_share = true; // Set to false to disable testing empty OPK sharing
+  const test_empty_opk_share = false; // Set to false to disable testing empty OPK sharing
   const [activeTab, setActiveTab] = useState<'home'|'files'|'users'|'profile'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [userSearchQuery, setUserSearchQuery] = useState('');
@@ -346,11 +346,6 @@ const Dashboard: React.FC = () => {
       setError(null);
       logDebug('Starting file deletion', { fileId: fileToDelete });
 
-      const file = files.find(f => f.id === fileToDelete);
-      if (!file) {
-        throw new Error('File not found');
-      }
-
       // Step 1: Request challenge
       logDebug('Requesting challenge for delete');
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
@@ -366,11 +361,11 @@ const Dashboard: React.FC = () => {
         throw new Error(challengeResponse.detail || 'Failed to get challenge');
       }
 
-      // Step 2: Sign the filename
-      logDebug('Signing filename');
+      // Step 2: Sign the file ID
+      logDebug('Signing file ID');
       const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
-      const signature = await signChallenge(new TextEncoder().encode(file.name), secretKey!);
-      logDebug('Filename signed', {
+      const signature = await signChallenge(new TextEncoder().encode(fileToDelete.toString()), secretKey!);
+      logDebug('File ID signed', {
         signatureLength: signature.length
       });
 
@@ -378,9 +373,9 @@ const Dashboard: React.FC = () => {
       logDebug('Sending delete request');
       const deleteResponse = await apiClient.post<DeleteResponse>('/delete_file', {
         username,
-        filename: file.name,
+        file_id: fileToDelete,
         nonce: challengeResponse.nonce,
-        signature: uint8ArrayToB64(signature)
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
       });
       logDebug('Delete response received', {
         status: deleteResponse.status,
@@ -474,24 +469,25 @@ const Dashboard: React.FC = () => {
           throw new Error('Key bundle not found');
         }
 
-        // Get our private OPK that matches the OPK_id from the response
-        console.log('OPK Debug:', {
-          receivedOPKId: downloadResponse.opk_id, // Changed from OPK_id to opk_id
-          availableOPKs: myKeyBundle.OPKs_priv?.length,
-          keyBundle: {
-            hasOPKs: !!myKeyBundle.OPKs_priv,
-            OPKCount: myKeyBundle.OPKs_priv?.length,
-            OPKIds: myKeyBundle.OPKs_priv?.map((_, i) => i)
-          }
-        });
-
-        const myOPK = myKeyBundle.OPKs_priv?.[downloadResponse.opk_id]; // Changed from OPK_id to opk_id
-        if (!myOPK) {
-          console.error('OPK Debug - Not Found:', {
-            requestedId: downloadResponse.opk_id, // Changed from OPK_id to opk_id
-            availableIds: myKeyBundle.OPKs_priv?.map((_, i) => i)
+        // Get our private OPK that matches the OPK_id from the response, if provided
+        let myOPK = undefined;
+        if (downloadResponse.opk_id !== undefined) {
+          console.log('OPK Debug:', {
+            receivedOPKId: downloadResponse.opk_id,
+            availableOPKs: myKeyBundle.OPKs_priv?.length,
+            keyBundle: {
+              hasOPKs: !!myKeyBundle.OPKs_priv,
+              OPKCount: myKeyBundle.OPKs_priv?.length,
+              OPKIds: myKeyBundle.OPKs_priv?.map((_, i) => i)
+            }
           });
-          throw new Error('OPK not found in key bundle');
+
+          myOPK = myKeyBundle.OPKs_priv?.[downloadResponse.opk_id];
+          if (!myOPK) {
+            console.log('OPK not found in key bundle, proceeding without OPK');
+          }
+        } else {
+          console.log('No OPK ID provided, proceeding without OPK');
         }
 
         // Derive the shared secret using our private keys and sender's public keys
@@ -501,7 +497,7 @@ const Dashboard: React.FC = () => {
           senderSPKPub: Uint8Array.from(atob(downloadResponse.SPK_pub), c => c.charCodeAt(0)),
           myIKPriv: Uint8Array.from(atob(myKeyBundle.IK_priv), c => c.charCodeAt(0)),
           mySPKPriv: Uint8Array.from(atob(myKeyBundle.SPK_priv), c => c.charCodeAt(0)),
-          myOPKPriv: Uint8Array.from(atob(myOPK), c => c.charCodeAt(0))
+          myOPKPriv: myOPK ? Uint8Array.from(atob(myOPK), c => c.charCodeAt(0)) : undefined
         });
 
         console.log('Shared Secret Debug:', {
@@ -512,7 +508,7 @@ const Dashboard: React.FC = () => {
 
         // Decrypt the file key using the shared secret
         const encryptedFileKey = Uint8Array.from(atob(downloadResponse.encrypted_file_key), c => c.charCodeAt(0));
-        const fileKeyNonce = Uint8Array.from(atob(downloadResponse.file_key_nonce), c => c.charCodeAt(0)); // Add this line
+        const fileKeyNonce = Uint8Array.from(atob(downloadResponse.file_key_nonce), c => c.charCodeAt(0));
 
         console.log('File Key Debug:', {
           hasEncryptedFileKey: !!encryptedFileKey,
@@ -1049,26 +1045,33 @@ const TestButton = () => {
       if (challengeResponse.status !== 'challenge') {
         throw new Error(challengeResponse.detail || 'Failed to get challenge');
       }
-      // Step 2: Sign the filename
-      const signature = await signChallenge(new TextEncoder().encode(file.name), secretKey!);
+
+      // Step 2: Sign the file ID
+      const signature = await signChallenge(
+        new TextEncoder().encode(fileId.toString()),
+        secretKey!
+      );
+
       // Step 3: Download file
       const downloadResponse = await apiClient.post<any>('/download_file', {
         username,
-        filename: file.name,
+        file_id: fileId,
         nonce: challengeResponse.nonce,
-        signature: uint8ArrayToB64(signature)
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
       });
+
       if (downloadResponse.status !== 'ok') {
         throw new Error(downloadResponse.detail || 'Failed to download file');
       }
+
       // Step 4: Decrypt file
-      const previewEncryptedFile = b64ToUint8Array(downloadResponse.encrypted_file);
-      const previewFileNonce = b64ToUint8Array(downloadResponse.file_nonce);
-      const dek = await decryptFileKey(downloadResponse.encrypted_file_key, kek!, downloadResponse.file_nonce);
-      const decrypted = await decryptFile(previewEncryptedFile, dek, previewFileNonce);
+      const encryptedFile = Uint8Array.from(atob(downloadResponse.encrypted_file), c => c.charCodeAt(0));
+      const fileNonce = Uint8Array.from(atob(downloadResponse.file_nonce), c => c.charCodeAt(0));
+      const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
+      const decrypted = await decryptFile(encryptedFile, dek, fileNonce);
 
       if (isTextFile(file.name)) {
-        const text = new TextDecoder('utf-8').decode(decrypted);
+        const text = new TextDecoder().decode(decrypted);
         setPreviewContent(text);
         setPreviewImageUrl(null);
       } else if (isImageFile(file.name)) {
@@ -1084,6 +1087,7 @@ const TestButton = () => {
         setPreviewContent(null);
       }
     } catch (err: any) {
+      console.error('Preview error:', err);
       setPreviewError(err.message || 'Failed to preview file');
     } finally {
       setPreviewLoading(false);

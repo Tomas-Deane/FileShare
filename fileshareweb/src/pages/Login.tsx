@@ -17,7 +17,6 @@ import { Visibility, VisibilityOff, Security, Lock, Person, Home } from '@mui/ic
 import { MatrixBackground } from '../components';
 import { apiClient } from '../utils/apiClient';
 import { signChallenge, decryptPrivateKey, derivePDK, decryptKEK, CryptoError } from '../utils/crypto';
-import { useAuth } from '../contexts/AuthContext';
 import { sodium } from '../utils/sodium';
 import { base64 } from '../utils/base64';
 import { storage } from '../utils/storage';
@@ -56,7 +55,6 @@ interface GetBackupTOFUResponse {
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
-  const { setAuthData } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
@@ -217,9 +215,9 @@ const Login: React.FC = () => {
                 IK_priv: backupData.IK_priv,
                 SPK_priv: backupData.SPK_priv,
                 OPKs_priv: backupData.OPKs_priv || [],
-                secretKey: backupData.secretKey,
-                pdk: backupData.pdk,
-                kek: backupData.kek,
+                secretKey: '', // Will be set after successful authentication
+                pdk: '', // Will be set after successful authentication
+                kek: '', // Will be set after successful authentication
                 recipients: backupData.recipients || {},
                 verified: true,
                 lastVerified: new Date().toISOString()
@@ -331,17 +329,23 @@ const Login: React.FC = () => {
       });
 
       if (authResponse.status === 'ok') {
-        // Decrypt KEK
+        // Decrypt KEK from login response
         const encryptedKek = Uint8Array.from(atob(challengeResponse.encrypted_kek), c => c.charCodeAt(0));
         const kekNonce = Uint8Array.from(atob(challengeResponse.kek_nonce), c => c.charCodeAt(0));
         const kek = await decryptKEK(encryptedKek, pdk, kekNonce);
 
-        setAuthData({
-          username: trimmedUsername,
-          secretKey: privateKey,
-          pdk: pdk,
-          kek: kek
-        });
+        // Convert keys to base64 for storage
+        const kekBase64 = btoa(String.fromCharCode.apply(null, Array.from(kek)));
+        const pdkBase64 = btoa(String.fromCharCode.apply(null, Array.from(pdk)));
+        const secretKeyBase64 = btoa(String.fromCharCode.apply(null, Array.from(privateKey)));
+        
+        // Update key bundle with derived keys
+        if (myKeyBundle) {
+          myKeyBundle.kek = kekBase64;
+          myKeyBundle.pdk = pdkBase64;
+          myKeyBundle.secretKey = secretKeyBase64;
+          storage.saveKeyBundle(myKeyBundle);
+        }
 
         navigate('/dashboard', { replace: true });
       } else {
