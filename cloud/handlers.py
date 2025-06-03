@@ -40,6 +40,8 @@ from schemas import (
     DownloadSharedFileRequest,
     ListMatchingUsersRequest,
     ListSharersRequest,
+    ClearUserOPKsRequest,
+    GetOPKCountRequest,
 )
 
 # ─── Allowed operations for challenge requests ────────────────────────────────
@@ -66,7 +68,9 @@ ALLOWED_OPERATIONS = {
     "backup_tofu",
     "get_backup_tofu",
     "list_matching_users",
-    "list_sharers"
+    "list_sharers",
+    "clear_user_opks",
+    "get_opk_count"
 }
 
 def validate_filename(filename: str) -> bool:
@@ -606,7 +610,7 @@ def get_backup_tofu_keys_handler(req: GetBackupTOFURequest, db: models.UserDB):
 def get_prekey_bundle_handler(req: GetPreKeyBundleRequest, db: models.UserDB):
     logging.debug(f"GetPreKeyBundle: {req.model_dump_json()}")
 
-    # Verify requester’s challenge
+    # Verify requester's challenge
     requester = db.get_user(req.username)
     if not requester:
         logging.warning(f"Unknown requester '{req.username}' at get_pre_key_bundle")
@@ -794,7 +798,7 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
         IK_pub            = base64.b64decode(req.IK_pub)
         SPK_pub           = base64.b64decode(req.SPK_pub)
         SPK_signature     = base64.b64decode(req.SPK_signature)
-        OPK_id            = req.OPK_ID
+        OPK_id            = req.OPK_ID  # This will be None if not provided
 
         db.share_file(
             file_id=req.file_id,
@@ -1121,5 +1125,81 @@ def list_sharers_handler(req: ListSharersRequest, db: models.UserDB) -> dict:
     return {
         "status": "ok",
         "usernames": sharers
+    }
+
+# ─── TEST ENDPOINT: CLEAR USER'S OPKs ───────────────────────────────────
+def clear_user_opks_handler(req: ClearUserOPKsRequest, db: models.UserDB) -> dict:
+    """
+    Test endpoint to clear all OPKs for a user.
+    This is for testing X3DH without OPKs.
+    """
+    # Verify the requesting user
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="Unknown requesting user")
+    uid = user["user_id"]
+
+    # Get the target user
+    target = db.get_user(req.target_username)
+    if not target:
+        raise HTTPException(status_code=404, detail="Target user not found")
+    target_id = target["user_id"]
+
+    # Verify the challenge and signature
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(uid, "clear_user_opks")
+    if stored is None or provided != stored:
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+
+    try:
+        sig = base64.b64decode(req.signature)
+        Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, provided)
+    except InvalidSignature:
+        db.delete_challenge(uid)
+        raise HTTPException(status_code=401, detail="Bad signature")
+
+    # Clear all OPKs for the target user
+    db.clear_user_opks(target_id)
+    db.delete_challenge(uid)
+    return {
+        "status": "ok",
+        "message": f"Cleared all OPKs for user {req.target_username}"
+    }
+
+def get_opk_count_handler(req: GetOPKCountRequest, db: models.UserDB) -> dict:
+    """
+    Get the count of unused OPKs for a target user.
+    """
+    # Verify the requesting user
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="Unknown requesting user")
+    uid = user["user_id"]
+
+    # Get the target user
+    target = db.get_user(req.target_username)
+    if not target:
+        raise HTTPException(status_code=404, detail="Target user not found")
+    target_id = target["user_id"]
+
+    # Verify the challenge and signature
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(uid, "get_opk_count")
+    if stored is None or provided != stored:
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+
+    try:
+        sig = base64.b64decode(req.signature)
+        Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, provided)
+    except InvalidSignature:
+        db.delete_challenge(uid)
+        raise HTTPException(status_code=401, detail="Bad signature")
+
+    # Get count of unused OPKs
+    count = db.get_unused_opk_count(target_id)
+    db.delete_challenge(uid)
+    return {
+        "status": "ok",
+        "count": count
     }
 

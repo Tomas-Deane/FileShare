@@ -5,7 +5,7 @@ import logging
 import datetime
 import threading
 from dbutils.pooled_db import PooledDB
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 # Database connection parameters (will use env variables)
 DB_USER     = os.environ.get('DB_USER',     'nrmc')
@@ -140,7 +140,7 @@ def init_db():
         SPK_signature        BLOB                NOT NULL,
         encrypted_file_key   BLOB                NOT NULL,
         file_key_nonce       BLOB                NOT NULL,
-        OPK_id               BIGINT              NOT NULL,
+        OPK_id               BIGINT              NULL,
         shared_at            DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT fk_shared_file
           FOREIGN KEY (file_id)
@@ -173,6 +173,7 @@ def init_db():
         INDEX idx_user (user_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
+
     conn.commit()
     cursor.close()
     conn.close()
@@ -567,7 +568,7 @@ class UserDB:
 
     def share_file(self, file_id: int, recipient_id: int, encrypted_file_key: bytes,
                    file_key_nonce: bytes, EK_pub: bytes, IK_pub: bytes, 
-                   SPK_pub: bytes, SPK_signature: bytes, OPK_id: int):
+                   SPK_pub: bytes, SPK_signature: bytes, OPK_id: Optional[int] = None):
         conn, cursor = self._get_connection()
         sql = """
             INSERT INTO shared_files
@@ -923,4 +924,23 @@ class UserDB:
         """
         cursor.execute(sql, (file_id, user_id))
         conn.commit()
+
+    def clear_user_opks(self, user_id: int) -> None:
+        """Clear all OPKs for a user. For testing purposes only."""
+        conn, cursor = self._get_connection()
+        sql = "DELETE FROM opks WHERE user_id = %s"
+        cursor.execute(sql, (user_id,))
+        conn.commit()
+
+    def get_unused_opk_count(self, user_id: int) -> int:
+        """Get the count of unused OPKs for a user."""
+        conn, cursor = self._get_connection()
+        sql = """
+            SELECT COUNT(*) as count
+            FROM opks
+            WHERE user_id = %s AND consumed = FALSE
+        """
+        cursor.execute(sql, (user_id,))
+        row = cursor.fetchone()
+        return row['count'] if row else 0
 

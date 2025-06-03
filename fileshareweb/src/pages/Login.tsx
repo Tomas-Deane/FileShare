@@ -260,15 +260,74 @@ const Login: React.FC = () => {
         return;
       }
 
-      // 6. Complete authentication
-      const loginSignature = await signChallenge(
-        base64.toByteArray(challengeResponse.nonce),
+      // Check OPK count and replenish if needed
+      console.log('Checking OPK count...');
+      const opkCountChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username: trimmedUsername,
+        operation: 'get_opk_count'
+      });
+      const opkCountSignature = sodium.crypto_sign_detached(
+        base64.toByteArray(opkCountChallengeResponse.nonce),
+        privateKey
+      );
+      const opkCountResponse = await apiClient.post<{ status: string; count: number }>(
+        '/get_opk_count',
+        {
+          username: trimmedUsername,
+          target_username: trimmedUsername,
+          nonce: opkCountChallengeResponse.nonce,
+          signature: btoa(String.fromCharCode.apply(null, Array.from(opkCountSignature)))
+        }
+      );
+
+      if (opkCountResponse.count <= 20) {
+        console.log(`Low OPK count (${opkCountResponse.count}), generating new OPKs...`);
+        // Generate 100 new OPKs
+        const newOPKs = [];
+        const newOPKs_priv = [];
+        for (let i = 0; i < 100; i++) {
+          const keypair = sodium.crypto_kx_keypair();
+          newOPKs.push(btoa(String.fromCharCode.apply(null, Array.from(keypair.publicKey))));
+          newOPKs_priv.push(btoa(String.fromCharCode.apply(null, Array.from(keypair.privateKey))));
+        }
+
+        // Add new OPKs to server
+        const addOPKsChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+          username: trimmedUsername,
+          operation: 'add_opks'
+        });
+        const addOPKsSignature = sodium.crypto_sign_detached(
+          base64.toByteArray(addOPKsChallengeResponse.nonce),
+          privateKey
+        );
+        await apiClient.post('/add_opks', {
+          username: trimmedUsername,
+          opks: newOPKs,
+          nonce: addOPKsChallengeResponse.nonce,
+          signature: btoa(String.fromCharCode.apply(null, Array.from(addOPKsSignature)))
+        });
+
+        // Update local key bundle with new OPKs
+        myKeyBundle.OPKs = [...myKeyBundle.OPKs, ...newOPKs];
+        myKeyBundle.OPKs_priv = [...myKeyBundle.OPKs_priv, ...newOPKs_priv];
+        storage.saveKeyBundle(myKeyBundle);
+        console.log('Added 100 new OPKs');
+      }
+
+      // 6. Complete authentication with fresh challenge
+      console.log('Getting fresh challenge for authentication...');
+      const authChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username: trimmedUsername,
+        operation: 'login'
+      });
+      const authSignature = await signChallenge(
+        base64.toByteArray(authChallengeResponse.nonce),
         privateKey
       );
       const authResponse = await apiClient.post<LoginResponse>('/authenticate', {
         username: trimmedUsername,
-        nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(loginSignature)))
+        nonce: authChallengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(authSignature)))
       });
 
       if (authResponse.status === 'ok') {
