@@ -1,7 +1,6 @@
 #include "tofumanager.h"
 #include "icryptoservice.h"
 #include "authcontroller.h"
-#include "inetworkmanager.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -10,12 +9,10 @@
 
 TofuManager::TofuManager(ICryptoService    *cryptoService,
                          AuthController     *authController,
-                         INetworkManager    *networkManager,
                          QObject            *parent)
     : QObject(parent)
     , m_cryptoService(cryptoService)
     , m_authController(authController)
-    , m_networkManager(networkManager)
 {}
 
 void TofuManager::clear()

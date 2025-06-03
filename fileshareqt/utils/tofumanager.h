@@ -22,7 +22,6 @@ class TofuManager : public QObject {
 public:
     TofuManager(ICryptoService    *cryptoService,
                 AuthController     *authController,
-                INetworkManager    *networkManager,
                 QObject            *parent = nullptr);
 
     // Completely clear the in‐memory TOFU list (called on logout)
@@ -58,7 +57,6 @@ signals:
 private:
     ICryptoService    *m_cryptoService;
     AuthController    *m_authController;
-    INetworkManager   *m_networkManager;
 
     QVector<VerifiedUser> m_list;
 };
