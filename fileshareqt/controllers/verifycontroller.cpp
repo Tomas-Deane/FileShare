@@ -17,7 +17,7 @@ VerifyController::VerifyController(INetworkManager  *networkManager,
     , m_cryptoService(cryptoService)
 {
     // Instantiate TofuManager
-    m_tofuManager = new TofuManager(m_cryptoService, m_authController, m_networkManager, this);
+    m_tofuManager = new TofuManager(m_cryptoService, m_authController, this);
 
     // Listen for challengeResult → onChallengeReceived
     connect(m_networkManager, &INetworkManager::challengeResult,

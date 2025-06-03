@@ -54,6 +54,14 @@ public:
 
     // Securely zero and clear memory (uses sodium_memzero)
     static void secureZeroMemory(QByteArray &data);
+
+    // perform a Curve25519 ECDH (crypto_scalarmult)
+    static QByteArray computeSharedKey(const QByteArray &ourPriv,
+                                       const QByteArray &theirPub);
+
+    static QByteArray hkdfSha256(const QByteArray &salt,
+                                 const QByteArray &ikm,
+                                 int outputLength);
 };
 
 #endif // CRYPTO_UTILS_H

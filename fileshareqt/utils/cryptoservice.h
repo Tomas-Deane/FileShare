@@ -2,8 +2,6 @@
 #define CRYPTOSERVICE_H
 
 #include "icryptoservice.h"
-#include <QByteArray>
-#include <QString>
 
 class CryptoService : public ICryptoService
 {
@@ -55,6 +53,15 @@ public:
 
     // Securely zero-out sensitive data
     void secureZeroMemory(QByteArray &data) override;
+
+    // Derive a Curve25519/ECDH shared key
+    QByteArray deriveSharedKey(const QByteArray &ourPriv,
+                               const QByteArray &theirPub) override;
+
+    QByteArray hkdfSha256(const QByteArray &salt,
+                          const QByteArray &ikm,
+                          int outputLength) override;
+
 };
 
 #endif // CRYPTOSERVICE_H

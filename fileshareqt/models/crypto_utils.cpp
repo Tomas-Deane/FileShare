@@ -160,6 +160,54 @@ QByteArray CryptoUtils::signMessage(const QByteArray &message,
     return sig;
 }
 
+QByteArray CryptoUtils::computeSharedKey(const QByteArray &ourPriv,
+                                         const QByteArray &theirPub)
+{
+    // --- Perform a Curve25519 ECDH: crypto_scalarmult(scalar, base) ---
+    if (ourPriv.size() != crypto_scalarmult_SCALARBYTES ||
+        theirPub.size() != crypto_scalarmult_BYTES) {
+        return {};
+    }
+
+    QByteArray shared(crypto_scalarmult_BYTES, 0);
+    if (crypto_scalarmult(
+            reinterpret_cast<unsigned char*>(shared.data()),
+            reinterpret_cast<const unsigned char*>(ourPriv.constData()),
+            reinterpret_cast<const unsigned char*>(theirPub.constData())
+            ) != 0) {
+        Logger::log("ECDH (crypto_scalarmult) failed");
+        return {};
+    }
+    return shared;
+}
+
+QByteArray CryptoUtils::hkdfSha256(const QByteArray &salt,
+                                     const QByteArray &ikm,
+                                     int outputLength)
+{
+    // 1) Extract: PRK = HMAC-SHA256(salt, ikm)
+    unsigned char prk[crypto_auth_hmacsha256_BYTES];
+    crypto_auth_hmacsha256_state state;
+    crypto_auth_hmacsha256_init(&state, (const unsigned char*)salt.constData(), salt.size());
+    crypto_auth_hmacsha256_update(&state, (const unsigned char*)ikm.constData(), ikm.size());
+    crypto_auth_hmacsha256_final(&state, prk);
+
+    // 2) Expand: OKM = HKDF-Expand(PRK, info="", L)
+    //    We will do a single-block expand (since 32 bytes ≤ 32).
+    //    T(1) = HMAC-SHA256(PRK, T(0)=empty || 0x01).
+    unsigned char okm[crypto_auth_hmacsha256_BYTES];
+    unsigned char info_and_counter[1];
+    info_and_counter[0] = 0x01; // single block
+    crypto_auth_hmacsha256_state state2;
+    crypto_auth_hmacsha256_init(&state2, prk, sizeof(prk));
+    // no "info" field ⇒ just the single counter
+    crypto_auth_hmacsha256_update(&state2, info_and_counter, 1);
+    crypto_auth_hmacsha256_final(&state2, okm);
+
+    return QByteArray((char*)okm, outputLength);
+}
+
+
 void CryptoUtils::secureZeroMemory(QByteArray &data)
 {
     if (!data.isEmpty()) {
