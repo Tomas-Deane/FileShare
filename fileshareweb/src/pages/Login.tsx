@@ -21,7 +21,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { sodium } from '../utils/sodium';
 import { base64 } from '../utils/base64';
 import { storage } from '../utils/storage';
-import { validatePassword } from '../utils/passwordUtils';
 
 interface LoginChallenge {
   status: string;
