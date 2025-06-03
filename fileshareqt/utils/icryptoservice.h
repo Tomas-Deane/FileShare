@@ -4,9 +4,13 @@
 #include <QString>
 #include <QByteArray>
 
-// pure-virtual interface for all crypto operations
+// pure virtual interface for all crypto operations
 class ICryptoService
 {
+protected:
+    // protected member in an inheritance hierarchy (caps the length of random byte generation)
+    static const int MAX_RANDOM_LENGTH = 4096;
+
 public:
     virtual ~ICryptoService() = default;
 
