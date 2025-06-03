@@ -30,6 +30,7 @@ HEADERS += \
     models/networkmanager.h \
     models/passwordstrength.h \
     utils/fileentry.h \
+    utils/services.h \
     utils/sharedfilemanager.h \
     utils/tofumanager.h \
     utils/cryptoservice.h \
