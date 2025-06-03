@@ -1,6 +1,7 @@
 #include "cryptoservice.h"
 #include "crypto_utils.h"
 
+// Ctor and Dtor behaviour in an inheritance hierarchy
 CryptoService::CryptoService() : ICryptoService()
 {
     qDebug() << "CryptoService ctor";

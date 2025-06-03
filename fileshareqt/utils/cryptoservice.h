@@ -6,6 +6,7 @@
 class CryptoService : public ICryptoService
 {
 public:
+    // Ctor and Dtor behaviour in an inheritance hierarchy (see implementation in cryptoservice.cpp)
     CryptoService();
     ~CryptoService() override;
 

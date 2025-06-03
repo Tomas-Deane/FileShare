@@ -13,6 +13,7 @@ protected:
     static const int MAX_RANDOM_LENGTH = 4096;
 
 public:
+    // Ctor and Dtor behaviour in an inheritance hierarchy (see derived class in cryptoservice)
     ICryptoService()
     {
         qDebug() << "ICryptoService ctor";
