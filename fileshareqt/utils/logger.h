@@ -26,6 +26,8 @@ public:
         log(s);
     }
 
+    static void demonstratePointers();
+
 private:
     // private constructor enforces singleton
     Logger() : consoleWidget(nullptr) {}
@@ -62,7 +64,7 @@ inline void message(const T &obj) {
         dbg << obj;
     }
     Logger::log(s);
-}
+    }
 }
 
 #endif // LOGGER_H

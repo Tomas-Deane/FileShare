@@ -72,3 +72,31 @@ void Logger::logInternal(const QString &msg)
         this->consoleWidget->appendPlainText(ts + ": " + msg);
     }
 }
+
+// POINTERs and ARRAYs
+// A tiny demonstration that “arrayName” is just a pointer to its first element, and that pointer arithmetic (arr + i) is identical to arr[i]
+void Logger::demonstratePointers() {
+    int vals[] = { 10, 20, 30, 40, 50 };
+    int *ptr = vals; // exactly the same as &vals[0]
+
+    // build a single QString showing both indexing styles
+    QString s = "Pointer vs. array demo: ";
+
+    // We know sizeof(vals)/sizeof(vals[0]) == 5
+    int length = static_cast<int>(sizeof(vals) / sizeof(vals[0]));
+    for (int i = 0; i < length; ++i) {
+        int viaIndex    = vals[i];       // array-index style
+        int viaPointer  = *(ptr + i);    // pointer arithmetic style
+
+        s += QString("arr[%1]=%2, *(arr+%1)=%3")
+                 .arg(i)
+                 .arg(viaIndex)
+                 .arg(viaPointer);
+
+        if (i < length - 1) {
+            s += "; ";
+        }
+    }
+
+    Logger::log(s);
+}
