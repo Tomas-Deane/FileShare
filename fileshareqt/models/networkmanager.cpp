@@ -362,10 +362,12 @@ void NetworkManager::listFiles(const QJsonObject &payload)
         for (const QJsonValue &v : arr) {
             if (!v.isObject()) continue;
             QJsonObject fileObj = v.toObject();
+            // constructs a fresh FileEntry (this calls the “normal” construtor)
             FileEntry fe;
             fe.filename = fileObj.value("filename").toString();
             // “id” comes from the server’s JSON; it should always exist
             fe.id = static_cast<qint64>( fileObj.value("id").toInt() );
+             // copy constructor is called here
             fileList.append(fe);
         }
         emit listFilesResult(true, fileList, QString());
