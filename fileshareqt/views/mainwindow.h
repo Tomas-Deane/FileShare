@@ -102,6 +102,10 @@ private slots:
                                      const QByteArray &data,
                                      const QString &message);
 
+    void on_revokeAccessButton_clicked();
+
+    void onRemoveSharedFileResult(bool success, const QString &message);
+
     void on_tabWidget_currentChanged(int index);
 
     void on_signupPasswordLineEdit_textChanged(const QString &text);
