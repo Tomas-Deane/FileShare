@@ -16,7 +16,7 @@ class NetworkManager : public INetworkManager
     Q_OBJECT
 
 public:
-    explicit NetworkManager(QObject *parent = nullptr);
+    NetworkManager(QObject *parent = nullptr);
     ~NetworkManager() override;
 
     // INetworkManager interface
@@ -34,13 +34,22 @@ public:
     void listFiles(const QJsonObject &payload) override;
     void downloadFile(const QJsonObject &payload) override;
     void deleteFile(const QJsonObject &payload) override;
+    void retrieveFileDEK(const QJsonObject &payload) override;
 
     // X3DH
     void getPreKeyBundle(const QJsonObject &payload) override;
+    void getOPK(const QJsonObject &payload) override;
 
     // TOFU backup
     void backupTOFU(const QJsonObject &payload) override;
     void getBackupTOFU(const QJsonObject &payload) override;
+
+    // Share endpoints
+    void shareFile(const QJsonObject &payload) override;
+    void listSharedTo(const QJsonObject &payload) override;
+    void listSharedFrom(const QJsonObject &payload) override;
+    void listSharers(const QJsonObject &payload) override;
+    void downloadSharedFile(const QJsonObject &payload) override;
 
     void checkConnection() override;
 

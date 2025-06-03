@@ -351,17 +351,24 @@ void NetworkManager::listFiles(const QJsonObject &payload)
     QByteArray resp = postJson("gobbler.info", 3220, "/list_files", payload, ok, message);
     Logger::log("Received listFiles response: " + QString::fromUtf8(resp));
     if (!ok) {
-        emit listFilesResult(false, QStringList(), message);
+        emit listFilesResult(false, QList<FileEntry>(), message);
         return;
     }
     auto obj = QJsonDocument::fromJson(resp).object();
     if (obj["status"].toString() == "ok") {
-        QStringList files;
-        for (const QJsonValue &val : obj["files"].toArray()) {
-            auto fileObj = val.toObject();
-            files.append(fileObj.value("filename").toString());
+        QJsonArray arr = obj["files"].toArray();
+        QList<FileEntry> fileList;
+        fileList.reserve(arr.size());
+        for (const QJsonValue &v : arr) {
+            if (!v.isObject()) continue;
+            QJsonObject fileObj = v.toObject();
+            FileEntry fe;
+            fe.filename = fileObj.value("filename").toString();
+            // “id” comes from the server’s JSON; it should always exist
+            fe.id = static_cast<qint64>( fileObj.value("id").toInt() );
+            fileList.append(fe);
         }
-        emit listFilesResult(true, files, QString());
+        emit listFilesResult(true, fileList, QString());
     }
 }
 
@@ -406,6 +413,29 @@ void NetworkManager::deleteFile(const QJsonObject &payload)
         emit deleteFileResult(true, obj["message"].toString());
     } else {
         emit deleteFileResult(false, obj["detail"].toString());
+    }
+}
+
+void NetworkManager::retrieveFileDEK(const QJsonObject &payload)
+{
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3220, "/retrieve_file_dek", payload, ok, message);
+    Logger::log("Received retrieveFileDEK response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit retrieveFileDEKResult(false, QString(), QString(), message);
+        return;
+    }
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        emit retrieveFileDEKResult(
+            true,
+            obj.value("encrypted_dek").toString(),
+            obj.value("dek_nonce").toString(),
+            QString()
+            );
+    } else {
+        emit retrieveFileDEKResult(false, QString(), QString(), obj.value("detail").toString());
     }
 }
 
@@ -475,6 +505,164 @@ void NetworkManager::getBackupTOFU(const QJsonObject &payload)
         emit getBackupTOFUResult(true, enc, nonce, "");
     } else {
         emit getBackupTOFUResult(false, "", "", obj["detail"].toString());
+    }
+}
+
+// ─── /share_file ─────────────────────────────────────────────────────────────
+void NetworkManager::shareFile(const QJsonObject &payload)
+{
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3220, "/share_file", payload, ok, message);
+    Logger::log("Received shareFile response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit shareFileResult(false, message);
+        return;
+    }
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        emit shareFileResult(true, obj.value("message").toString());
+    } else {
+        emit shareFileResult(false, obj.value("detail").toString());
+    }
+}
+
+// ─── /list_shared_to ─────────────────────────────────────────────────────────
+void NetworkManager::listSharedTo(const QJsonObject &payload)
+{
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3220, "/list_shared_to", payload, ok, message);
+    Logger::log("Received listSharedTo response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit listSharedToResult(false, QJsonArray(), message);
+        return;
+    }
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        QJsonArray arr = obj.value("shares").toArray();
+        emit listSharedToResult(true, arr, QString());
+    } else {
+        emit listSharedToResult(false, QJsonArray(), obj.value("detail").toString());
+    }
+}
+
+// ─── /list_shared_from ───────────────────────────────────────────────────────
+void NetworkManager::listSharedFrom(const QJsonObject &payload)
+{
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3220, "/list_shared_from", payload, ok, message);
+    Logger::log("Received listSharedFrom response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit listSharedFromResult(false, QJsonArray(), message);
+        return;
+    }
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        QJsonArray arr = obj.value("shares").toArray();
+        emit listSharedFromResult(true, arr, QString());
+    } else {
+        emit listSharedFromResult(false, QJsonArray(), obj.value("detail").toString());
+    }
+}
+
+// ─── /list_sharers ─────────────────────────────────────────────────────────
+void NetworkManager::listSharers(const QJsonObject &payload)
+{
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3220, "/list_sharers", payload, ok, message);
+    Logger::log("Received listSharers response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit listSharersResult(false, QStringList(), message);
+        return;
+    }
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        // Expect: { "status":"ok", "usernames":[ "alice", "bob", … ] }
+        QStringList users;
+        for (const QJsonValue &v : obj["usernames"].toArray())
+            users.append(v.toString());
+        emit listSharersResult(true, users, QString());
+    } else {
+        emit listSharersResult(false, QStringList(), obj["detail"].toString());
+    }
+}
+
+void NetworkManager::getOPK(const QJsonObject &payload)
+{
+    Logger::log("Sending getOPK request: " +
+                QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("gobbler.info", 3220, "/opk", payload, ok, message);
+    Logger::log("Received getOPK response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit getOPKResult(false, 0, QString(), message);
+        return;
+    }
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        int opk_id = obj["opk_id"].toInt();
+        QString pre_key_b64 = obj["pre_key"].toString();
+        emit getOPKResult(true, opk_id, pre_key_b64, QString());
+    } else {
+        emit getOPKResult(false, 0, QString(), obj["detail"].toString());
+    }
+}
+
+void NetworkManager::downloadSharedFile(const QJsonObject &payload)
+{
+    bool ok = false;
+    QString message;
+    // POST to /download_shared_file exactly as you do for downloadFile:
+    QByteArray resp = postJson("gobbler.info", 3220, "/download_shared_file", payload, ok, message);
+
+    if (!ok) {
+        // Failed HTTP or JSON parse → emit all‐empty fields + error
+        emit downloadSharedFileResult(false,
+                                      QString(),
+                                      QString(),
+                                      QString(),
+                                      QString(),
+                                      QString(),
+                                      QString(),
+                                      QString(),
+                                      QString(),
+                                      0,
+                                      message);
+        return;
+    }
+
+    auto obj = QJsonDocument::fromJson(resp).object();
+    if (obj["status"].toString() == "ok") {
+        emit downloadSharedFileResult(
+            true,
+            obj["encrypted_file"].toString(),
+            obj["file_nonce"].toString(),
+            obj["encrypted_file_key"].toString(),
+            obj["file_key_nonce"].toString(),
+            obj["EK_pub"].toString(),
+            obj["IK_pub"].toString(),
+            obj["SPK_pub"].toString(),
+            obj["SPK_signature"].toString(),
+            obj["opk_id"].toInt(),
+            QString()
+            );
+    } else {
+        emit downloadSharedFileResult(false,
+                                      QString(),
+                                      QString(),
+                                      QString(),
+                                      QString(),
+                                      QString(),
+                                      QString(),
+                                      QString(),
+                                      QString(),
+                                      0,
+                                      obj["detail"].toString());
     }
 }
 
