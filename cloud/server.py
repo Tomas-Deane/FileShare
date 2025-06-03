@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 import uvicorn
+import pymysql as connector
 
 import models
 import handlers
@@ -56,19 +57,13 @@ models.init_db()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    logger.info("Lifespan startup: opening DB connection")
-    app.state.db = models.UserDB()
+    logger.info("Lifespan startup: initializing pooled DB connections")
+    # No global UserDB instance—each request will pull from the pool via get_db
     try:
         yield
     finally:
-        # Shutdown
-        db = getattr(app.state, "db", None)
-        if db:
-            try:
-                db.conn.close()
-                logger.info("Lifespan shutdown: DB connection closed")
-            except Exception:
-                logger.exception("Error closing DB connection")
+        # Shutdown: nothing specific—pool will clean up on program exit
+        logger.info("Lifespan shutdown: application exiting")
 
 # ─── FastAPI app with lifespan ─────────────────────────────────────────────────
 app = FastAPI(
@@ -98,6 +93,10 @@ app.add_middleware(
 
 # ─── Database dependency ────────────────────────────────────────────────────────
 async def get_db():
+    """
+    For each request, pull a connection+cursor from the pool.
+    After the request, close that thread-local connection if it exists.
+    """
     db = models.UserDB()
     try:
         yield db
@@ -121,11 +120,11 @@ async def global_exception_handler(request: Request, exc: Exception):
     # Log the full error with traceback
     logger.error("Unhandled exception during request", exc_info=True)
     
-    # Check if it's a database error
+    # If it's a pymysql error, return 503
     if isinstance(exc, connector.Error):
         logger.error(f"Database error: {str(exc)}")
         return JSONResponse(
-            status_code=503,  # Service Unavailable
+            status_code=503,
             content={"detail": "Database error, please try again"}
         )
     
@@ -238,7 +237,6 @@ async def add_prekey_bundle(req: AddPreKeyBundleRequest, db: models.UserDB = Dep
     logger.debug(f"AddPreKeyBundle response: {resp}")
     return resp
 
-
 @app.post("/opk")
 async def opk(req: GetOPKRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"GetOPKRequest body: {req.model_dump_json()}")
@@ -302,7 +300,6 @@ async def list_users(req: ListUsersRequest, db: models.UserDB = Depends(get_db))
     logger.debug(f"ListUsers response: {resp}")
     return resp
 
-# list the files I have shared *to* a given user
 @app.post("/list_shared_to")
 async def list_shared_to(req: ListSharedToRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"ListSharedToRequest body: {req.model_dump_json()}")
@@ -310,14 +307,12 @@ async def list_shared_to(req: ListSharedToRequest, db: models.UserDB = Depends(g
     logger.debug(f"ListSharedTo response: {resp}")
     return resp
 
-# list the files shared *to me* *from* a given user
 @app.post("/list_shared_from")
 async def list_shared_from(req: ListSharedFromRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"ListSharedFromRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.list_shared_from_handler, req, db)
     logger.debug(f"ListSharedFrom response: {resp}")
     return resp
-
 
 @app.post("/list_matching_users")
 async def list_matching_users(req: ListMatchingUsersRequest, db: models.UserDB = Depends(get_db)):
@@ -326,7 +321,6 @@ async def list_matching_users(req: ListMatchingUsersRequest, db: models.UserDB =
     logger.debug(f"ListMatchingUsers response: {resp}")
     return resp
 
-# list all distinct users who have shared files to a target user
 @app.post("/list_sharers")
 async def list_sharers(req: ListSharersRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"ListSharersRequest body: {req.model_dump_json()}")
@@ -354,3 +348,4 @@ if __name__ == "__main__":
         ssl_keyfile=keyfile,
         log_config=None,
     )
+
