@@ -6,19 +6,19 @@
 #include <QDir>
 #include <QCoreApplication>
 
-static QFile     logFile;
-static QTextStream logStream;
-QPlainTextEdit*   Logger::consoleWidget = nullptr;
+// static data for the log file on disk:
+QFile     Logger::logFile;
+QTextStream Logger::logStream;
 
-void Logger::initialize(QPlainTextEdit *console) {
-    consoleWidget = console;
+void Logger::initialize(QPlainTextEdit *console)
+{
+    Logger::instance().consoleWidget = console;
 }
 
 void Logger::ensureLogOpen() {
     if (logFile.isOpen()) return;
 
     QDir d(QCoreApplication::applicationDirPath());
-
     // cd up until fileshareqt (CWD depth might change with OS or Qt version)
     while (!d.isRoot() && d.dirName() != "fileshareqt") {
         d.cdUp();
@@ -36,13 +36,22 @@ void Logger::ensureLogOpen() {
     logStream.setDevice(&logFile);
 }
 
-void Logger::log(const QString &msg) {
-    ensureLogOpen();
+void Logger::log(const QString &msg)
+{
+    Logger::instance().logInternal(msg);
+}
+
+void Logger::logInternal(const QString &msg)
+{
+    Logger::ensureLogOpen();
+
     QString ts = QDateTime::currentDateTime().toString(Qt::ISODate);
+
     logStream << ts << ": " << msg << "\n";
     logStream.flush();
 
-    if (consoleWidget) {
-        consoleWidget->appendPlainText(ts + ": " + msg);
+// explicit use of this pointer
+    if (this->consoleWidget) {
+        this->consoleWidget->appendPlainText(ts + ": " + msg);
     }
 }

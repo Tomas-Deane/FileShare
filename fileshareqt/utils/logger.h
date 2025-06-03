@@ -8,10 +8,11 @@
 
 class Logger {
 public:
+    // still keep these two static for everyone else to call
     static void initialize(QPlainTextEdit *console);
     static void log(const QString &msg);
 
-    // converts a UTF-8 encoded QByteArray to QString and logs it
+    // converts a UTF-8 QByteArray to QString and logs it
     static void log(const QByteArray &msg) {
         log(QString::fromUtf8(msg));
     }
@@ -28,23 +29,33 @@ public:
     }
 
 private:
-    static QPlainTextEdit *consoleWidget;
+    // private constructor enforces singleton
+    Logger() : consoleWidget(nullptr) {}
+
+    // singleton accessor
+    static Logger &instance() {
+        static Logger inst;
+        return inst;
+    }
+
+    QPlainTextEdit *consoleWidget;
+
+    static QFile     logFile;
+    static QTextStream logStream;
+
     static void ensureLogOpen();
+
+    void logInternal(const QString &msg);
 };
 
+// same “Log::message” shorthands as before:
 namespace Log {
-
-// shorthand for Logger::log to log a QString message
 inline void message(const QString &s) {
     Logger::log(s);
 }
-
-// shorthand for Logger::log to log a QByteArray message
 inline void message(const QByteArray &b) {
     Logger::log(b);
 }
-
-// shorthand for Logger::log to log any object by converting it via QDebug
 template<typename T>
 inline void message(const T &obj) {
     QString s;
