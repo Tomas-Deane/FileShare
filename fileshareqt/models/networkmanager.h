@@ -51,6 +51,9 @@ public:
     void listSharers(const QJsonObject &payload) override;
     void downloadSharedFile(const QJsonObject &payload) override;
 
+    // revoke a share (POST /remove_shared_file)
+    void removeSharedFile(const QJsonObject &payload) override;
+
     void checkConnection() override;
 
 private:
