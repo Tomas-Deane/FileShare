@@ -146,8 +146,6 @@ void ShareController::onChallenge(const QByteArray &nonce, const QString &operat
                 nonce,
                 m_authController->getSessionSecretKey()
                 );
-            qDebug() << "→ retrieve_file_dek: file_id =" << m_pendingFileId
-                     << "recipient =" << m_pendingRecipient;
             QJsonObject req {
                 { "username", me },
                 { "file_id",  m_pendingFileId },

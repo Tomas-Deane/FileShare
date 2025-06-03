@@ -16,7 +16,12 @@ QByteArray CryptoService::deriveKey(const QString &password,
 
 QByteArray CryptoService::randomBytes(int length)
 {
-    return CryptoUtils::randomBytes(length);
+    // If the caller requests more than MAX_RANDOM_LENGTH, clamp it
+    int reqLen = length;
+    if (length > ICryptoService::MAX_RANDOM_LENGTH) {
+        reqLen = ICryptoService::MAX_RANDOM_LENGTH;
+    }
+    return CryptoUtils::randomBytes(reqLen);
 }
 
 void CryptoService::generateKeyPair(QByteArray &publicKey,
