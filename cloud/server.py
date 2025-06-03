@@ -38,6 +38,7 @@ from schemas import (
     RetrieveFileDEKRequest,
     DownloadSharedFileRequest,
     ListMatchingUsersRequest,
+    PreviewSharedFileRequest,
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -257,6 +258,13 @@ async def download_shared_file(req: DownloadSharedFileRequest, db: models.UserDB
     logger.debug(f"DownloadSharedFileRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.download_shared_file_handler, req, db)
     logger.debug(f"DownloadSharedFile response: {resp}")
+    return resp
+
+@app.post("/preview_shared_file")
+async def preview_shared_file(req: PreviewSharedFileRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"PreviewSharedFileRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.preview_shared_file_handler, req, db)
+    logger.debug(f"PreviewSharedFile response: {resp}")
     return resp
 
 @app.post("/backup_tofu")

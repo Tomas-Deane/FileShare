@@ -246,6 +246,12 @@ class DownloadSharedFileRequest(BaseModel):
     nonce: str
     signature: str
 
+class PreviewSharedFileRequest(BaseModel):
+    username: str
+    share_id: int
+    nonce: str
+    signature: str
+
 class ListMatchingUsersRequest(BaseModel):
     username: str  # The user making the request
     nonce: str     # Challenge nonce
