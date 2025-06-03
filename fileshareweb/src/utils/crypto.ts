@@ -312,7 +312,7 @@ export async function deriveX3DHSharedSecret({
   recipientIKPub: Uint8Array,
   recipientSPKPub: Uint8Array,
   recipientSPKSignature: Uint8Array,
-  recipientOPKPub: Uint8Array
+  recipientOPKPub?: Uint8Array  // Make OPK optional
 }) {
   await sodium.ready;
 
@@ -333,10 +333,10 @@ export async function deriveX3DHSharedSecret({
       length: recipientSPKPub.length,
       hex: Array.from(recipientSPKPub).map(b => b.toString(16).padStart(2, '0')).join('')
     },
-    recipientOPKPub: {
+    recipientOPKPub: recipientOPKPub ? {
       length: recipientOPKPub.length,
       hex: Array.from(recipientOPKPub).map(b => b.toString(16).padStart(2, '0')).join('')
-    }
+    } : 'No OPK provided'
   });
 
   // 1. Verify SPK signature
@@ -354,63 +354,13 @@ export async function deriveX3DHSharedSecret({
     const myEKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(myEKPriv);
     const recipientIKPub_x = sodium.crypto_sign_ed25519_pk_to_curve25519(recipientIKPub);
     const recipientSPKPub_x = sodium.crypto_sign_ed25519_pk_to_curve25519(recipientSPKPub);
-    const recipientOPKPub_x = sodium.crypto_sign_ed25519_pk_to_curve25519(recipientOPKPub);
-
-    console.log('Sender - Converted keys:', {
-      myIKPriv_x: {
-        length: myIKPriv_x.length,
-        hex: Array.from(myIKPriv_x).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      },
-      myEKPriv_x: {
-        length: myEKPriv_x.length,
-        hex: Array.from(myEKPriv_x).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      },
-      recipientIKPub_x: {
-        length: recipientIKPub_x.length,
-        hex: Array.from(recipientIKPub_x).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      },
-      recipientSPKPub_x: {
-        length: recipientSPKPub_x.length,
-        hex: Array.from(recipientSPKPub_x).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      },
-      recipientOPKPub_x: {
-        length: recipientOPKPub_x.length,
-        hex: Array.from(recipientOPKPub_x).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      }
-    });
+    const recipientOPKPub_x = recipientOPKPub ? sodium.crypto_sign_ed25519_pk_to_curve25519(recipientOPKPub) : null;
 
     // 3. Perform DHs
     const DH1 = sodium.crypto_scalarmult(myIKPriv_x, recipientSPKPub_x);  // IK * SPK
     const DH2 = sodium.crypto_scalarmult(myEKPriv_x, recipientIKPub_x);  // EK * IK
     const DH3 = sodium.crypto_scalarmult(myEKPriv_x, recipientSPKPub_x);  // EK * SPK
-    const DH4 = sodium.crypto_scalarmult(myEKPriv_x, recipientOPKPub_x);  // EK * OPK
-
-    console.log('Sender - DH results:', {
-      DH1: {
-        length: DH1.length,
-        hex: Array.from(DH1).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      },
-      DH2: {
-        length: DH2.length,
-        hex: Array.from(DH2).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      },
-      DH3: {
-        length: DH3.length,
-        hex: Array.from(DH3).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      },
-      DH4: {
-        length: DH4.length,
-        hex: Array.from(DH4).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      }
-    });
-
-    // Add this before the concatenation in both functions
-    console.log('DH values to concatenate:', {
-      DH1_hex: Array.from(DH1).map((b) => (b as number).toString(16).padStart(2, '0')).join(''),
-      DH2_hex: Array.from(DH2).map((b) => (b as number).toString(16).padStart(2, '0')).join(''),
-      DH3_hex: Array.from(DH3).map((b) => (b as number).toString(16).padStart(2, '0')).join(''),
-      DH4_hex: Array.from(DH4).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-    });
+    const DH4 = recipientOPKPub_x ? sodium.crypto_scalarmult(myEKPriv_x, recipientOPKPub_x) : new Uint8Array(32);  // EK * OPK or zeros if no OPK
 
     // 4. Concatenate and hash
     const combined = new Uint8Array(DH1.length + DH2.length + DH3.length + DH4.length);
@@ -420,11 +370,6 @@ export async function deriveX3DHSharedSecret({
     combined.set(DH4, DH1.length + DH2.length + DH3.length);
 
     const sharedSecret = sodium.crypto_generichash(32, combined);
-    console.log('Sender - Final shared secret:', {
-      length: sharedSecret.length,
-      hex: Array.from(sharedSecret).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-    });
-
     return sharedSecret;
 
   } catch (error: unknown) {
@@ -450,7 +395,7 @@ export async function deriveX3DHSharedSecretRecipient({
   senderSPKPub: Uint8Array,
   myIKPriv: Uint8Array,
   mySPKPriv: Uint8Array,
-  myOPKPriv: Uint8Array
+  myOPKPriv?: Uint8Array  // Make OPK optional
 }): Promise<Uint8Array> {
   try {
     // Convert Ed25519 keys to X25519
@@ -460,67 +405,13 @@ export async function deriveX3DHSharedSecretRecipient({
     
     const myIKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(myIKPriv);
     const mySPKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(mySPKPriv);
-    const myOPKPriv_x = sodium.crypto_sign_ed25519_sk_to_curve25519(myOPKPriv);
-
-    console.log('Recipient - Converted keys:', {
-      senderEKPub_x: {
-        length: senderEKPub_x.length,
-        hex: Array.from(senderEKPub_x).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      },
-      senderIKPub_x: {
-        length: senderIKPub_x.length,
-        hex: Array.from(senderIKPub_x).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      },
-      senderSPKPub_x: {
-        length: senderSPKPub_x.length,
-        hex: Array.from(senderSPKPub_x).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      },
-      myIKPriv_x: {
-        length: myIKPriv_x.length,
-        hex: Array.from(myIKPriv_x).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      },
-      mySPKPriv_x: {
-        length: mySPKPriv_x.length,
-        hex: Array.from(mySPKPriv_x).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      },
-      myOPKPriv_x: {
-        length: myOPKPriv_x.length,
-        hex: Array.from(myOPKPriv_x).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      }
-    });
+    const myOPKPriv_x = myOPKPriv ? sodium.crypto_sign_ed25519_sk_to_curve25519(myOPKPriv) : null;
 
     // DH computations - matching sender's operations exactly
     const DH1 = sodium.crypto_scalarmult(mySPKPriv_x, senderIKPub_x);    // SPK * IK (matches IK * SPK)
     const DH2 = sodium.crypto_scalarmult(myIKPriv_x, senderEKPub_x);     // IK * EK (matches EK * IK)
     const DH3 = sodium.crypto_scalarmult(mySPKPriv_x, senderEKPub_x);    // SPK * EK (matches EK * SPK)
-    const DH4 = sodium.crypto_scalarmult(myOPKPriv_x, senderEKPub_x);    // OPK * EK (matches EK * OPK)
-
-    console.log('Recipient - DH results:', {
-      DH1: {
-        length: DH1.length,
-        hex: Array.from(DH1).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      },
-      DH2: {
-        length: DH2.length,
-        hex: Array.from(DH2).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      },
-      DH3: {
-        length: DH3.length,
-        hex: Array.from(DH3).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      },
-      DH4: {
-        length: DH4.length,
-        hex: Array.from(DH4).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-      }
-    });
-
-    // Add this before the concatenation in both functions
-    console.log('DH values to concatenate:', {
-      DH1_hex: Array.from(DH1).map((b) => (b as number).toString(16).padStart(2, '0')).join(''),
-      DH2_hex: Array.from(DH2).map((b) => (b as number).toString(16).padStart(2, '0')).join(''),
-      DH3_hex: Array.from(DH3).map((b) => (b as number).toString(16).padStart(2, '0')).join(''),
-      DH4_hex: Array.from(DH4).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-    });
+    const DH4 = myOPKPriv_x ? sodium.crypto_scalarmult(myOPKPriv_x, senderEKPub_x) : new Uint8Array(32);    // OPK * EK or zeros if no OPK
 
     // Concatenate DH results in the same order as sender
     const concatenated = new Uint8Array(DH1.length + DH2.length + DH3.length + DH4.length);
@@ -531,11 +422,6 @@ export async function deriveX3DHSharedSecretRecipient({
 
     // Generate final shared secret
     const sharedSecret = sodium.crypto_generichash(32, concatenated);
-    console.log('Recipient - Final shared secret:', {
-      length: sharedSecret.length,
-      hex: Array.from(sharedSecret).map((b) => (b as number).toString(16).padStart(2, '0')).join('')
-    });
-
     return sharedSecret;
   } catch (error) {
     console.error('Error in deriveX3DHSharedSecretRecipient:', error);

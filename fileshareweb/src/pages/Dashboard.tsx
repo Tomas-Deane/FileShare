@@ -250,6 +250,7 @@ interface DownloadResponse {
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const test_empty_opk_share = true; // Set to false to disable testing empty OPK sharing
   const [activeTab, setActiveTab] = useState<'home'|'files'|'users'|'profile'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [userSearchQuery, setUserSearchQuery] = useState('');
@@ -1241,6 +1242,27 @@ const TestButton = () => {
       for (const recipientUsername of selectedRecipients) {
         console.log(`Processing recipient: ${recipientUsername}`);
         
+        if(test_empty_opk_share){
+        // Clear recipient's OPKs first (for testing)
+        console.log('Clearing recipient OPKs...');
+        const clearOPKsChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+          username,
+          operation: 'clear_user_opks'
+        });
+
+        if (clearOPKsChallengeResponse.status !== 'challenge') {
+          throw new Error('Failed to get challenge for clearing OPKs');
+        }
+
+        const clearOPKsSignature = await signChallenge(b64ToUint8Array(clearOPKsChallengeResponse.nonce), secretKey!);
+        await apiClient.post('/clear_user_opks', {
+          username,
+          target_username: recipientUsername,
+          nonce: clearOPKsChallengeResponse.nonce,
+          signature: uint8ArrayToB64(clearOPKsSignature)
+        });
+        console.log('Cleared recipient OPKs');
+      }
         // 2. Get recipient's verified pre-key bundle from local storage
         const myUsername = storage.getCurrentUser();
         if (!myUsername) throw new Error('No current user found');

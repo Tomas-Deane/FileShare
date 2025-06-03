@@ -924,3 +924,10 @@ class UserDB:
         cursor.execute(sql, (file_id, user_id))
         conn.commit()
 
+    def clear_user_opks(self, user_id: int) -> None:
+        """Clear all OPKs for a user. For testing purposes only."""
+        conn, cursor = self._get_connection()
+        sql = "DELETE FROM opks WHERE user_id = %s"
+        cursor.execute(sql, (user_id,))
+        conn.commit()
+

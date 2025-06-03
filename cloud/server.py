@@ -9,7 +9,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 import uvicorn
-import pymysql as connector
 
 import models
 import handlers
@@ -39,7 +38,8 @@ from schemas import (
     RetrieveFileDEKRequest,
     DownloadSharedFileRequest,
     ListMatchingUsersRequest,
-    ListSharersRequest,
+    PreviewSharedFileRequest,
+    ClearUserOPKsRequest,
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -57,13 +57,19 @@ models.init_db()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    logger.info("Lifespan startup: initializing pooled DB connections")
-    # No global UserDB instance—each request will pull from the pool via get_db
+    logger.info("Lifespan startup: opening DB connection")
+    app.state.db = models.UserDB()
     try:
         yield
     finally:
-        # Shutdown: nothing specific—pool will clean up on program exit
-        logger.info("Lifespan shutdown: application exiting")
+        # Shutdown
+        db = getattr(app.state, "db", None)
+        if db:
+            try:
+                db.conn.close()
+                logger.info("Lifespan shutdown: DB connection closed")
+            except Exception:
+                logger.exception("Error closing DB connection")
 
 # ─── FastAPI app with lifespan ─────────────────────────────────────────────────
 app = FastAPI(
@@ -91,24 +97,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Database dependency ────────────────────────────────────────────────────────
-async def get_db():
-    """
-    For each request, pull a connection+cursor from the pool.
-    After the request, close that thread-local connection if it exists.
-    """
-    db = models.UserDB()
-    try:
-        yield db
-    finally:
-        if hasattr(db._local, 'conn'):
-            try:
-                db._local.conn.close()
-            except Exception as e:
-                logger.error(f"Error closing database connection: {str(e)}")
-            finally:
-                delattr(db._local, 'conn')
-                delattr(db._local, 'cursor')
+# ─── Dependency to get DB ───────────────────────────────────────────────────────
+def get_db():
+    return app.state.db
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -117,18 +108,8 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    # Log the full error with traceback
-    logger.error("Unhandled exception during request", exc_info=True)
-    
-    # If it's a pymysql error, return 503
-    if isinstance(exc, connector.Error):
-        logger.error(f"Database error: {str(exc)}")
-        return JSONResponse(
-            status_code=503,
-            content={"detail": "Database error, please try again"}
-        )
-    
     # Everything else is a 500
+    logger.error("Unhandled exception during request", exc_info=exc)
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error"}
@@ -237,6 +218,7 @@ async def add_prekey_bundle(req: AddPreKeyBundleRequest, db: models.UserDB = Dep
     logger.debug(f"AddPreKeyBundle response: {resp}")
     return resp
 
+
 @app.post("/opk")
 async def opk(req: GetOPKRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"GetOPKRequest body: {req.model_dump_json()}")
@@ -279,6 +261,13 @@ async def download_shared_file(req: DownloadSharedFileRequest, db: models.UserDB
     logger.debug(f"DownloadSharedFile response: {resp}")
     return resp
 
+@app.post("/preview_shared_file")
+async def preview_shared_file(req: PreviewSharedFileRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"PreviewSharedFileRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.preview_shared_file_handler, req, db)
+    logger.debug(f"PreviewSharedFile response: {resp}")
+    return resp
+
 @app.post("/backup_tofu")
 async def backup_tofu(req: BackupTOFURequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"BackupTOFURequest body: {req.model_dump_json()}")
@@ -300,19 +289,22 @@ async def list_users(req: ListUsersRequest, db: models.UserDB = Depends(get_db))
     logger.debug(f"ListUsers response: {resp}")
     return resp
 
+# New: list the files I have shared *to* a given user
 @app.post("/list_shared_to")
-async def list_shared_to(req: ListSharedToRequest, db: models.UserDB = Depends(get_db)):
+async def list_shared_to(req: ListSharedToRequest,  db: models.UserDB = Depends(get_db)):
     logger.debug(f"ListSharedToRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.list_shared_to_handler, req, db)
     logger.debug(f"ListSharedTo response: {resp}")
     return resp
 
+# New: list the files shared *to me* *from* a given user
 @app.post("/list_shared_from")
 async def list_shared_from(req: ListSharedFromRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"ListSharedFromRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.list_shared_from_handler, req, db)
     logger.debug(f"ListSharedFrom response: {resp}")
     return resp
+
 
 @app.post("/list_matching_users")
 async def list_matching_users(req: ListMatchingUsersRequest, db: models.UserDB = Depends(get_db)):
@@ -321,17 +313,18 @@ async def list_matching_users(req: ListMatchingUsersRequest, db: models.UserDB =
     logger.debug(f"ListMatchingUsers response: {resp}")
     return resp
 
-@app.post("/list_sharers")
-async def list_sharers(req: ListSharersRequest, db: models.UserDB = Depends(get_db)):
-    logger.debug(f"ListSharersRequest body: {req.model_dump_json()}")
-    resp = await run_in_threadpool(handlers.list_sharers_handler, req, db)
-    logger.debug(f"ListSharers response: {resp}")
-    return resp
+@app.post("/clear_user_opks")
+async def clear_user_opks(req: ClearUserOPKsRequest, db: models.UserDB = Depends(get_db)):
+    """
+    Test endpoint to clear all OPKs for a user.
+    This is for testing X3DH without OPKs.
+    """
+    return handlers.clear_user_opks_handler(req, db)
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     host     = os.environ.get('FS_HOST', '0.0.0.0')
-    port     = int(os.environ.get('FS_HTTPS_PORT', '3220'))
+    port     = int(os.environ.get('FS_HTTPS_PORT', '3210'))
     certfile = os.environ.get('SSL_CERTFILE', 'cert.pem')
     keyfile  = os.environ.get('SSL_KEYFILE', 'key.pem')
 
@@ -348,4 +341,3 @@ if __name__ == "__main__":
         ssl_keyfile=keyfile,
         log_config=None,
     )
-

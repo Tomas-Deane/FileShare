@@ -263,3 +263,9 @@ class ListSharersRequest(BaseModel):
     username: str
     nonce: str
     signature: str
+
+class ClearUserOPKsRequest(BaseModel):
+    username: str  # The user making the request
+    target_username: str  # The user whose OPKs we want to clear
+    nonce: str
+    signature: str
