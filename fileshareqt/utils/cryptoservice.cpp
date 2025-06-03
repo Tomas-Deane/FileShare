@@ -1,6 +1,11 @@
 #include "cryptoservice.h"
 #include "crypto_utils.h"
 
+CryptoService::CryptoService()
+{
+    CryptoUtils::initializeLibrary();
+}
+
 QByteArray CryptoService::deriveKey(const QString &password,
                                     const QByteArray &salt,
                                     quint64 opslimit,
@@ -9,10 +14,38 @@ QByteArray CryptoService::deriveKey(const QString &password,
     return CryptoUtils::derivePDK(password, salt, opslimit, memlimit);
 }
 
+QByteArray CryptoService::randomBytes(int length)
+{
+    return CryptoUtils::randomBytes(length);
+}
+
 void CryptoService::generateKeyPair(QByteArray &publicKey,
                                     QByteArray &secretKey)
 {
     CryptoUtils::generateKeyPair(publicKey, secretKey);
+}
+
+QByteArray CryptoService::generateAeadKey()
+{
+    return CryptoUtils::generateAeadKey();
+}
+
+void CryptoService::generateX25519KeyPair(QByteArray &publicKey,
+                                          QByteArray &secretKey)
+{
+    CryptoUtils::generateX25519KeyPair(publicKey, secretKey);
+}
+
+void CryptoService::generateOneTimePreKey(QByteArray &opkPub,
+                                          QByteArray &opkPriv)
+{
+    CryptoUtils::generateOneTimePreKey(opkPub, opkPriv);
+}
+
+QString CryptoService::computeOOBVerificationCode(const QByteArray &ik1_pub,
+                                                  const QByteArray &ik2_pub)
+{
+    return CryptoUtils::computeOOBCode(ik1_pub, ik2_pub);
 }
 
 QByteArray CryptoService::encrypt(const QByteArray &plaintext,
@@ -33,4 +66,22 @@ QByteArray CryptoService::sign(const QByteArray &message,
                                const QByteArray &secretKey)
 {
     return CryptoUtils::signMessage(message, secretKey);
+}
+
+QByteArray CryptoService::deriveSharedKey(const QByteArray &ourPriv,
+                                          const QByteArray &theirPub)
+{
+    return CryptoUtils::computeSharedKey(ourPriv, theirPub);
+}
+
+QByteArray CryptoService::hkdfSha256(const QByteArray &salt,
+                                     const QByteArray &ikm,
+                                     int outputLength)
+{
+    return CryptoUtils::hkdfSha256(salt, ikm, outputLength);
+}
+
+void CryptoService::secureZeroMemory(QByteArray &data)
+{
+    CryptoUtils::secureZeroMemory(data);
 }

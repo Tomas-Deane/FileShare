@@ -4,6 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
@@ -22,6 +23,24 @@ from schemas import (
     ListFilesRequest,
     DownloadFileRequest,
     DeleteFileRequest,
+    GetOPKRequest,
+    AddOPKsRequest,
+    RemoveSharedFileRequest,
+    ListSharedFilesRequest,
+    ShareFileRequest,
+    GetPreKeyBundleRequest,
+    AddPreKeyBundleRequest,
+    BackupTOFURequest,
+    GetBackupTOFURequest,
+    ListUsersRequest,
+    ListSharedToRequest, 
+    ListSharedFromRequest,
+    RetrieveFileDEKRequest,
+    DownloadSharedFileRequest,
+    ListMatchingUsersRequest,
+    PreviewSharedFileRequest,
+    ClearUserOPKsRequest,
+    GetOPKCountRequest
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -46,12 +65,12 @@ async def lifespan(app: FastAPI):
     finally:
         # Shutdown
         db = getattr(app.state, "db", None)
-        if db:
+        if db and hasattr(db, 'pool'):
             try:
-                db.conn.close()
-                logger.info("Lifespan shutdown: DB connection closed")
-            except Exception:
-                logger.exception("Error closing DB connection")
+                db.pool.close()
+                logger.info("Lifespan shutdown: DB connection pool closed")
+            except Exception as e:
+                logger.error(f"Error closing DB connection pool: {str(e)}")
 
 # ─── FastAPI app with lifespan ─────────────────────────────────────────────────
 app = FastAPI(
@@ -62,14 +81,18 @@ app = FastAPI(
 # ─── Security headers (HSTS) ───────────────────────────────────────────────────
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    return response
+    try:
+        response = await call_next(request)
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+    except Exception as e:
+        logger.error("Error in security headers middleware", exc_info=e)
+        raise
 
 # ─── CORS ───────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],           # TODO: lock down for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -79,9 +102,14 @@ app.add_middleware(
 def get_db():
     return app.state.db
 
-# ─── Global exception handler ──────────────────────────────────────────────────
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    # Let FastAPI render the JSON with the proper status code & detail
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    # Everything else is a 500
     logger.error("Unhandled exception during request", exc_info=exc)
     return JSONResponse(
         status_code=500,
@@ -147,6 +175,13 @@ async def upload_file(req: UploadRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"UploadFile response: {resp}")
     return resp
 
+@app.post("/retrieve_file_dek")
+async def retrieve_file_dek(req: RetrieveFileDEKRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"RetrieveFileDEKRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.retrieve_file_dek_handler, req, db)
+    logger.debug(f"RetrieveFileDEK response: {resp}")
+    return resp
+
 @app.post("/list_files")
 async def list_files(req: ListFilesRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"ListFilesRequest body: {req.model_dump_json()}")
@@ -170,10 +205,134 @@ async def delete_file(req: DeleteFileRequest, db: models.UserDB = Depends(get_db
     logger.debug(f"DeleteFile response: {resp}")
     return resp
 
+@app.post("/get_pre_key_bundle")
+async def get_prekey_bundle(req: GetPreKeyBundleRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"GetPreKeyBundleRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.get_prekey_bundle_handler, req, db)
+    logger.debug(f"PreKeyBundle response: {resp}")
+    return resp
+
+@app.post("/add_pre_key_bundle")
+async def add_prekey_bundle(req: AddPreKeyBundleRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"AddPreKeyBundleRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.add_prekey_bundle_handler, req, db)
+    logger.debug(f"AddPreKeyBundle response: {resp}")
+    return resp
+
+
+@app.post("/opk")
+async def opk(req: GetOPKRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"GetOPKRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.get_opk_handler, req, db)
+    logger.debug(f"OPK response: {resp}")
+    return resp
+
+@app.post("/add_opks")
+async def add_opks(req: AddOPKsRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"AddOPKsRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.add_opks_handler, req, db)
+    logger.debug(f"AddOPKs response: {resp}")
+    return resp
+
+@app.post("/share_file")
+async def share_file(req: ShareFileRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ShareFileRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.share_file_handler, req, db)
+    logger.debug(f"ShareFile response: {resp}")
+    return resp
+
+@app.post("/remove_shared_file")
+async def remove_shared_file(req: RemoveSharedFileRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"RemoveSharedFileRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.remove_shared_file_handler, req, db)
+    logger.debug(f"RemoveSharedFile response: {resp}")
+    return resp
+
+@app.post("/list_shared_files")
+async def list_shared_files(req: ListSharedFilesRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListSharedFilesRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.list_shared_files_handler, req, db)
+    logger.debug(f"ListSharedFiles response: {resp}")
+    return resp
+
+@app.post("/download_shared_file")
+async def download_shared_file(req: DownloadSharedFileRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"DownloadSharedFileRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.download_shared_file_handler, req, db)
+    logger.debug(f"DownloadSharedFile response: {resp}")
+    return resp
+
+@app.post("/preview_shared_file")
+async def preview_shared_file(req: PreviewSharedFileRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"PreviewSharedFileRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.preview_shared_file_handler, req, db)
+    logger.debug(f"PreviewSharedFile response: {resp}")
+    return resp
+
+@app.post("/backup_tofu")
+async def backup_tofu(req: BackupTOFURequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"BackupTOFURequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.backup_tofu_keys_handler, req, db)
+    logger.debug(f"BackupTOFU response: {resp}")
+    return resp
+
+@app.post("/get_backup_tofu")
+async def get_backup_tofu(req: GetBackupTOFURequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"GetBackupTOFURequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.get_backup_tofu_keys_handler, req, db)
+    logger.debug(f"GetBackupTOFU response: {resp}")
+    return resp
+
+@app.post("/list_users")
+async def list_users(req: ListUsersRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListUsersRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.list_users_handler, req, db)
+    logger.debug(f"ListUsers response: {resp}")
+    return resp
+
+# New: list the files I have shared *to* a given user
+@app.post("/list_shared_to")
+async def list_shared_to(req: ListSharedToRequest,  db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListSharedToRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.list_shared_to_handler, req, db)
+    logger.debug(f"ListSharedTo response: {resp}")
+    return resp
+
+# New: list the files shared *to me* *from* a given user
+@app.post("/list_shared_from")
+async def list_shared_from(req: ListSharedFromRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListSharedFromRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.list_shared_from_handler, req, db)
+    logger.debug(f"ListSharedFrom response: {resp}")
+    return resp
+
+
+@app.post("/list_matching_users")
+async def list_matching_users(req: ListMatchingUsersRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListMatchingUsersRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.list_matching_users_handler, req, db)
+    logger.debug(f"ListMatchingUsers response: {resp}")
+    return resp
+
+@app.post("/clear_user_opks")
+async def clear_user_opks(req: ClearUserOPKsRequest, db: models.UserDB = Depends(get_db)):
+    """
+    Test endpoint to clear all OPKs for a user.
+    This is for testing X3DH without OPKs.
+    """
+    return handlers.clear_user_opks_handler(req, db)
+
+@app.post("/get_opk_count")
+async def get_opk_count(req: GetOPKCountRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"GetOPKCountRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.get_opk_count_handler, req, db)
+    logger.debug(f"GetOPKCount response: {resp}")
+    return resp
+
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     host     = os.environ.get('FS_HOST', '0.0.0.0')
-    port     = int(os.environ.get('FS_HTTPS_PORT', '3210'))
+    port     = int(os.environ.get('FS_HTTPS_PORT', '3230'))
     certfile = os.environ.get('SSL_CERTFILE', 'cert.pem')
     keyfile  = os.environ.get('SSL_KEYFILE', 'key.pem')
 
@@ -190,4 +349,3 @@ if __name__ == "__main__":
         ssl_keyfile=keyfile,
         log_config=None,
     )
-

@@ -1,9 +1,5 @@
 #include "mainwindow.h"
-#include "networkmanager.h"
-#include "cryptoservice.h"
-#include "authcontroller.h"
-#include "profilecontroller.h"
-#include "filecontroller.h"
+#include "services.h"
 
 #include <QFile>
 #include <QDebug>
@@ -22,16 +18,9 @@ int main(int argc, char *argv[])
         qWarning() << "Could not load style sheet!";
     }
 
-    // ——— manual DI ———
-    // note: parent ownership set to 'w' so Qt will delete them
-    INetworkManager  *net = new NetworkManager(nullptr);
-    ICryptoService   *cs  = new CryptoService();
-
-    AuthController    *ac = new AuthController(net, cs, nullptr);
-    ProfileController *pc = new ProfileController(net, ac, cs, nullptr);
-    FileController    *fc = new FileController(net, ac, cs, nullptr);
-
-    MainWindow w(ac, fc, pc);
+    Services services;
+    MainWindow w(services.auth.get(), services.file.get(), services.profile.get(), services.verify.get(), services.share.get());
     w.show();
+
     return a.exec();
 }

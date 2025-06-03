@@ -3,13 +3,13 @@
 
 #include <QMainWindow>
 #include <QString>
-#include <QStringList>
 #include <QByteArray>
-#include <QMap>
 #include <QListWidgetItem>
 #include <QProgressBar>
 #include <QLabel>
 #include "passwordstrength.h"
+#include "sharecontroller.h"
+#include "sharedfilemanager.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -19,7 +19,9 @@ class CryptoService;
 class AuthController;
 class ProfileController;
 class FileController;
+class VerifyController;
 class NetworkManager;
+class ShareController;
 
 class MainWindow : public QMainWindow
 {
@@ -30,18 +32,23 @@ public:
     MainWindow(AuthController* authCtrl,
                 FileController* fileCtrl,
                 ProfileController* profileCtrl,
+                VerifyController* verifyCtrl,
+                ShareController*   shareCtrl,
                 QWidget *parent = nullptr);
 
     ~MainWindow();
 
     enum TabIndex {
-        Home     = 0,
-        Signup   = 1,
-        Login    = 2,
-        Upload   = 3,
-        Download = 4,
-        Share    = 5,
-        Profile  = 6
+        Home        = 0,
+        SignUp      = 1,
+        Login       = 2,
+        Verify      = 3,
+        Upload      = 4,
+        Download    = 5,
+        ShareNew    = 6,
+        SharesTo    = 7,
+        SharesFrom  = 8,
+        Profile     = 9
     };
 
 private slots:
@@ -69,8 +76,35 @@ private slots:
     void on_deleteButton_clicked();
     void onDeleteFileResult(bool success, const QString &message);
 
-    void onListFilesResult(bool success, const QStringList &files, const QString &message);
+    void onListFilesResult(bool success, const QList<FileEntry> &files, const QString &message);
     void onDownloadFileResult(bool success, const QString &filename, const QByteArray &data, const QString &message);
+
+    void on_shareFileButton_clicked();
+
+    void on_sharesToVerifiedUsersList_itemSelectionChanged();
+    // Fired when shareController returns the list of files shared TO that user
+    void onSharesToFilesResult(bool success,
+                               const QList<SharedFile> &shares,
+                               const QString &message);
+
+    void on_sharedFromUsersList_itemSelectionChanged();
+    void onSharesFromFilesResult(bool success,
+                                 const QList<SharedFile> &shares,
+                                 const QString &message);
+
+    void on_saveSharesFromFileButton_clicked();
+
+    void on_sharesFromFilesList_itemSelectionChanged();
+
+    /// Handler for when ShareController has finished downloading a shared file
+    void on_downloadSharedFileResult(bool success,
+                                     const QString &filename,
+                                     const QByteArray &data,
+                                     const QString &message);
+
+    void on_revokeAccessButton_clicked();
+
+    void onRemoveSharedFileResult(bool success, const QString &message);
 
     void on_tabWidget_currentChanged(int index);
 
@@ -82,6 +116,9 @@ private:
     AuthController        *authController;
     ProfileController     *profileController;
     FileController        *fileController;
+    VerifyController      *verifyController;
+    ShareController       *shareController;
+    SharedFileManager     *sharedFileMgr;
     PasswordStrength       pwEvaluator;
 
     QString                currentUploadPath;
@@ -89,9 +126,26 @@ private:
 
     QListWidgetItem       *pendingDeleteItem;
 
+    QMap<QString,QByteArray> sharedDownloadCache;
+
+    //  When the user clicks “Save” but the file isn’t yet downloaded
+    bool   m_pendingSaveShare;
+    QString m_pendingSaveFilename;
+
     void updatePasswordStrength(const QString &text,
                                 QProgressBar *bar,
                                 QLabel *label);
+
+    // track the last‐active tab so we can clear it when leaving
+    int m_prevTabIndex;
+
+    // helpers for resetting UI
+    void clearPage(int index);
+    void refreshPage(int index);
+
+    // helper for previewing shared files
+    void previewSharedFile(const QString &filename, const QByteArray &data);
+
 };
 
 #endif // MAINWINDOW_H

@@ -16,12 +16,18 @@ import { useNavigate } from 'react-router-dom';
 import { Visibility, VisibilityOff, Security, Lock, Person, Home } from '@mui/icons-material';
 import { MatrixBackground } from '../components';
 import { apiClient } from '../utils/apiClient';
-import { generateKeyPair, encryptPrivateKey, generateSalt, derivePDK, generateKEK, encryptKEK, CryptoError } from '../utils/crypto';
+import { generateKeyPair, encryptPrivateKey, generateSalt, derivePDK, generateKEK, encryptKEK, CryptoError, generateX3DHKeys } from '../utils/crypto';
 import sodium from 'libsodium-wrappers-sumo';
+import { storage } from '../utils/storage';
+import base64 from 'base64-js';
 
 interface SignupResponse {
   status: string;
   detail?: string;
+}
+
+interface ChallengeResponse {
+  nonce: string;
 }
 
 const Signup: React.FC = () => {
@@ -90,6 +96,9 @@ const Signup: React.FC = () => {
       console.log('Generating key pair...');
       const { publicKey, privateKey } = await generateKeyPair();
       
+      console.log('Generating X3DH keys...');
+      const x3dhKeys = await generateX3DHKeys();
+      
       console.log('Generating salt...');
       const salt = await generateSalt();
       
@@ -115,8 +124,45 @@ const Signup: React.FC = () => {
         kekNonce
       );
 
-      // Convert binary data to base64 strings
-      console.log('Preparing payload...');
+      // Create backup data with only X3DH keys
+      const backupData = {
+        username: trimmedUsername,
+        // Private keys
+        IK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
+        SPK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_private))),
+        OPKs_priv: x3dhKeys.one_time_pre_keys_private.map(key =>
+            btoa(String.fromCharCode.apply(null, Array.from(key)))
+        ),
+        // Public keys
+        IK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
+        SPK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
+        SPK_signature: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
+        OPKs: x3dhKeys.one_time_pre_keys.map(key =>
+            btoa(String.fromCharCode.apply(null, Array.from(key)))
+        )
+      };
+
+      // Create session storage data
+      const sessionData = {
+        ...backupData,
+        secretKey: btoa(String.fromCharCode.apply(null, Array.from(privateKey))),
+        pdk: btoa(String.fromCharCode.apply(null, Array.from(pdk))),
+        kek: btoa(String.fromCharCode.apply(null, Array.from(kek))),
+        verified: true,
+        lastVerified: new Date().toISOString()
+      };
+
+      // Encrypt backup with password-derived key
+      const backupNonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+      const backupKey = await derivePDK(formData.password, salt, 3, 67108864);
+      const encryptedBackup = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+          JSON.stringify(backupData),
+          null,
+          null,
+          backupNonce,
+          backupKey
+      );
+
       const payload = {
         username: trimmedUsername,
         salt: btoa(String.fromCharCode.apply(null, Array.from(salt))),
@@ -126,14 +172,25 @@ const Signup: React.FC = () => {
         encrypted_privkey: btoa(String.fromCharCode.apply(null, Array.from(encryptedPrivateKey))),
         privkey_nonce: btoa(String.fromCharCode.apply(null, Array.from(encryptedNonce))),
         encrypted_kek: btoa(String.fromCharCode.apply(null, Array.from(encryptedKek))),
-        kek_nonce: btoa(String.fromCharCode.apply(null, Array.from(encryptedKekNonce)))
+        kek_nonce: btoa(String.fromCharCode.apply(null, Array.from(encryptedKekNonce))),
+        identity_key: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
+        signed_pre_key: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
+        signed_pre_key_sig: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
+        one_time_pre_keys: x3dhKeys.one_time_pre_keys.map(key => 
+          btoa(String.fromCharCode.apply(null, Array.from(key)))
+        ),
+        encrypted_backup: btoa(String.fromCharCode.apply(null, Array.from(encryptedBackup))),
+        backup_nonce: btoa(String.fromCharCode.apply(null, Array.from(backupNonce)))
       };
 
       // Make API call
       console.log('Sending signup request...');
       const response = await apiClient.post<SignupResponse>('/signup', payload);
       
-      if (response.status === 'ok') {
+      if (response.status === 'ok') {        
+        // Save session data to sessionStorage
+        storage.saveKeyBundle(sessionData);
+        storage.setCurrentUser(trimmedUsername);
         console.log('Signup successful, redirecting to login...');
         navigate('/login');
       } else {
