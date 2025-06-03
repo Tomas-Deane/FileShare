@@ -137,6 +137,8 @@ private:
     QString          m_pendingRecipient;   // for shareFile
     qint64           m_pendingFileId      = -1;
     QByteArray       m_recipientIkPub;    // after getPreKeyBundle
+    QByteArray       m_recipientSpkPub;      // <–– new: stash recipient’s SPK_pub
+    QByteArray       m_recipientSpkSignature;
 
     QString          m_pendingTargetUsername;  // for listSharedTo / listSharedFrom
 
