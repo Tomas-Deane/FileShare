@@ -440,7 +440,7 @@ const Dashboard: React.FC = () => {
 
       // Step 2: Sign the appropriate data
       const signature = await signChallenge(
-        isShared ? new TextEncoder().encode((file as SharedFileData).share_id.toString()) : new TextEncoder().encode(filename),
+        isShared ? new TextEncoder().encode((file as SharedFileData).share_id.toString()) : new TextEncoder().encode(fileId.toString()),
         secretKey!
       );
 
@@ -449,7 +449,7 @@ const Dashboard: React.FC = () => {
         isShared ? '/download_shared_file' : '/download_file',
         {
           username,
-          ...(isShared ? { share_id: (file as SharedFileData).share_id } : { filename }),
+          ...(isShared ? { share_id: (file as SharedFileData).share_id } : { file_id: fileId }),
           nonce: challengeResponse.nonce,
           signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
         }

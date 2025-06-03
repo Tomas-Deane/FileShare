@@ -313,15 +313,20 @@ const Login: React.FC = () => {
         console.log('Added 100 new OPKs');
       }
 
-      // 6. Complete authentication
-      const loginSignature = await signChallenge(
-        base64.toByteArray(challengeResponse.nonce),
+      // 6. Complete authentication with fresh challenge
+      console.log('Getting fresh challenge for authentication...');
+      const authChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username: trimmedUsername,
+        operation: 'login'
+      });
+      const authSignature = await signChallenge(
+        base64.toByteArray(authChallengeResponse.nonce),
         privateKey
       );
       const authResponse = await apiClient.post<LoginResponse>('/authenticate', {
         username: trimmedUsername,
-        nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(loginSignature)))
+        nonce: authChallengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(authSignature)))
       });
 
       if (authResponse.status === 'ok') {
