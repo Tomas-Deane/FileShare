@@ -1063,7 +1063,11 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
     }
 
 def preview_shared_file_handler(req: PreviewSharedFileRequest, db: models.UserDB):
-    # 1) verify owner & challenge
+    """
+    Preview a shared file for a user. Verifies the challenge and signature, then returns
+    the encrypted file, nonces, and public key material needed for preview/decryption.
+    """
+    # 1) Verify user and challenge
     user = db.get_user(req.username)
     if not user:
         raise HTTPException(404, "User not found")
@@ -1074,7 +1078,7 @@ def preview_shared_file_handler(req: PreviewSharedFileRequest, db: models.UserDB
     if stored is None or provided != stored:
         raise HTTPException(400, "Invalid or expired challenge")
 
-    # 2) Verify signature
+    # 2) Verify signature over share_id
     signature = base64.b64decode(req.signature)
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
@@ -1088,18 +1092,18 @@ def preview_shared_file_handler(req: PreviewSharedFileRequest, db: models.UserDB
     if not shared_file:
         raise HTTPException(404, "Shared file not found")
 
-    # Get the original file's nonce
+    # 4) Get the original file's nonce
     file_nonce = db.get_file_nonce(shared_file["file_id"])
     if not file_nonce:
         raise HTTPException(404, "File nonce not found")
 
-    # Return both nonces
+    # 5) Return all relevant fields, base64-encoded
     return {
         "status": "ok",
         "encrypted_file": base64.b64encode(shared_file["encrypted_file"]).decode(),
-        "file_nonce": base64.b64encode(file_nonce).decode(),  # Original file's nonce
+        "file_nonce": base64.b64encode(file_nonce).decode(),
         "encrypted_file_key": base64.b64encode(shared_file["encrypted_file_key"]).decode(),
-        "file_key_nonce": base64.b64encode(shared_file["file_key_nonce"]).decode(),  # Nonce for decrypting the file key
+        "file_key_nonce": base64.b64encode(shared_file["file_key_nonce"]).decode(),
         "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode(),
         "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
         "SPK_pub": base64.b64encode(shared_file["SPK_pub"]).decode(),

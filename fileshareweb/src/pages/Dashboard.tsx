@@ -1018,7 +1018,7 @@ const TestButton = () => {
     return /\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(filename);
   };
 
-  // Preview handler
+  // Preview handler for files you own (uses KEK to decrypt file key)
   const handlePreview = async (fileId: number) => {
     const file = files.find(f => f.id === fileId);
     if (!file) return;
@@ -1065,10 +1065,11 @@ const TestButton = () => {
       }
 
       // Step 4: Decrypt file
-      const encryptedFile = Uint8Array.from(atob(downloadResponse.encrypted_file), c => c.charCodeAt(0));
-      const fileNonce = Uint8Array.from(atob(downloadResponse.file_nonce), c => c.charCodeAt(0));
-      const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
-      const decrypted = await decryptFile(encryptedFile, dek, fileNonce);
+      // IMPORTANT: For your own files, use KEK to decrypt the file key
+      const previewEncryptedFile = b64ToUint8Array(downloadResponse.encrypted_file);
+      const previewFileNonce = b64ToUint8Array(downloadResponse.file_nonce);
+      const dek = await decryptFileKey(downloadResponse.encrypted_file_key, kek!, downloadResponse.file_nonce);
+      const decrypted = await decryptFile(previewEncryptedFile, dek, previewFileNonce);
 
       if (isTextFile(file.name)) {
         const text = new TextDecoder().decode(decrypted);
@@ -2830,6 +2831,10 @@ const TestButton = () => {
                 // Encrypt the file key with the shared secret
                 console.log('Encrypting file key with shared secret...');
                 const { ciphertext, nonce } = await encryptWithAESGCM(sharedSecret, fileKey);
+                console.log('Encrypted file key:', {
+                  ciphertext_length: ciphertext.length,
+                  nonce_length: nonce.length
+                });
 
                 // Request challenge for share_file
                 const shareChallengeResponse = await apiClient.post<{ status: string; nonce: string; detail?: string }>('/challenge', {
@@ -2840,10 +2845,12 @@ const TestButton = () => {
                 if (shareChallengeResponse.status !== 'challenge') {
                   throw new Error('Failed to get challenge for sharing');
                 }
+                console.log('Got challenge for share_file');
 
                 // Sign the encrypted file key
                 if (!secretKey) throw new Error('Secret key not available');
                 const shareSignature = await signChallenge(ciphertext, secretKey);
+                console.log('Signed share request');
 
                 // Send share_file request without OPK
                 await apiClient.post('/share_file', {
