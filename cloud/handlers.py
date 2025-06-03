@@ -129,7 +129,7 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
     db.add_opks(user_id, opks_with_ids)
     
     # 5) store the very first TOFU backup (if provided)
-    #    We expect the client to have encrypted their “newly‐generated identity+prekeys”
+    #    We expect the client to have encrypted their "newly‐generated identity+prekeys"
     #    under the session‐Kek, and sent us base64 ciphertext + base64 nonce.
     if req.encrypted_backup and req.backup_nonce:
         try:
@@ -888,6 +888,23 @@ def remove_shared_file_handler(req: RemoveSharedFileRequest, db: models.UserDB):
     except Exception:
         db.delete_challenge(uid)
         raise HTTPException(401, "Bad signature")
+
+    # Get the shared file details to verify ownership
+    shared_file = db.get_shared_file_details(req.share_id)
+    if not shared_file:
+        db.delete_challenge(uid)
+        raise HTTPException(404, "Shared file not found")
+
+    # Get the file owner
+    file_owner_id = db.get_file_owner(shared_file["file_id"])
+    if not file_owner_id:
+        db.delete_challenge(uid)
+        raise HTTPException(404, "File owner not found")
+
+    # Verify that the requesting user is either the owner or the recipient
+    if uid != file_owner_id and uid != shared_file["recipient_id"]:
+        db.delete_challenge(uid)
+        raise HTTPException(403, "Not authorized to remove this share")
 
     db.remove_shared_file(req.share_id)
     db.delete_challenge(uid)
