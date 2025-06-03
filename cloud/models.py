@@ -807,3 +807,80 @@ class UserDB:
         
         self.cursor.execute(sql, (search_pattern,))
         return self.cursor.fetchall()
+    
+    def get_sharers(self, recipient_id: int) -> list[str]:
+        """
+        Return a list of all distinct usernames who have shared at least one file to `recipient_id`.
+        """
+        self.ensure_connection()
+        sql = """
+            SELECT DISTINCT um.username
+            FROM shared_files sf
+            JOIN files f ON sf.file_id = f.id
+            JOIN username_map um ON f.owner_id = um.user_id
+            WHERE sf.recipient_id = %s
+        """
+        self.cursor.execute(sql, (recipient_id,))
+        rows = self.cursor.fetchall()
+        if not rows:
+            return []
+        # Depending on cursor type, each row might be a dict or tuple
+        if isinstance(rows[0], dict):
+            return [row["username"] for row in rows]
+        else:
+            return [row[0] for row in rows]
+
+    def get_file_by_id(self, file_id: int):
+        """
+        Fetch the full file record (encrypted_file, file_nonce, encrypted_dek, dek_nonce, owner_id, filename)
+        by its internal ID.
+        """
+        self.ensure_connection()
+        sql = """
+            SELECT owner_id, filename, encrypted_file, file_nonce, encrypted_dek, dek_nonce
+            FROM files
+            WHERE id = %s
+            LIMIT 1
+        """
+        self.cursor.execute(sql, (file_id,))
+        row = self.cursor.fetchone()
+        if not row:
+            return None
+        if isinstance(row, dict):
+            # Convert BLOBs & keep owner_id and filename
+            return {
+                "owner_id": row["owner_id"],
+                "filename": row["filename"],
+                "encrypted_file": row["encrypted_file"],
+                "file_nonce": row["file_nonce"],
+                "encrypted_dek": row["encrypted_dek"],
+                "dek_nonce": row["dek_nonce"],
+            }
+        cols = [col[0] for col in self.cursor.description]
+        mapped = dict(zip(cols, row))
+        return {
+            "owner_id": mapped["owner_id"],
+            "filename": mapped["filename"],
+            "encrypted_file": mapped["encrypted_file"],
+            "file_nonce": mapped["file_nonce"],
+            "encrypted_dek": mapped["encrypted_dek"],
+            "dek_nonce": mapped["dek_nonce"],
+        }
+
+    def delete_file_by_id(self, file_id: int, username: str):
+        """
+        Delete a file by its ID, after confirming that `username` is the owner.
+        """
+        self.ensure_connection()
+        user_id = self._get_user_id(username)
+        if user_id is None:
+            raise ValueError(f"Unknown user '{username}'")
+
+        # Only delete if owner_id matches
+        sql = """
+            DELETE FROM files
+            WHERE id = %s
+                AND owner_id = %s
+        """
+        self.cursor.execute(sql, (file_id, user_id))
+        self.conn.commit()
