@@ -205,7 +205,7 @@ void AuthController::signup(const QString &username, const QString &password)
     Log::message("=== EXAMPLE OF OVERLOADED FUNCTION ===");
     Log::message(req);              //  thanks to our template overload, this prints the QJsonObject
     Log::message("As raw JSON:");
-    Log::message(QJsonDocument(req).toJson(QJsonDocument::Compact)); // we could also log the raw QByteArray if desired
+    Log::message(QJsonDocument(req).toJson(QJsonDocument::Compact)); // uses Logger:log variation with pointer arithmetic
     Log::message("=== END EXAMPLE OF OVERLOADED FUNCTION ===");
 
     Logger::log("Sending signup request with initial TOFU backup included");

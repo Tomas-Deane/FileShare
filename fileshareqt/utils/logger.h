@@ -13,9 +13,7 @@ public:
     static void log(const QString &msg);
 
     // converts a UTF-8 QByteArray to QString and logs it
-    static void log(const QByteArray &msg) {
-        log(QString::fromUtf8(msg));
-    }
+    static void log(const QByteArray &msg);
 
     // uses QDebug to stream any type T into a QString and logs it
     template<typename T>

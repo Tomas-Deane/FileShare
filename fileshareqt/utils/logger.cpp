@@ -36,8 +36,25 @@ void Logger::ensureLogOpen() {
     logStream.setDevice(&logFile);
 }
 
-void Logger::log(const QString &msg)
-{
+// Converts a UTF-8 QByteArray to QString and logs it, but does so by walking the raw bytes with a char-pointerto illustrate basic *POINTER ARITHMETIC*
+// this log function can be seen in use on line 208 in authcontroller.cpp
+void Logger::log(const QByteArray &msg) {
+    // Get a raw pointer to the QByteArray's data (UTF-8 bytes):
+    const char *ptr    = msg.constData();
+    const char *endPtr = ptr + msg.size();
+
+    // Build a QString by reading one byte at a time:
+    QString s;
+    while (ptr < endPtr) {
+        s.append(QChar(static_cast<unsigned char>(*ptr)));
+        ptr++;
+    }
+    // Now delegate to the existing QString overload:
+    log(s);
+}
+
+void Logger::log(const QString &msg) {
+    // Simply forward to the singleton’s internal logger
     Logger::instance().logInternal(msg);
 }
 
