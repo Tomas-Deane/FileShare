@@ -51,7 +51,7 @@
       <item>
        <widget class="QTabWidget" name="tabWidget">
         <property name="currentIndex">
-         <number>0</number>
+         <number>8</number>
         </property>
         <widget class="QWidget" name="Home">
          <attribute name="title">
@@ -772,7 +772,7 @@
               <item>
                <widget class="QLabel" name="sharesFromUsersLabel">
                 <property name="text">
-                 <string>Select a verified user: </string>
+                 <string>Select a user: </string>
                 </property>
                </widget>
               </item>
