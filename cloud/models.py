@@ -5,7 +5,7 @@ import logging
 import datetime
 import threading
 from dbutils.pooled_db import PooledDB
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 # Database connection parameters (will use env variables)
 DB_USER     = os.environ.get('DB_USER',     'nrmc')
@@ -567,7 +567,7 @@ class UserDB:
 
     def share_file(self, file_id: int, recipient_id: int, encrypted_file_key: bytes,
                    file_key_nonce: bytes, EK_pub: bytes, IK_pub: bytes, 
-                   SPK_pub: bytes, SPK_signature: bytes, OPK_id: int):
+                   SPK_pub: bytes, SPK_signature: bytes, OPK_id: Optional[int] = None):
         conn, cursor = self._get_connection()
         sql = """
             INSERT INTO shared_files

@@ -796,7 +796,7 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
         IK_pub            = base64.b64decode(req.IK_pub)
         SPK_pub           = base64.b64decode(req.SPK_pub)
         SPK_signature     = base64.b64decode(req.SPK_signature)
-        OPK_id            = req.OPK_ID if hasattr(req, 'OPK_ID') else None
+        OPK_id            = req.OPK_ID  # This will be None if not provided
 
         db.share_file(
             file_id=req.file_id,

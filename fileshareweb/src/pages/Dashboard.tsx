@@ -282,6 +282,8 @@ const Dashboard: React.FC = () => {
   const [fileToDelete, setFileToDelete] = useState<number | null>(null);
   const [sharedFiles, setSharedFiles] = useState<SharedFileData[]>([]);
   const [loadingSharedFiles, setLoadingSharedFiles] = useState(false);
+  const [openNoOPKConfirm, setOpenNoOPKConfirm] = useState(false);
+  const [pendingShare, setPendingShare] = useState<{recipient: string, fileKey: Uint8Array, freshBundle: any} | null>(null);
 
   // Get current user and their key bundle
   const currentUsername = storage.getCurrentUser();
@@ -1319,22 +1321,26 @@ const TestButton = () => {
         console.log('Got challenge for OPK');
 
         const opkSignature = await signChallenge(b64ToUint8Array(opkChallengeResponse.nonce), secretKey!);
-        const opkResponse = await apiClient.post<{ opk_id: number; pre_key: string }>('/opk', {
-          username: myUsername,
-          target_username: recipientUsername,
-          nonce: opkChallengeResponse.nonce,
-          signature: uint8ArrayToB64(opkSignature)
-        });
-
-        // Add more detailed logging
-        console.log('OPK Response:', opkResponse);
-
-        // Check if the response has the required fields
-        if (!opkResponse.opk_id || !opkResponse.pre_key) {
-          throw new Error('Invalid OPK response: missing required fields');
+        let opkResponse = null;
+        try {
+          const response = await apiClient.post<{ opk_id: number; pre_key: string }>('/opk', {
+            username: myUsername,
+            target_username: recipientUsername,
+            nonce: opkChallengeResponse.nonce,
+            signature: uint8ArrayToB64(opkSignature)
+          });
+          opkResponse = response;
+          console.log('Retrieved OPK:', { opk_id: opkResponse.opk_id });
+        } catch (err: any) {
+          // Check for both 404 and "No OPK available" message
+          if (err.response?.status === 404 || err.message === 'No OPK available' || err.response?.data?.detail === 'No OPK available') {
+            console.log('No OPK available, proceeding without OPK');
+            // Continue execution with opkResponse as null
+          } else {
+            console.error('Error getting OPK:', err);
+            throw err;
+          }
         }
-
-        console.log('Retrieved OPK:', { opk_id: opkResponse.opk_id });
 
         // 6. Generate ephemeral X25519 key pair
         console.log('Generating ephemeral key pair...');
@@ -1348,7 +1354,7 @@ const TestButton = () => {
           myEKPriv: ephemeralKeyPair.privateKey.length,
           recipientIKPub: b64ToUint8Array(freshBundle.IK_pub).length,
           recipientSPKPub: b64ToUint8Array(freshBundle.SPK_pub).length,
-          recipientOPKPub: b64ToUint8Array(opkResponse.pre_key).length
+          hasOPK: !!opkResponse
         });
 
         const sharedSecret = await deriveX3DHSharedSecret({
@@ -1357,7 +1363,7 @@ const TestButton = () => {
           recipientIKPub: b64ToUint8Array(freshBundle.IK_pub),
           recipientSPKPub: b64ToUint8Array(freshBundle.SPK_pub),
           recipientSPKSignature: b64ToUint8Array(freshBundle.SPK_signature),
-          recipientOPKPub: b64ToUint8Array(opkResponse.pre_key),
+          recipientOPKPub: opkResponse ? b64ToUint8Array(opkResponse.pre_key) : undefined
         });
         console.log('Derived shared secret');
 
@@ -1386,7 +1392,7 @@ const TestButton = () => {
         const shareSignature = await signChallenge(ciphertext, secretKey);
         console.log('Signed share request');
 
-        // 11. Send /share_file request with OPK
+        // 11. Send /share_file request
         console.log('Sending share_file request...');
         await apiClient.post('/share_file', {
           username,
@@ -1395,13 +1401,15 @@ const TestButton = () => {
           EK_pub: uint8ArrayToB64(ephemeralKeyPair.publicKey),
           IK_pub: myKeyBundle.IK_pub,
           encrypted_file_key: uint8ArrayToB64(ciphertext),
-          file_key_nonce: uint8ArrayToB64(nonce), // Use the nonce from encryptWithAESGCM
+          file_key_nonce: uint8ArrayToB64(nonce),
           SPK_pub: myKeyBundle.SPK_pub,
           SPK_signature: myKeyBundle.SPK_signature,
-          OPK_ID: opkResponse.opk_id,
+          ...(opkResponse && {
+            OPK_ID: opkResponse.opk_id,
+            pre_key: opkResponse.pre_key
+          }),
           nonce: shareChallengeResponse.nonce,
-          signature: uint8ArrayToB64(shareSignature),
-          pre_key: opkResponse.pre_key
+          signature: uint8ArrayToB64(shareSignature)
         });
         console.log('Share request sent successfully');
       }
@@ -2616,6 +2624,117 @@ const TestButton = () => {
             disabled={loading}
           >
             Delete
+          </CyberButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* No OPK Confirmation Dialog */}
+      <Dialog
+        open={openNoOPKConfirm}
+        onClose={() => {
+          setOpenNoOPKConfirm(false);
+          setPendingShare(null);
+        }}
+        PaperProps={{
+          sx: {
+            background: 'rgba(0, 0, 0, 0.9)',
+            border: '1px solid rgba(0, 255, 0, 0.2)',
+            color: '#00ff00',
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#00ffff', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
+          Share Without One-Time Keys
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Typography sx={{ color: '#00ff00', mb: 2 }}>
+            {pendingShare?.recipient} has no available one-time keys. While you can still share the file, this is less secure than using one-time keys.
+          </Typography>
+          <Typography sx={{ color: 'rgba(0, 255, 0, 0.7)', fontSize: '0.9rem' }}>
+            Would you like to proceed with sharing anyway?
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
+          <Button 
+            onClick={() => {
+              setOpenNoOPKConfirm(false);
+              setPendingShare(null);
+            }}
+            sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+          >
+            Cancel
+          </Button>
+          <CyberButton
+            onClick={async () => {
+              if (!pendingShare) return;
+              try {
+                const { recipient, fileKey, freshBundle } = pendingShare;
+                const myUsername = storage.getCurrentUser();
+                if (!myUsername) throw new Error('No current user found');
+                const myKeyBundle = storage.getKeyBundle(myUsername);
+                if (!myKeyBundle) throw new Error('Key bundle not found for current user');
+
+                // Generate ephemeral key pair
+                console.log('Generating ephemeral key pair...');
+                const ephemeralKeyPair = await generateEphemeralKeyPair();
+                console.log('Generated ephemeral key pair');
+
+                // Derive X3DH shared secret without OPK
+                console.log('Deriving X3DH shared secret without OPK...');
+                const sharedSecret = await deriveX3DHSharedSecret({
+                  myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
+                  myEKPriv: ephemeralKeyPair.privateKey,
+                  recipientIKPub: b64ToUint8Array(freshBundle.IK_pub),
+                  recipientSPKPub: b64ToUint8Array(freshBundle.SPK_pub),
+                  recipientSPKSignature: b64ToUint8Array(freshBundle.SPK_signature)
+                });
+                console.log('Derived shared secret without OPK');
+
+                // Encrypt the file key with the shared secret
+                console.log('Encrypting file key with shared secret...');
+                const { ciphertext, nonce } = await encryptWithAESGCM(sharedSecret, fileKey);
+
+                // Request challenge for share_file
+                const shareChallengeResponse = await apiClient.post<{ status: string; nonce: string; detail?: string }>('/challenge', {
+                  username,
+                  operation: 'share_file'
+                });
+
+                if (shareChallengeResponse.status !== 'challenge') {
+                  throw new Error('Failed to get challenge for sharing');
+                }
+
+                // Sign the encrypted file key
+                if (!secretKey) throw new Error('Secret key not available');
+                const shareSignature = await signChallenge(ciphertext, secretKey);
+
+                // Send share_file request without OPK
+                await apiClient.post('/share_file', {
+                  username,
+                  file_id: selectedFile,
+                  recipient_username: recipient,
+                  EK_pub: uint8ArrayToB64(ephemeralKeyPair.publicKey),
+                  IK_pub: myKeyBundle.IK_pub,
+                  encrypted_file_key: uint8ArrayToB64(ciphertext),
+                  file_key_nonce: uint8ArrayToB64(nonce),
+                  SPK_pub: myKeyBundle.SPK_pub,
+                  SPK_signature: myKeyBundle.SPK_signature,
+                  nonce: shareChallengeResponse.nonce,
+                  signature: uint8ArrayToB64(shareSignature)
+                });
+
+                console.log('Share request sent successfully without OPK');
+                setOpenNoOPKConfirm(false);
+                setPendingShare(null);
+                setOpenShare(false);
+                setSelectedRecipients([]);
+              } catch (err: any) {
+                console.error('Share process failed:', err);
+                setError(err.message || 'Failed to share file');
+              }
+            }}
+          >
+            Share Anyway
           </CyberButton>
         </DialogActions>
       </Dialog>
