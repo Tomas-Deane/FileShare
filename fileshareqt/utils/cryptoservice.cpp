@@ -68,6 +68,12 @@ QByteArray CryptoService::sign(const QByteArray &message,
     return CryptoUtils::signMessage(message, secretKey);
 }
 
+QByteArray CryptoService::deriveSharedKey(const QByteArray &ourPriv,
+                                          const QByteArray &theirPub)
+{
+    return CryptoUtils::computeSharedKey(ourPriv, theirPub);
+}
+
 void CryptoService::secureZeroMemory(QByteArray &data)
 {
     CryptoUtils::secureZeroMemory(data);

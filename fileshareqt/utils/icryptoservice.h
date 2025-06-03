@@ -59,6 +59,10 @@ public:
     // Securely zero-out sensitive data
     virtual void secureZeroMemory(QByteArray &data) = 0;
 
+    // Derive a Curve25519/ECDH shared key from ourPriv + theirPub
+    virtual QByteArray deriveSharedKey(const QByteArray &ourPriv,
+                                       const QByteArray &theirPub) = 0;
+
 };
 
 #endif // ICRYPTOSERVICE_H
