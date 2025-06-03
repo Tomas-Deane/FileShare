@@ -16,7 +16,7 @@ QByteArray CryptoService::deriveKey(const QString &password,
 
 QByteArray CryptoService::randomBytes(int length)
 {
-    // If the caller requests more than MAX_RANDOM_LENGTH, clamp it
+    // if the caller requests more than MAX_RANDOM_LENGTH, cap it
     int reqLen = length;
     if (length > ICryptoService::MAX_RANDOM_LENGTH) {
         reqLen = ICryptoService::MAX_RANDOM_LENGTH;

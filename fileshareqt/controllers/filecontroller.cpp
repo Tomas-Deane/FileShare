@@ -162,8 +162,15 @@ void FileController::onListNetwork(bool success,
                                    const QList<FileEntry> &files,
                                    const QString &message)
 {
+    if (!success) {
+        emit listFilesResult(false, files, message);
+        return;
+    }
+    QList<FileEntry> sortedFiles = files;
+    std::sort(sortedFiles.begin(), sortedFiles.end()); // "sort" function does 'a < b' check which invokes our overloaded operator
+
     m_downloadCache.clear();
-    emit listFilesResult(success, files, message);
+    emit listFilesResult(true, sortedFiles, QString());
 }
 
 void FileController::onDownloadNetwork(bool success,
