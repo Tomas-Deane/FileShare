@@ -10,6 +10,7 @@
 #include <QLabel>
 #include "passwordstrength.h"
 #include "sharecontroller.h"
+#include "sharedfilemanager.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -94,6 +95,8 @@ private slots:
 
     void on_saveSharesFromFileButton_clicked();
 
+    void on_sharesFromFilesList_itemSelectionChanged();
+
     /// Handler for when ShareController has finished downloading a shared file
     void on_downloadSharedFileResult(bool success,
                                      const QString &filename,
@@ -112,6 +115,7 @@ private:
     FileController        *fileController;
     VerifyController      *verifyController;
     ShareController       *shareController;
+    SharedFileManager     *sharedFileMgr;
     PasswordStrength       pwEvaluator;
 
     QString                currentUploadPath;
@@ -120,6 +124,10 @@ private:
     QListWidgetItem       *pendingDeleteItem;
 
     QMap<QString,QByteArray> sharedDownloadCache;
+
+    //  When the user clicks “Save” but the file isn’t yet downloaded
+    bool   m_pendingSaveShare;
+    QString m_pendingSaveFilename;
 
     void updatePasswordStrength(const QString &text,
                                 QProgressBar *bar,
@@ -131,6 +139,9 @@ private:
     // helpers for resetting UI
     void clearPage(int index);
     void refreshPage(int index);
+
+    // helper for previewing shared files
+    void previewSharedFile(const QString &filename, const QByteArray &data);
 
 };
 

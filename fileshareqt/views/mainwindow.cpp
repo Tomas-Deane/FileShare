@@ -28,7 +28,10 @@ MainWindow::MainWindow(AuthController* authCtrl,
     , fileController(fileCtrl)
     , verifyController(verifyCtrl)
     , shareController(shareCtrl)
+    , sharedFileMgr(new SharedFileManager(this))
     , pendingDeleteItem(nullptr)
+    , m_pendingSaveShare(false)
+    , m_pendingSaveFilename()
 {
     ui->setupUi(this);
 
@@ -114,7 +117,7 @@ MainWindow::MainWindow(AuthController* authCtrl,
                 }
             });
 
-    // ➊ When ShareController emits listSharersResult, populate sharedFromUsersList:
+    // When ShareController emits listSharersResult, populate sharedFromUsersList:
     connect(shareController, &ShareController::listSharersResult,
             this, [=](bool success, const QStringList &users, const QString &message) {
                 ui->sharesFromUsersList->clear();
@@ -127,13 +130,21 @@ MainWindow::MainWindow(AuthController* authCtrl,
                 }
             });
 
-    // ➋ When the user selects one of those sharers, call listFilesSharedFrom:
+    // When the user selects one of those sharers, call listFilesSharedFrom:
     connect(ui->sharesFromUsersList, &QListWidget::itemSelectionChanged,
             this, &MainWindow::on_sharedFromUsersList_itemSelectionChanged);
 
-    // ➌ We already have a slot for listSharedFromResult in ShareController:
+    // We already have a slot for listSharedFromResult in ShareController:
     connect(shareController, &ShareController::listSharedFromResult,
             this, &MainWindow::onSharesFromFilesResult);
+
+    // When the user selects a file in "Shares From" (sharesFromFilesList), show a preview:
+    connect(ui->sharesFromFilesList, &QListWidget::itemSelectionChanged,
+            this, &MainWindow::on_sharesFromFilesList_itemSelectionChanged);
+
+    // Also hook up downloadSharedFileResult to cache + preview:
+    connect(shareController, &ShareController::downloadSharedFileResult,
+            this, &MainWindow::on_downloadSharedFileResult);
 
     // Whenever ShareController finishes downloading a shared file, update the cache:
     connect(shareController, &ShareController::downloadSharedFileResult,
@@ -272,11 +283,18 @@ void MainWindow::handleLoggedOut()
     ui->downloadFileList->clear();
     ui->downloadFileNameLabel->setText("No file selected");
     ui->downloadFileTypeLabel->setText("-");
-    // We do want to clear Verify-page widgets on logout:
-    ui->targetUsernameLineEdit->clear();
-    ui->verifiedUsersList->clear();
-}
+    ui->downloadPreviewStack->setCurrentIndex(0);
 
+    // Clear Shares‐From UI as well:
+    ui->sharesFromUsersList->clear();
+    ui->sharesFromFilesList->clear();
+    ui->downloadImagePreview_2->clear();
+    ui->downloadTextPreview_2->clear();
+    ui->downloadPreviewStack_2->setCurrentIndex(0);
+
+    // Wipe shared‐cache:
+    sharedFileMgr->clear();
+}
 void MainWindow::on_changeUsernameButton_clicked()
 {
     profileController->changeUsername(ui->changeUsernameLineEdit->text());
@@ -665,8 +683,8 @@ void MainWindow::on_saveSharesFromFileButton_clicked()
         return;
     }
 
-    // 2) Check if we already have the raw bytes in cache:
-    if (sharedDownloadCache.contains(filename)) {
+    // 2) Check if we already have the raw bytes in our cache:
+    if (sharedFileMgr->has(filename)) {
         // We already downloaded it; pop up “Save As…” immediately.
         QString path = QFileDialog::getSaveFileName(
             this,
@@ -682,17 +700,19 @@ void MainWindow::on_saveSharesFromFileButton_clicked()
             Logger::log("Failed to open file for writing: " + path);
             return;
         }
-        QByteArray data = sharedDownloadCache.value(filename);
+        QByteArray data = sharedFileMgr->get(filename);
         f.write(data);
         f.close();
         Logger::log("Shared file '" + filename + "' saved to " + path);
         return;
     }
 
-    // 3) If we do NOT yet have it, ask the ShareController to download it:
-    Logger::log("Requesting download of shared file '" + filename + "' (share_id=" + QString::number(shareId) + ")");
+    // 3) Otherwise, mark that we want to save when it finishes downloading:
+    m_pendingSaveShare    = true;
+    m_pendingSaveFilename = filename;
+    Logger::log(QString("Requesting download of shared file '%1' (share_id=%2)")
+                    .arg(filename).arg(shareId));
     shareController->downloadSharedFile(shareId, filename);
-    // Once ShareController finishes, on_downloadSharedFileResult(...) will be called, where we will pop the dialog.
 }
 
 void MainWindow::on_downloadSharedFileResult(bool success,
@@ -702,38 +722,113 @@ void MainWindow::on_downloadSharedFileResult(bool success,
 {
     if (!success) {
         Logger::log("Failed to download shared file '" + filename + "': " + message);
+        // If a save was pending, reset it so we don’t ask again:
+        m_pendingSaveShare = false;
+        m_pendingSaveFilename.clear();
         return;
     }
 
-    // Cache the bytes so that next time we can reuse them
-    sharedDownloadCache.insert(filename, data);
+    // 1) Cache the bytes so that next time we can reuse them:
+    sharedFileMgr->insert(filename, data);
 
-    // Make sure the user still has that same file selected before popping a dialog:
+    // 2) If the currently selected item is still this same filename, preview it:
     QListWidgetItem *item = ui->sharesFromFilesList->currentItem();
-    if (!item || item->text() != filename) {
-        // The user may have changed selection; bail out.
-        Logger::log("Downloaded shared file '" + filename + "', but it's no longer selected.");
+    if (item && item->text() == filename) {
+        previewSharedFile(filename, data);
+    }
+
+    // 3) If the user had clicked “Save” (i.e. m_pendingSaveShare is true),
+    //    immediately pop up Save As… using our newly‐cached data:
+    if (m_pendingSaveShare && m_pendingSaveFilename == filename) {
+        QString path = QFileDialog::getSaveFileName(
+            this,
+            tr("Save Shared File As"),
+            filename
+            );
+        if (!path.isEmpty()) {
+            QFile f(path);
+            if (f.open(QIODevice::WriteOnly)) {
+                QByteArray saveData = sharedFileMgr->get(filename);
+                f.write(saveData);
+                f.close();
+                Logger::log("Shared file '" + filename + "' saved to " + path);
+            } else {
+                Logger::log("Failed to open file for writing: " + path);
+            }
+        }
+        // Clear the “pending save” state now that we’ve shown the dialog:
+        m_pendingSaveShare    = false;
+        m_pendingSaveFilename.clear();
+    }
+}
+
+void MainWindow::on_sharesFromFilesList_itemSelectionChanged()
+{
+    // Which shared‐file item is currently selected?
+    QListWidgetItem *item = ui->sharesFromFilesList->currentItem();
+    if (!item) {
+        // Clear the preview panes:
+        ui->downloadImagePreview_2->clear();
+        ui->downloadTextPreview_2->clear();
+        ui->downloadPreviewStack_2->setCurrentIndex(0);
         return;
     }
 
-    // Now pop up “Save As…”:
-    QString path = QFileDialog::getSaveFileName(
-        this,
-        tr("Save Shared File As"),
-        filename
-        );
-    if (path.isEmpty()) {
-        // user canceled
+    QString filename = item->text();
+    if (filename.isEmpty()) {
+        // same as no selection
+        ui->downloadImagePreview_2->clear();
+        ui->downloadTextPreview_2->clear();
+        ui->downloadPreviewStack_2->setCurrentIndex(0);
         return;
     }
-    QFile f(path);
-    if (!f.open(QIODevice::WriteOnly)) {
-        Logger::log("Failed to open file for writing: " + path);
+
+    // If we already have bytes cached, just preview them:
+    if (sharedFileMgr->has(filename)) {
+        QByteArray data = sharedFileMgr->get(filename);
+        previewSharedFile(filename, data);
         return;
     }
-    f.write(data);
-    f.close();
-    Logger::log("Shared file '" + filename + "' saved to " + path);
+
+    // Otherwise, request a download from the ShareController.
+    // We need the share‐ID that we stored earlier as Qt::UserRole:
+    bool ok = false;
+    qint64 shareId = item->data(Qt::UserRole).toLongLong(&ok);
+    if (!ok) {
+        // Invalid share ID; bail out
+        return;
+    }
+
+    Logger::log(QString("Requesting download of shared file '%1' for preview (share_id=%2)")
+                    .arg(filename).arg(shareId));
+    shareController->downloadSharedFile(shareId, filename);
+    // Once `on_downloadSharedFileResult` fires, we'll both cache + preview.
+}
+
+void MainWindow::previewSharedFile(const QString &filename, const QByteArray &data)
+{
+    // Determine MIME type by filename:
+    QMimeDatabase db;
+    auto mime = db.mimeTypeForFile(filename);
+
+    if (mime.name().startsWith("text/")) {
+        ui->downloadTextPreview_2->setPlainText(QString::fromUtf8(data));
+        ui->downloadPreviewStack_2->setCurrentIndex(0);
+    }
+    else if (mime.name().startsWith("image/")) {
+        QPixmap pix;
+        pix.loadFromData(data);
+        ui->downloadImagePreview_2->setPixmap(
+            pix.scaled(ui->downloadImagePreview_2->size(),
+                       Qt::KeepAspectRatio,
+                       Qt::SmoothTransformation)
+            );
+        ui->downloadPreviewStack_2->setCurrentIndex(1);
+    }
+    else {
+        ui->downloadTextPreview_2->setPlainText(tr("No preview available"));
+        ui->downloadPreviewStack_2->setCurrentIndex(0);
+    }
 }
 
 void MainWindow::on_tabWidget_currentChanged(int index)
