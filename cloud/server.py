@@ -40,6 +40,7 @@ from schemas import (
     ListMatchingUsersRequest,
     PreviewSharedFileRequest,
     ClearUserOPKsRequest,
+    GetOPKCountRequest
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -320,6 +321,13 @@ async def clear_user_opks(req: ClearUserOPKsRequest, db: models.UserDB = Depends
     This is for testing X3DH without OPKs.
     """
     return handlers.clear_user_opks_handler(req, db)
+
+@app.post("/get_opk_count")
+async def get_opk_count(req: GetOPKCountRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"GetOPKCountRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.get_opk_count_handler, req, db)
+    logger.debug(f"GetOPKCount response: {resp}")
+    return resp
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":

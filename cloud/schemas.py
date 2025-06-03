@@ -276,3 +276,13 @@ class PreviewSharedFileRequest(BaseModel):
     share_id: int
     nonce: str
     signature: str
+
+class GetOPKCountRequest(BaseModel):
+    username: str
+    target_username: str
+    nonce: str
+    signature: str
+
+class GetOPKCountResponse(BaseModel):
+    status: str
+    count: int

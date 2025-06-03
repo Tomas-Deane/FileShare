@@ -932,3 +932,15 @@ class UserDB:
         cursor.execute(sql, (user_id,))
         conn.commit()
 
+    def get_unused_opk_count(self, user_id: int) -> int:
+        """Get the count of unused OPKs for a user."""
+        conn, cursor = self._get_connection()
+        sql = """
+            SELECT COUNT(*) as count
+            FROM opks
+            WHERE user_id = %s AND consumed = FALSE
+        """
+        cursor.execute(sql, (user_id,))
+        row = cursor.fetchone()
+        return row['count'] if row else 0
+

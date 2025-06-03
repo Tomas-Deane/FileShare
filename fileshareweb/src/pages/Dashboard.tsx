@@ -288,14 +288,31 @@ const Dashboard: React.FC = () => {
   // Get current user and their key bundle
   const currentUsername = storage.getCurrentUser();
   const keyBundle = React.useMemo(() => {
-    if (!currentUsername) return null;
-    return storage.getKeyBundle(currentUsername);
+    if (!currentUsername) {
+      console.log('No current username found');
+      return null;
+    }
+    const bundle = storage.getKeyBundle(currentUsername);
+    console.log('Retrieved key bundle:', {
+      hasBundle: !!bundle,
+      hasKEK: !!bundle?.kek,
+      kekLength: bundle?.kek?.length
+    });
+    return bundle;
   }, [currentUsername]);
 
   const username = keyBundle?.username;
   const secretKey = keyBundle?.secretKey ? Uint8Array.from(atob(keyBundle.secretKey), c => c.charCodeAt(0)) : null;
   const pdk = keyBundle?.pdk ? Uint8Array.from(atob(keyBundle.pdk), c => c.charCodeAt(0)) : null;
   const kek = keyBundle?.kek ? Uint8Array.from(atob(keyBundle.kek), c => c.charCodeAt(0)) : null;
+
+  console.log('Key bundle state:', {
+    hasUsername: !!username,
+    hasSecretKey: !!secretKey,
+    hasPDK: !!pdk,
+    hasKEK: !!kek,
+    kekLength: kek?.length
+  });
 
   // Add a ref to track if we've already fetched files
   const isMounted = React.useRef(false);
@@ -892,7 +909,9 @@ const TestButton = () => {
       logDebug('Starting file upload', {
         fileName: file.name,
         fileSize: file.size,
-        fileType: file.type
+        fileType: file.type,
+        hasKEK: !!kek,
+        kekLength: kek?.length
       });
 
       // Step 1: Request challenge
@@ -929,8 +948,15 @@ const TestButton = () => {
       });
 
       // Step 3: Encrypt file key with KEK
-      logDebug('Encrypting file key with KEK');
-      const { ciphertext: encryptedDek, nonce: kekNonce } = await encryptWithAESGCM(kek!, fileKey);
+      logDebug('Encrypting file key with KEK', {
+        hasKEK: !!kek,
+        kekLength: kek?.length,
+        fileKeyLength: fileKey.length
+      });
+      if (!kek) {
+        throw new Error('KEK is not available. Please log out and log back in to refresh your keys.');
+      }
+      const { ciphertext: encryptedDek, nonce: kekNonce } = await encryptWithAESGCM(kek, fileKey);
       logDebug('File key encrypted', {
         encryptedDekLength: encryptedDek.length,
         kekNonceLength: kekNonce.length
@@ -975,7 +1001,9 @@ const TestButton = () => {
         errorType: err.constructor.name,
         message: err.message,
         hasResponse: !!err.response,
-        responseData: err.response?.data
+        responseData: err.response?.data,
+        hasKEK: !!kek,
+        kekLength: kek?.length
       });
       setError(err.message || 'Failed to upload file');
     } finally {
