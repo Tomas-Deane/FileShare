@@ -63,6 +63,10 @@ public:
     virtual QByteArray deriveSharedKey(const QByteArray &ourPriv,
                                        const QByteArray &theirPub) = 0;
 
+    virtual QByteArray hkdfSha256(const QByteArray &salt,
+                                  const QByteArray &ikm,
+                                  int outputLength) = 0;
+
 };
 
 #endif // ICRYPTOSERVICE_H

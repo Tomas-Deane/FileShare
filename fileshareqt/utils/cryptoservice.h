@@ -58,6 +58,10 @@ public:
     QByteArray deriveSharedKey(const QByteArray &ourPriv,
                                const QByteArray &theirPub) override;
 
+    QByteArray hkdfSha256(const QByteArray &salt,
+                          const QByteArray &ikm,
+                          int outputLength) override;
+
 };
 
 #endif // CRYPTOSERVICE_H

@@ -74,6 +74,13 @@ QByteArray CryptoService::deriveSharedKey(const QByteArray &ourPriv,
     return CryptoUtils::computeSharedKey(ourPriv, theirPub);
 }
 
+QByteArray CryptoService::hkdfSha256(const QByteArray &salt,
+                                     const QByteArray &ikm,
+                                     int outputLength)
+{
+    return CryptoUtils::hkdfSha256(salt, ikm, outputLength);
+}
+
 void CryptoService::secureZeroMemory(QByteArray &data)
 {
     CryptoUtils::secureZeroMemory(data);
