@@ -201,6 +201,13 @@ void AuthController::signup(const QString &username, const QString &password)
     }
     req.insert("one_time_pre_keys", opkArray);
 
+    // example implementations of our overloaded functions from logger.h
+    Log::message("=== EXAMPLE OF OVERLOADED FUNCTION ===");
+    Log::message(req);              //  thanks to our template overload, this prints the QJsonObject
+    Log::message("As raw JSON:");
+    Log::message(QJsonDocument(req).toJson(QJsonDocument::Compact)); // we could also log the raw QByteArray if desired
+    Log::message("=== END EXAMPLE OF OVERLOADED FUNCTION ===");
+
     Logger::log("Sending signup request with initial TOFU backup included");
     networkManager->signup(req);
 }
