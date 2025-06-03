@@ -220,6 +220,7 @@ const Login: React.FC = () => {
                 secretKey: backupData.secretKey,
                 pdk: backupData.pdk,
                 kek: backupData.kek,
+                recipients: backupData.recipients || {},
                 verified: true,
                 lastVerified: new Date().toISOString()
             };
