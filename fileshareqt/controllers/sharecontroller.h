@@ -123,12 +123,12 @@ private:
     // We stash state so that when a challenge arrives, we know what to do:
     enum PendingOp {
         None,
-        GetPreKeyBundle,   // step 1 of share
+        GetPreKeyBundle,
         RetrieveFileDEK,
-        GetOPK,        // step 2 of share
-        DoShareFile,       // step 3 of share
-        ListSharedTo,      // listing “to” some user
-        ListSharedFrom,    // listing “from” some user
+        GetOPK,
+        DoShareFile,
+        ListSharedTo,
+        ListSharedFrom,
         ListSharers,
         DownloadSharedFile
     };
@@ -144,19 +144,17 @@ private:
     QByteArray       m_stashedEncryptedDek; // raw bytes of encrypted DEK
     QByteArray       m_stashedDekNonce;     // raw nonce for that DEK
 
-    // ─── NEW: stash returned OPK ID & raw OPK (base64) ────────────────────────
+    //stash returned OPK ID & raw OPK (base64)
     int              m_stashedOpkId = -1;
-    QByteArray       m_stashedOpkPreKey;       // raw bytes of OPK, if needed
+    QByteArray       m_stashedOpkPreKey;
 
     // Helper: convert QJsonArray→QList<SharedFile>
     QList<SharedFile> parseSharedArray(const QJsonArray &arr) const;
 
-    // Utility: derive an X25519/ECDH shared key from our IK_priv & recipient’s IK_pub
-    QByteArray deriveSharedKey(const QByteArray &ourPriv,
-                               const QByteArray &theirPub) const;
-
     qint64           m_pendingShareId = -1;  // stash the share_id
     QString m_pendingFilename;
+
+    static const int X25519_PUBKEY_LEN = 32;
 };
 
 #endif // SHARECONTROLLER_H

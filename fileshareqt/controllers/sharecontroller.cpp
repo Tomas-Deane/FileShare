@@ -4,7 +4,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
-#include <sodium.h>             // for crypto_scalarmult (ECDH)
 #include <QByteArray>
 #include <QVector>
 
@@ -28,7 +27,7 @@ ShareController::ShareController(INetworkManager *networkManager,
     connect(m_networkManager, &INetworkManager::retrieveFileDEKResult,
             this, &ShareController::onRetrieveFileDEKResult);
 
-    // ─── NEW: listen for OPK result ────────────────────────────────────────
+    // listen for OPK result
     connect(m_networkManager, &INetworkManager::getOPKResult,
             this, &ShareController::onGetOPKResult);
 
@@ -44,14 +43,12 @@ ShareController::ShareController(INetworkManager *networkManager,
     connect(m_networkManager, &INetworkManager::listSharersResult,
             this, &ShareController::onListSharersNetwork);
 
-    // ➌ New: handle download_shared_file responses
+    //  handle download_shared_file responses
     connect(m_networkManager, &INetworkManager::downloadSharedFileResult,
             this, &ShareController::onDownloadSharedNetwork);
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
-
-// ⓵ Start the “share file” flow.
+// Start the “share file” flow.
 void ShareController::shareFile(qint64 fileId, const QString &recipientUsername)
 {
     if (m_authController->getSessionUsername().isEmpty()) {
@@ -63,12 +60,12 @@ void ShareController::shareFile(qint64 fileId, const QString &recipientUsername)
     m_pendingRecipient = recipientUsername;
     m_pendingFileId = fileId;
 
-    // ➊ Ask server for our challenge for “get_pre_key_bundle”
+    // Ask server for our challenge for “get_pre_key_bundle”
     QString me = m_authController->getSessionUsername();
     m_networkManager->requestChallenge(me, "get_pre_key_bundle");
 }
 
-// ⓶ List files I shared TO targetUsername
+// List files I shared TO targetUsername
 void ShareController::listFilesSharedTo(const QString &targetUsername)
 {
     if (m_authController->getSessionUsername().isEmpty()) {
@@ -83,7 +80,7 @@ void ShareController::listFilesSharedTo(const QString &targetUsername)
     m_networkManager->requestChallenge(me, "list_shared_to");
 }
 
-// ⓷ List files shared FROM targetUsername TO me
+// List files shared FROM targetUsername TO me
 void ShareController::listFilesSharedFrom(const QString &targetUsername)
 {
     if (m_authController->getSessionUsername().isEmpty()) {
@@ -113,9 +110,8 @@ void ShareController::listSharers()
 }
 
 
-// ─── Slots (internal) ────────────────────────────────────────────────────────
 
-// Called whenever ANY challengeResult arrives. We look at m_pendingOp to decide what to do next.
+// Called whenever ANY challengeResult arrives. We look at m_pendingOp to decide what to do next
 void ShareController::onChallenge(const QByteArray &nonce, const QString &operation)
 {
     QString me = m_authController->getSessionUsername();
@@ -172,10 +168,10 @@ void ShareController::onChallenge(const QByteArray &nonce, const QString &operat
 
     case DoShareFile:
         if (operation == "share_file") {
-            // 1) DERIVE shared key via X25519/ECDH
+            // 1) DERIVE shared key via ECDH (via crypto service, not sodium.h)
             QByteArray ourIkPriv   = m_authController->getIdentityPrivateKey();
             QByteArray theirIkPub  = m_recipientIkPub;
-            QByteArray sharedKey   = deriveSharedKey(ourIkPriv, theirIkPub);
+            QByteArray sharedKey   = m_cryptoService->deriveSharedKey(ourIkPriv, theirIkPub);
             if (sharedKey.isEmpty()) {
                 emit shareFileResult(false, "Failed to derive shared key");
                 m_pendingOp = None;
@@ -305,6 +301,7 @@ void ShareController::onChallenge(const QByteArray &nonce, const QString &operat
 }
 
 // After /get_pre_key_bundle returns:
+// After /get_pre_key_bundle returns:
 void ShareController::onGetPreKeyBundleResult(bool success,
                                               const QString &ik_pub_b64,
                                               const QString &/*spk_pub_b64*/,
@@ -319,7 +316,7 @@ void ShareController::onGetPreKeyBundleResult(bool success,
 
     // Decode the recipient’s IK_pub from base64
     m_recipientIkPub = QByteArray::fromBase64(ik_pub_b64.toUtf8());
-    if (m_recipientIkPub.size() != crypto_scalarmult_BYTES) {
+    if (m_recipientIkPub.size() != X25519_PUBKEY_LEN) {
         emit shareFileResult(false, "Invalid recipient IK_pub");
         m_pendingOp = None;
         return;
@@ -406,7 +403,7 @@ void ShareController::onGetOPKResult(bool success,
     // 1) Stash the OPK ID and raw OPK public (base64→raw)
     m_stashedOpkId     = opk_id;
     m_stashedOpkPreKey = QByteArray::fromBase64(pre_key_b64.toUtf8());
-    if (m_stashedOpkPreKey.size() != crypto_scalarmult_BYTES) {
+    if (m_stashedOpkPreKey.size() != X25519_PUBKEY_LEN) {
         emit shareFileResult(false, "Invalid OPK from server");
         m_pendingOp = None;
         return;
@@ -472,30 +469,13 @@ void ShareController::onDownloadSharedNetwork(bool success,
     QByteArray EK_pub             = QByteArray::fromBase64(EK_pub_b64.toUtf8());
     QByteArray IK_pub             = QByteArray::fromBase64(IK_pub_b64.toUtf8());
 
-    // 2) DERIVE ECDH sharedKey
-    //    → we forgot to declare ourIkPriv, so grab it from AuthController:
+    // 2) DERIVE ECDH sharedKey (via crypto service, not sodium.h)
     QByteArray ourIkPriv = m_authController->getIdentityPrivateKey();
+    QByteArray theirIkPub = IK_pub;
 
-    if (ourIkPriv.size() != crypto_scalarmult_SCALARBYTES ||
-        IK_pub.size()   != crypto_scalarmult_BYTES) {
-        emit downloadSharedFileResult(false, QString(), QByteArray(), "Invalid key lengths");
-        m_pendingOp = None;
-        return;
-    }
-
-    if (IK_pub.size() != crypto_scalarmult_BYTES) {
-        emit downloadSharedFileResult(false, QString(), QByteArray(), "Invalid key lengths");
-        m_pendingOp = None;
-        return;
-    }
-
-    QByteArray sharedKey(crypto_scalarmult_BYTES, 0);
-    if (crypto_scalarmult(
-            reinterpret_cast<unsigned char*>(sharedKey.data()),
-            reinterpret_cast<const unsigned char*>(ourIkPriv.constData()),
-            reinterpret_cast<const unsigned char*>(IK_pub.constData())
-            ) != 0) {
-        emit downloadSharedFileResult(false, QString(), QByteArray(), "ECDH failed");
+    QByteArray sharedKey = m_cryptoService->deriveSharedKey(ourIkPriv, theirIkPub);
+    if (sharedKey.isEmpty()) {
+        emit downloadSharedFileResult(false, QString(), QByteArray(), "Failed to derive shared key");
         m_pendingOp = None;
         return;
     }
@@ -528,6 +508,7 @@ void ShareController::onDownloadSharedNetwork(bool success,
     m_pendingOp = None;
 }
 
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 // Convert a JSON‐array of share records into QList<SharedFile>
@@ -546,22 +527,4 @@ QList<SharedFile> ShareController::parseSharedArray(const QJsonArray &arr) const
         output.append(sf);
     }
     return output;
-}
-
-// Derive an X25519 shared key: crypto_scalarmult(ourPriv, theirPub)
-QByteArray ShareController::deriveSharedKey(const QByteArray &ourPriv,
-                                            const QByteArray &theirPub) const
-{
-    if (ourPriv.size() != crypto_scalarmult_SCALARBYTES ||
-        theirPub.size() != crypto_scalarmult_BYTES) {
-        return {};
-    }
-    QByteArray shared(crypto_scalarmult_BYTES, 0);
-    if (crypto_scalarmult(reinterpret_cast<unsigned char*>(shared.data()),
-                          reinterpret_cast<const unsigned char*>(ourPriv.constData()),
-                          reinterpret_cast<const unsigned char*>(theirPub.constData())
-                          ) != 0) {
-        return {};
-    }
-    return shared;
 }
