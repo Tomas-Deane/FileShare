@@ -7,7 +7,7 @@ interface PasswordStrengthMeterProps {
 }
 
 const PasswordStrengthMeter: React.FC<PasswordStrengthMeterProps> = ({ password }) => {
-  const result = zxcvbn(password);
+  const result = React.useMemo(() => zxcvbn(password), [password]);
   const strength = result.score; // 0-4
   const feedback = result.feedback.warning || result.feedback.suggestions[0] || '';
 
