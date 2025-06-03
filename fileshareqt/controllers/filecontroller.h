@@ -31,14 +31,14 @@ public:
 
 signals:
     void uploadFileResult(bool success, const QString &message);
-    void listFilesResult(bool success, const QStringList &files, const QString &message);
+    void listFilesResult(bool success, const QList<FileEntry> &files, const QString &message);
     void downloadFileResult(bool success, const QString &filename, const QByteArray &data, const QString &message);
     void deleteFileResult(bool success, const QString &message);
 
 private slots:
     void onChallenge(const QByteArray &nonce, const QString &operation);
     void onUploadNetwork(bool success, const QString &message);
-    void onListNetwork(bool success, const QStringList &files, const QString &message);
+    void onListNetwork(bool success, const QList<FileEntry> &files, const QString &message);
     void onDownloadNetwork(bool success,
                            const QString &encryptedFileB64,
                            const QString &fileNonceB64,

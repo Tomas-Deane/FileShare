@@ -155,7 +155,7 @@ void FileController::onUploadNetwork(bool success, const QString &message)
 }
 
 void FileController::onListNetwork(bool success,
-                                   const QStringList &files,
+                                   const QList<FileEntry> &files,
                                    const QString &message)
 {
     m_downloadCache.clear();
