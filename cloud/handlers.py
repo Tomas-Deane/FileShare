@@ -2,6 +2,7 @@
 import base64
 import secrets
 import logging
+import re
 from fastapi import HTTPException
 from schemas import (
     SignupRequest,
@@ -41,6 +42,93 @@ import datetime
 
 import models
 
+# List of allowed operations for challenge requests
+ALLOWED_OPERATIONS = {
+    "login",
+    "change_username",
+    "change_password",
+    "upload_file",
+    "list_files",
+    "download_file",
+    "delete_file",
+    "get_pre_key_bundle",
+    "add_pre_key_bundle",
+    "list_users",
+    "add_opks",
+    "get_opk",
+    "share_file",
+    "list_shared_files",
+    "list_shared_to",
+    "list_shared_from",
+    "remove_shared_file"
+}
+
+def validate_filename(filename: str) -> bool:
+    """
+    Validate a filename to prevent directory traversal and ensure it only contains safe characters.
+    
+    Args:
+        filename: The filename to validate
+        
+    Returns:
+        bool: True if filename is valid, False otherwise
+        
+    Rules:
+    1. No directory traversal sequences (../ or ..\)
+    2. No null bytes
+    3. Only alphanumeric characters, dots, hyphens, and underscores
+    4. Maximum length of 255 characters
+    5. No leading or trailing dots
+    """
+    if not filename or len(filename) > 255:
+        return False
+        
+    # Check for directory traversal
+    if '..' in filename or '/' in filename or '\\' in filename:
+        return False
+        
+    # Check for null bytes
+    if '\0' in filename:
+        return False
+        
+    # Check for leading/trailing dots
+    if filename.startswith('.') or filename.endswith('.'):
+        return False
+        
+    # Only allow alphanumeric, dots, hyphens, and underscores
+    if not re.match(r'^[a-zA-Z0-9._-]+$', filename):
+        return False
+        
+    return True
+
+def validate_base64(b64_string: str, field_name: str) -> bytes:
+    """
+    Validate a Base64 string and return its decoded bytes.
+    
+    Args:
+        b64_string: The Base64 string to validate
+        field_name: Name of the field for error messages
+        
+    Returns:
+        bytes: The decoded Base64 data
+        
+    Raises:
+        HTTPException: If the Base64 string is invalid
+    """
+    if not b64_string:
+        raise HTTPException(status_code=400, detail=f"Empty {field_name}")
+        
+    try:
+        # Check if the string contains only valid Base64 characters
+        if not re.match(r'^[A-Za-z0-9+/]*={0,2}$', b64_string):
+            raise HTTPException(status_code=400, detail=f"Invalid Base64 characters in {field_name}")
+            
+        # Try to decode the Base64 string
+        return base64.b64decode(b64_string)
+    except Exception as e:
+        logging.warning(f"Invalid Base64 in {field_name}: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid Base64 for {field_name}")
+
 def verify_signature(username: str, nonce: str, signature: str) -> bool:
     """Verify a signature for a given username and nonce."""
     user = models.UserDB().get_user(username)
@@ -57,15 +145,24 @@ def verify_signature(username: str, nonce: str, signature: str) -> bool:
 # --- CHALLENGE HANDLER --------------------------------------------
 def challenge_handler(req: ChallengeRequest, db: models.UserDB):
     logging.debug(f"Challenge: {req.model_dump_json()}")
-    user = db.get_user(req.username)
-    if not user:
-        logging.warning(f"Unknown user '{req.username}' at challenge")
-        raise HTTPException(status_code=400, detail="Invalid credentials")
-
-    user_id = user["user_id"]
+    
+    # Validate operation
+    if req.operation not in ALLOWED_OPERATIONS:
+        logging.warning(f"Invalid operation '{req.operation}' requested")
+        raise HTTPException(status_code=400, detail="Invalid operation")
+    
+    # Generate challenge regardless of user existence
     challenge = secrets.token_bytes(32)
-    db.add_challenge(user_id, req.operation, challenge)
-    logging.debug(f"Stored challenge for user_id={user_id} op={req.operation}: {base64.b64encode(challenge).decode()}")
+    
+    # Only store challenge if user exists
+    user = db.get_user(req.username)
+    if user:
+        user_id = user["user_id"]
+        db.add_challenge(user_id, req.operation, challenge)
+        logging.debug(f"Stored challenge for user_id={user_id} op={req.operation}: {base64.b64encode(challenge).decode()}")
+    else:
+        logging.debug(f"Challenge generated for non-existent user '{req.username}'")
+    
     logging.debug(f"Challenge timestamp: {datetime.datetime.utcnow()}")
 
     return {
@@ -101,29 +198,52 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
         logging.warning(f"User '{req.username}' already exists")
         raise HTTPException(status_code=400, detail="User already exists")
 
-    # 2) create the user row in `users` + `username_map`
+    # Validate all Base64 fields
+    try:
+        salt = validate_base64(req.salt, "salt")
+        public_key = validate_base64(req.public_key, "public_key")
+        encrypted_privkey = validate_base64(req.encrypted_privkey, "encrypted_privkey")
+        privkey_nonce = validate_base64(req.privkey_nonce, "privkey_nonce")
+        encrypted_kek = validate_base64(req.encrypted_kek, "encrypted_kek")
+        kek_nonce = validate_base64(req.kek_nonce, "kek_nonce")
+        identity_key = validate_base64(req.identity_key, "identity_key")
+        signed_pre_key = validate_base64(req.signed_pre_key, "signed_pre_key")
+        signed_pre_key_sig = validate_base64(req.signed_pre_key_sig, "signed_pre_key_sig")
+        
+        # Validate one-time pre-keys
+        opk_bytes = []
+        for i, opk in enumerate(req.one_time_pre_keys):
+            try:
+                opk_bytes.append(validate_base64(opk, f"one_time_pre_key[{i}]"))
+            except HTTPException as e:
+                raise HTTPException(status_code=400, detail=f"Invalid Base64 in one_time_pre_key[{i}]")
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Unexpected error during Base64 validation: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error during validation")
+
+    # 1) create the user row
     user_id = db.add_user(
         req.username,
-        base64.b64decode(req.salt),
+        salt,
         req.argon2_opslimit,
         req.argon2_memlimit,
-        base64.b64decode(req.public_key),
-        base64.b64decode(req.encrypted_privkey),
-        base64.b64decode(req.privkey_nonce),
-        base64.b64decode(req.encrypted_kek),
-        base64.b64decode(req.kek_nonce)
+        public_key,
+        encrypted_privkey,
+        privkey_nonce,
+        encrypted_kek,
+        kek_nonce
     )
 
     # 3) store their X3DH pre-key bundle (identity key, signed pre-key, signature)
     db.add_pre_key_bundle(
         user_id,
-        base64.b64decode(req.identity_key),
-        base64.b64decode(req.signed_pre_key),
-        base64.b64decode(req.signed_pre_key_sig),
+        identity_key,
+        signed_pre_key,
+        signed_pre_key_sig,
     )
 
-    # 4) store their one-time pre-keys
-    opk_bytes = [base64.b64decode(k) for k in req.one_time_pre_keys]
     # Create list of tuples with sequential opk_ids (0 to len-1)
     opks_with_ids = [(i, opk) for i, opk in enumerate(opk_bytes)]
     db.add_opks(user_id, opks_with_ids)
@@ -243,30 +363,48 @@ def change_password_handler(req: ChangePasswordRequest, db: models.UserDB):
 # --- FILE UPLOAD ------------------------------------------------------
 def upload_file_handler(req: UploadRequest, db: models.UserDB):
     logging.debug(f"UploadFile: {req.model_dump_json(exclude={'encrypted_file'})}")
+    
+    # Validate filename
+    if not validate_filename(req.filename):
+        logging.warning(f"Invalid filename '{req.filename}' attempted upload")
+        raise HTTPException(status_code=400, detail="Invalid filename format")
+        
     user = db.get_user(req.username)
     if not user:
         logging.warning(f"Unknown user '{req.username}' at upload_file")
         raise HTTPException(status_code=404, detail="Unknown user")
 
     user_id = user["user_id"]
-    provided = base64.b64decode(req.nonce)
-    stored  = db.get_pending_challenge(user_id, "upload_file")
+    
+    # Validate all Base64 fields
+    try:
+        provided = validate_base64(req.nonce, "nonce")
+        encrypted_dek = validate_base64(req.encrypted_dek, "encrypted_dek")
+        signature = validate_base64(req.signature, "signature")
+        encrypted_file = validate_base64(req.encrypted_file, "encrypted_file")
+        file_nonce = validate_base64(req.file_nonce, "file_nonce")
+        dek_nonce = validate_base64(req.dek_nonce, "dek_nonce")
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Unexpected error during Base64 validation: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error during validation")
+
+    stored = db.get_pending_challenge(user_id, "upload_file")
     if stored is None or provided != stored:
         logging.warning(f"No valid pending challenge for user_id={user_id} (upload_file)")
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
 
-    encrypted_dek = base64.b64decode(req.encrypted_dek)
-    signature     = base64.b64decode(req.signature)
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, encrypted_dek)
         db.add_file(
             req.username,
             req.filename,
-            base64.b64decode(req.encrypted_file),
-            base64.b64decode(req.file_nonce),
+            encrypted_file,
+            file_nonce,
             encrypted_dek,
-            base64.b64decode(req.dek_nonce)
+            dek_nonce
         )
         logging.info(f"File '{req.filename}' uploaded for user_id={user_id}")
         db.delete_challenge(user_id)
@@ -671,7 +809,7 @@ def share_file_handler(req: ShareFileRequest, db: models.UserDB):
     payload = base64.b64decode(req.encrypted_file_key)
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, payload)
-    except Exception:
+    except InvalidSignature:
         db.delete_challenge(uid)
         raise HTTPException(401, "Bad signature")
 
@@ -761,11 +899,10 @@ def list_shared_to_handler(req: ListSharedToRequest, db: models.UserDB):
     stored   = db.get_pending_challenge(uid, "list_shared_to")
     if stored is None or provided != stored:
         raise HTTPException(status_code=400, detail="Invalid or expired challenge")
-
     try:
         sig = base64.b64decode(req.signature)
         Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, provided)
-    except Exception:
+    except InvalidSignature:
         db.delete_challenge(uid)
         raise HTTPException(status_code=401, detail="Bad signature")
 
@@ -823,10 +960,9 @@ def list_shared_from_handler(req: ListSharedFromRequest, db: models.UserDB):
     if stored is None or provided != stored:
         raise HTTPException(400, "Invalid or expired challenge")
     sig = base64.b64decode(req.signature)
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]).verify(sig, provided)
-    except Exception:
+    except InvalidSignature:
         db.delete_challenge(uid)
         raise HTTPException(401, "Bad signature")
 
@@ -882,10 +1018,9 @@ def remove_shared_file_handler(req: RemoveSharedFileRequest, db: models.UserDB):
     sig = base64.b64decode(req.signature)
     # verify signature on the share_id itself
     try:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(sig, str(req.share_id).encode())
-    except Exception:
+    except InvalidSignature:
         db.delete_challenge(uid)
         raise HTTPException(401, "Bad signature")
 

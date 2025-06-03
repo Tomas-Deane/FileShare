@@ -4,6 +4,8 @@ import os
 import pymysql as connector
 import logging
 import datetime
+import threading
+from dbutils.pooled_db import PooledDB
 from typing import List, Tuple
 
 # Database connection parameters (will use env variables)
@@ -178,47 +180,73 @@ def init_db():
 
 class UserDB:
     """
-    Wrapper around users, username_map, pending_challenges, and files tables,
-    with automatic reconnect on lost connection.
+    Thread-safe database wrapper with connection pooling.
+    Each thread gets its own connection from the pool.
     """
+    _pool = None
+    _local = threading.local()
+    
     def __init__(self):
-        self._connect()
-
-    def _connect(self):
-        self.conn = connector.connect(
-            user     = DB_USER,
-            password = DB_PASSWORD,
-            host     = DB_HOST,
-            port     = DB_PORT,
-            database = DB_NAME,
-            autocommit=False
-        )
+        if UserDB._pool is None:
+            UserDB._pool = PooledDB(
+                creator=connector,
+                maxconnections=50,  # Increased max connections
+                mincached=5,        # Increased min cached connections
+                maxcached=10,       # Increased max cached connections
+                blocking=True,      # Block when no connection is available
+                maxusage=100,       # Recycle connections after 100 uses
+                setsession=[],      # No session setup commands
+                ping=1,            # Ping on checkout to verify connection
+                user=DB_USER,
+                password=DB_PASSWORD,
+                host=DB_HOST,
+                port=DB_PORT,
+                database=DB_NAME,
+                charset='utf8mb4',  # Explicit charset
+                cursorclass=connector.cursors.DictCursor  # Always use dict cursor
+            )
+    
+    def _get_connection(self):
+        """Get thread-local database connection and cursor."""
         try:
-            self.cursor = self.conn.cursor(dictionary=True)
-        except TypeError:
-            self.cursor = self.conn.cursor()
-
+            if not hasattr(self._local, 'conn'):
+                self._local.conn = self._pool.connection()
+                self._local.cursor = self._local.conn.cursor()
+            return self._local.conn, self._local.cursor
+        except Exception as e:
+            logging.error(f"Error getting database connection: {str(e)}")
+            raise
+    
     def ensure_connection(self):
+        """Ensure the connection is alive and reestablish if needed."""
         try:
-            # ping with reconnect=True will re-open if needed
-            self.conn.ping(reconnect=True)
-        except Exception:
-            # if ping fails entirely, re-establish
-            self._connect()
+            conn, cursor = self._get_connection()
+            conn.ping(reconnect=True)
+        except Exception as e:
+            logging.error(f"Connection error, attempting to reconnect: {str(e)}")
+            if hasattr(self._local, 'conn'):
+                try:
+                    self._local.conn.close()
+                except:
+                    pass
+            delattr(self._local, 'conn')
+            delattr(self._local, 'cursor')
+            self._get_connection()
 
     def _get_user_id(self, username):
         self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = "SELECT user_id FROM username_map WHERE username = %s"
-        self.cursor.execute(sql, (username,))
-        row = self.cursor.fetchone()
+        cursor.execute(sql, (username,))
+        row = cursor.fetchone()
         if not row:
             return None
-        return row['user_id'] if isinstance(row, dict) else row[0]
+        return row['user_id']
 
     def add_user(self, username, salt, opslimit, memlimit,
                  public_key, encrypted_privkey, privkey_nonce,
                  encrypted_kek, kek_nonce):
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql_user = """
             INSERT INTO users
                 (salt, argon2_opslimit, argon2_memlimit,
@@ -226,7 +254,7 @@ class UserDB:
                  encrypted_kek, kek_nonce)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
-        self.cursor.execute(sql_user, (
+        cursor.execute(sql_user, (
             salt,
             opslimit,
             memlimit,
@@ -236,15 +264,16 @@ class UserDB:
             encrypted_kek,
             kek_nonce
         ))
-        user_id = self.cursor.lastrowid
+        user_id = cursor.lastrowid
 
         sql_map = "INSERT INTO username_map (username, user_id) VALUES (%s, %s)"
-        self.cursor.execute(sql_map, (username, user_id))
-        self.conn.commit()
+        cursor.execute(sql_map, (username, user_id))
+        conn.commit()
         return user_id
 
     def get_user(self, username):
         self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             SELECT
               u.id                   AS user_id,
@@ -262,18 +291,16 @@ class UserDB:
             WHERE m.username = %s
             LIMIT 1
         """
-        self.cursor.execute(sql, (username,))
-        row = self.cursor.fetchone()
+        cursor.execute(sql, (username,))
+        row = cursor.fetchone()
         if not row:
             return None
-        if isinstance(row, dict):
-            return row
-        columns = [col[0] for col in self.cursor.description]
-        return dict(zip(columns, row))
+        return row
 
     def add_challenge(self, user_id, operation, challenge: bytes):
         self.ensure_connection()
-        self.cursor.execute(
+        conn, cursor = self._get_connection()
+        cursor.execute(
             "DELETE FROM pending_challenges WHERE user_id = %s AND operation = %s",
             (user_id, operation)
         )
@@ -282,11 +309,12 @@ class UserDB:
                 (user_id, operation, challenge, created_at)
             VALUES (%s, %s, %s, UTC_TIMESTAMP())
         """
-        self.cursor.execute(sql, (user_id, operation, challenge))
-        self.conn.commit()
+        cursor.execute(sql, (user_id, operation, challenge))
+        conn.commit()
 
     def get_pending_challenge(self, user_id, operation, expiry_seconds=300):
         self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             SELECT challenge, created_at
             FROM pending_challenges
@@ -295,14 +323,14 @@ class UserDB:
               AND created_at >= UTC_TIMESTAMP() - INTERVAL %s SECOND
             LIMIT 1
         """
-        self.cursor.execute(sql, (user_id, operation, expiry_seconds))
-        row = self.cursor.fetchone()
+        cursor.execute(sql, (user_id, operation, expiry_seconds))
+        row = cursor.fetchone()
         if not row:
             logging.debug(f"No challenge found for user_id={user_id} operation={operation}")
             return None
         
-        challenge = row['challenge'] if isinstance(row, dict) else row[0]
-        created_at = row['created_at'] if isinstance(row, dict) else row[1]
+        challenge = row['challenge']
+        created_at = row['created_at']
         logging.debug(f"Found challenge for user_id={user_id} operation={operation}")
         logging.debug(f"Challenge created at: {created_at}")
         logging.debug(f"Current time: {datetime.datetime.utcnow()}")
@@ -311,26 +339,29 @@ class UserDB:
 
     def delete_challenge(self, user_id):
         self.ensure_connection()
-        self.cursor.execute(
+        conn, cursor = self._get_connection()
+        cursor.execute(
             "DELETE FROM pending_challenges WHERE user_id = %s",
             (user_id,)
         )
-        self.conn.commit()
+        conn.commit()
 
     def update_username(self, old_username, new_username):
         self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             UPDATE username_map
             SET username = %s
             WHERE username = %s
         """
-        self.cursor.execute(sql, (new_username, old_username))
-        self.conn.commit()
+        cursor.execute(sql, (new_username, old_username))
+        conn.commit()
 
     def update_password(self, username, salt, opslimit, memlimit,
                         encrypted_privkey, privkey_nonce,
                         encrypted_kek, kek_nonce):
         self.ensure_connection()
+        conn, cursor = self._get_connection()
         user_id = self._get_user_id(username)
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
@@ -345,7 +376,7 @@ class UserDB:
                 kek_nonce          = %s
             WHERE id = %s
         """
-        self.cursor.execute(sql, (
+        cursor.execute(sql, (
             salt,
             opslimit,
             memlimit,
@@ -355,11 +386,11 @@ class UserDB:
             kek_nonce,
             user_id
         ))
-        self.conn.commit()
+        conn.commit()
 
     def add_file(self, username, filename, encrypted_file, file_nonce,
                  encrypted_dek, dek_nonce):
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         user_id = self._get_user_id(username)
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
@@ -369,7 +400,7 @@ class UserDB:
                  encrypted_dek, dek_nonce)
             VALUES (%s, %s, %s, %s, %s, %s)
         """
-        self.cursor.execute(sql, (
+        cursor.execute(sql, (
             user_id,
             filename,
             encrypted_file,
@@ -377,10 +408,10 @@ class UserDB:
             encrypted_dek,
             dek_nonce
         ))
-        self.conn.commit()
+        conn.commit()
 
     def list_files(self, username):
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         user_id = self._get_user_id(username)
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
@@ -390,8 +421,8 @@ class UserDB:
             WHERE owner_id = %s
             ORDER BY created_at
         """
-        self.cursor.execute(sql, (user_id,))
-        rows = self.cursor.fetchall()
+        cursor.execute(sql, (user_id,))
+        rows = cursor.fetchall()
         if not rows:
             return []
         if isinstance(rows[0], dict):
@@ -400,7 +431,7 @@ class UserDB:
             return [{"filename": row[0], "id": row[1], "created_at": row[2].isoformat()} for row in rows]
 
     def get_file(self, username, filename):
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         user_id = self._get_user_id(username)
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
@@ -411,17 +442,17 @@ class UserDB:
               AND filename = %s
             LIMIT 1
         """
-        self.cursor.execute(sql, (user_id, filename))
-        row = self.cursor.fetchone()
+        cursor.execute(sql, (user_id, filename))
+        row = cursor.fetchone()
         if not row:
             return None
         if isinstance(row, dict):
             return row
-        columns = [col[0] for col in self.cursor.description]
+        columns = [col[0] for col in cursor.description]
         return dict(zip(columns, row))
 
     def delete_file(self, username, filename):
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         user_id = self._get_user_id(username)
         if user_id is None:
             raise ValueError(f"Unknown user '{username}'")
@@ -432,21 +463,21 @@ class UserDB:
             ORDER BY created_at DESC
             LIMIT 1
         """
-        self.cursor.execute(sql, (user_id, filename))
-        self.conn.commit()
+        cursor.execute(sql, (user_id, filename))
+        conn.commit()
 
     def add_pre_key_bundle(self, user_id, IK_pub, SPK_pub, SPK_signature):
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             INSERT INTO pre_key_bundle
                 (user_id, IK_pub, SPK_pub, SPK_signature)
             VALUES (%s, %s, %s, %s)
         """
-        self.cursor.execute(sql, (user_id, IK_pub, SPK_pub, SPK_signature))
-        self.conn.commit()
+        cursor.execute(sql, (user_id, IK_pub, SPK_pub, SPK_signature))
+        conn.commit()
 
     def get_pre_key_bundle(self, user_id):
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             SELECT IK_pub, SPK_pub, SPK_signature
             FROM pre_key_bundle
@@ -454,8 +485,8 @@ class UserDB:
             ORDER BY created_at DESC
             LIMIT 1
         """
-        self.cursor.execute(sql, (user_id,))
-        return self.cursor.fetchone()
+        cursor.execute(sql, (user_id,))
+        return cursor.fetchone()
 
     def get_highest_opk_id(self, user_id):
         """Get the highest opk_id for a user, or -1 if none exist."""
@@ -473,6 +504,7 @@ class UserDB:
         return max_id if max_id is not None else -1
 
     def add_opks(self, user_id, pre_keys):
+        conn, cursor = self._get_connection()
         """Add one-time pre-keys for a user.
         Args:
             user_id: The user's ID
@@ -495,12 +527,13 @@ class UserDB:
                 (user_id, opk_id, pre_key)
             VALUES (%s, %s, %s)
         """
+        
         for opk_id, pre_key in pre_keys:
-            self.cursor.execute(sql, (user_id, opk_id, pre_key))
-        self.conn.commit()
+            cursor.execute(sql, (user_id, opk_id, pre_key))
+        conn.commit()
 
     def get_unused_opk(self, user_id):
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             SELECT id, opk_id, pre_key
             FROM opks
@@ -508,8 +541,9 @@ class UserDB:
             ORDER BY created_at ASC
             LIMIT 1
         """
-        self.cursor.execute(sql, (user_id,))
-        row = self.cursor.fetchone()
+        
+        cursor.execute(sql, (user_id,))
+        row = cursor.fetchone()
         if not row:
             return None
         if isinstance(row, dict):
@@ -518,27 +552,28 @@ class UserDB:
         return dict(zip(columns, row))
 
     def mark_opk_consumed(self, opk_id):
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             UPDATE opks
             SET consumed = TRUE
             WHERE id = %s
         """
-        self.cursor.execute(sql, (opk_id,))
-        self.conn.commit()
+        cursor.execute(sql, (opk_id,))
+        conn.commit()
 
     def share_file(self, file_id: int, recipient_id: int, encrypted_file_key: bytes,
                           file_key_nonce: bytes, EK_pub: bytes, IK_pub: bytes, 
                           SPK_pub: bytes, SPK_signature: bytes, OPK_id: int):
-        with self.conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO shared_files (
-                    file_id, recipient_id, encrypted_file_key, file_key_nonce,
-                    EK_pub, IK_pub, SPK_pub, SPK_signature, OPK_id
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (file_id, recipient_id, encrypted_file_key, file_key_nonce,
-                  EK_pub, IK_pub, SPK_pub, SPK_signature, OPK_id))
-        self.conn.commit()
+        conn, cursor = self._get_connection()
+        sql = """
+            INSERT INTO shared_files
+                (file_id, recipient_id, encrypted_file_key, file_key_nonce,
+                    EK_pub, IK_pub, SPK_pub, SPK_signature, OPK_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(sql, (file_id, recipient_id, encrypted_file_key, file_key_nonce,
+                  EK_pub, IK_pub, SPK_pub, SPK_signature, OPK_id)))
+        conn.commit()
 
     def get_shared_files(self, username: str) -> List[Tuple]:
         """Get all files shared with the given user."""
@@ -546,8 +581,9 @@ class UserDB:
         user_id = self._get_user_id(username)
         if user_id is None:
             return []
-        
-        query = """
+          
+        conn, cursor = self._get_connection()
+        sql = """
             SELECT s.share_id, f.id, f.filename, um.username as shared_by, f.created_at
             FROM shared_files s
             JOIN files f ON s.file_id = f.id
@@ -555,15 +591,11 @@ class UserDB:
             WHERE s.recipient_id = %s
             ORDER BY f.created_at DESC
         """
-        cursor = self.conn.cursor()
-        try:
-            cursor.execute(query, (user_id,))
-            return cursor.fetchall()
-        finally:
-            cursor.close()
+        cursor.execute(sql, (recipient_id,))
+        return cursor.fetchall()
 
     def get_shared_file_details(self, share_id):
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             SELECT 
                 sf.share_id,
@@ -582,37 +614,38 @@ class UserDB:
             WHERE sf.share_id = %s
             LIMIT 1
         """
-        self.cursor.execute(sql, (share_id,))
-        return self.cursor.fetchone()
+        cursor.execute(sql, (share_id,))
+        return cursor.fetchone()
 
     def remove_shared_file(self, share_id):
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             DELETE FROM shared_files
             WHERE share_id = %s
         """
-        self.cursor.execute(sql, (share_id,))
-        self.conn.commit()
+        cursor.execute(sql, (share_id,))
+        conn.commit()
 
     def add_tofu_backup(self, user_id: int, encrypted_data: bytes, backup_nonce: bytes):
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             INSERT INTO tofu_backups
                 (user_id, encrypted_data, backup_nonce)
             VALUES (%s, %s, %s)
         """
-        self.cursor.execute(sql, (
+        cursor.execute(sql, (
             user_id,
             encrypted_data,
             backup_nonce
         ))
-        self.conn.commit()
         
+        conn.commit()
+
         # Clean up old backups, keeping only the most recent one
         self.cleanup_old_tofu_backups(user_id, 1)
 
     def get_tofu_backup(self, user_id: int):
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             SELECT encrypted_data, backup_nonce, created_at, last_verified
             FROM tofu_backups
@@ -620,8 +653,8 @@ class UserDB:
             ORDER BY created_at DESC
             LIMIT 1
         """
-        self.cursor.execute(sql, (user_id,))
-        row = self.cursor.fetchone()
+        cursor.execute(sql, (user_id,))
+        row = cursor.fetchone()
         if not row:
             return None
         
@@ -638,19 +671,19 @@ class UserDB:
 
     def get_all_users(self) -> list:
         """Get all users in the system."""
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             SELECT u.id, m.username
             FROM users u
             JOIN username_map m ON u.id = m.user_id
             ORDER BY u.id
         """
-        self.cursor.execute(sql)
-        return self.cursor.fetchall()
+        cursor.execute(sql)
+        return cursor.fetchall()
     
     def get_file_id(self, username: str, filename: str) -> int:
          """Lookup the internal file ID for a given owner+filename."""
-         self.ensure_connection()
+         conn, cursor = self._get_connection()
          user_id = self._get_user_id(username)
          if user_id is None:
              raise ValueError(f"Unknown user '{username}'")
@@ -661,15 +694,15 @@ class UserDB:
                AND filename = %s
              LIMIT 1
          """
-         self.cursor.execute(sql, (user_id, filename))
-         row = self.cursor.fetchone()
+         cursor.execute(sql, (user_id, filename))
+         row = cursor.fetchone()
          if not row:
              return None
          return row['id'] if isinstance(row, dict) else row[0]
 
     def get_shared_files_to(self, owner_id: int, recipient_id: int):
         """Files *I* (owner_id) have shared *to* recipient_id."""
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             SELECT sf.share_id, sf.file_id, f.filename,
                 sf.EK_pub, sf.IK_pub, sf.encrypted_file_key, sf.shared_at
@@ -679,12 +712,12 @@ class UserDB:
             AND sf.recipient_id = %s
             ORDER BY sf.shared_at DESC
         """
-        self.cursor.execute(sql, (owner_id, recipient_id))
-        return self.cursor.fetchall()
+        cursor.execute(sql, (owner_id, recipient_id))
+        return cursor.fetchall()
 
     def get_shared_files_from(self, recipient_id: int, owner_id: int):
         """Files that owner_id has shared *to* me (recipient_id)."""
-        self.ensure_connection()
+        conn, cursor = self._get_connection()
         sql = """
             SELECT sf.share_id, sf.file_id, f.filename,
                 sf.EK_pub, sf.IK_pub, sf.encrypted_file_key, sf.shared_at
@@ -694,9 +727,8 @@ class UserDB:
             AND f.owner_id      = %s
             ORDER BY sf.shared_at DESC
         """
-        self.cursor.execute(sql, (recipient_id, owner_id))
-
-        return self.cursor.fetchall()
+        cursor.execute(sql, (recipient_id, owner_id))
+        return cursor.fetchall()
 
     def cleanup_old_tofu_backups(self, user_id: int, keep_last_n: int = 1):
         self.ensure_connection()
