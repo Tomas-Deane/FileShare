@@ -1390,7 +1390,7 @@ const TestButton = () => {
         });
 
         const sharedSecret = await deriveX3DHSharedSecret({
-          myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
+        myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
           myEKPriv: ephemeralKeyPair.privateKey,
           recipientIKPub: b64ToUint8Array(freshBundle.IK_pub),
           recipientSPKPub: b64ToUint8Array(freshBundle.SPK_pub),

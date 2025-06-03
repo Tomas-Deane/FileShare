@@ -39,9 +39,7 @@ from schemas import (
     RetrieveFileDEKRequest,
     DownloadSharedFileRequest,
     ListMatchingUsersRequest,
-    ListSharersRequest,
-    ClearUserOPKsRequest,
-    GetOPKCountRequest,
+    PreviewSharedFileRequest,
 )
 
 # ─── Allowed operations for challenge requests ────────────────────────────────
@@ -239,8 +237,10 @@ def signup_handler(req: SignupRequest, db: models.UserDB):
     # 5) store one-time pre-keys with sequential IDs
     opks_with_ids = [(i, opk) for i, opk in enumerate(opk_bytes)]
     db.add_opks(user_id, opks_with_ids)
-
-    # 6) store the initial TOFU backup if provided
+    
+    # 5) store the very first TOFU backup (if provided)
+    #    We expect the client to have encrypted their "newly‐generated identity+prekeys"
+    #    under the session‐Kek, and sent us base64 ciphertext + base64 nonce.
     if req.encrypted_backup and req.backup_nonce:
         try:
             db.add_tofu_backup(
@@ -1055,6 +1055,51 @@ def download_shared_file_handler(req: DownloadSharedFileRequest, db: models.User
         "file_nonce": base64.b64encode(file_nonce).decode(),
         "encrypted_file_key": base64.b64encode(shared_file["encrypted_file_key"]).decode(),
         "file_key_nonce": base64.b64encode(shared_file["file_key_nonce"]).decode(),
+        "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode(),
+        "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
+        "SPK_pub": base64.b64encode(shared_file["SPK_pub"]).decode(),
+        "SPK_signature": base64.b64encode(shared_file["SPK_signature"]).decode(),
+        "opk_id": shared_file["OPK_id"]
+    }
+
+def preview_shared_file_handler(req: PreviewSharedFileRequest, db: models.UserDB):
+    # 1) verify owner & challenge
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(404, "User not found")
+    
+    user_id = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(user_id, "preview_shared_file")
+    if stored is None or provided != stored:
+        raise HTTPException(400, "Invalid or expired challenge")
+
+    # 2) Verify signature
+    signature = base64.b64decode(req.signature)
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(signature, str(req.share_id).encode())
+    except InvalidSignature:
+        db.delete_challenge(user_id)
+        raise HTTPException(401, "Bad signature")
+
+    # 3) Get the shared file data
+    shared_file = db.get_shared_file(req.share_id, user_id)
+    if not shared_file:
+        raise HTTPException(404, "Shared file not found")
+
+    # Get the original file's nonce
+    file_nonce = db.get_file_nonce(shared_file["file_id"])
+    if not file_nonce:
+        raise HTTPException(404, "File nonce not found")
+
+    # Return both nonces
+    return {
+        "status": "ok",
+        "encrypted_file": base64.b64encode(shared_file["encrypted_file"]).decode(),
+        "file_nonce": base64.b64encode(file_nonce).decode(),  # Original file's nonce
+        "encrypted_file_key": base64.b64encode(shared_file["encrypted_file_key"]).decode(),
+        "file_key_nonce": base64.b64encode(shared_file["file_key_nonce"]).decode(),  # Nonce for decrypting the file key
         "EK_pub": base64.b64encode(shared_file["EK_pub"]).decode(),
         "IK_pub": base64.b64encode(shared_file["IK_pub"]).decode(),
         "SPK_pub": base64.b64encode(shared_file["SPK_pub"]).decode(),
