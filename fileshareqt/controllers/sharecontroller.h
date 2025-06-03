@@ -44,9 +44,14 @@ public:
 
     void downloadSharedFile(qint64 shareId, const QString &filename);
 
+    // Revoke a previously‐granted share (share_id).
+    void revokeAccess(qint64 shareId);
+
 signals:
     // Emitted when a share operation completes (success==true if server returned OK)
     void shareFileResult(bool success, const QString &message);
+
+    void removeSharedFileResult(bool success, const QString &message);
 
     // Emitted when “list to” comes back; the list is a vector of SharedFile
     void listSharedToResult(bool success,
@@ -112,6 +117,9 @@ private slots:
                                  int            opk_id,
                                  const QString &message);
 
+    // Called when removeSharedFileResult arrives
+    void onRemoveSharedFileNetwork(bool success, const QString &message);
+
     // Called when the /get_opk result arrives
     void onGetOPKResult(bool success, int opk_id, const QString &pre_key_b64, const QString &message);
 
@@ -130,7 +138,8 @@ private:
         ListSharedTo,
         ListSharedFrom,
         ListSharers,
-        DownloadSharedFile
+        DownloadSharedFile,
+        RevokeShare
     };
 
     PendingOp        m_pendingOp = None;
