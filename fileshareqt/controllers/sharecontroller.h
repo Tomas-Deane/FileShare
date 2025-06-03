@@ -29,31 +29,33 @@ public:
                              ICryptoService   *cryptoService,
                              QObject          *parent = nullptr);
 
-    // ⓵ Share a file with a particular recipientUsername.
-    //     `fileId` is the internal ID of the file you want to share.
-    //     `recipientUsername` is the username of the person you share to.
+    // share a file with a recipient
+    // PASS BY VALUE | we pass fileId by value here as an 8 byte int is cheap to copy, and we dont intend to make any changes to the caller's original
     void shareFile(qint64 fileId, const QString &recipientUsername);
 
-    // ⓶ List all files I (current user) have shared TO `targetUsername`.
+    // lists all files the current user has shared TO `targetUsername`
     void listFilesSharedTo(const QString &targetUsername);
 
-    // ⓷ List all files shared FROM `targetUsername` TO me.
+    // lista all files shared FROM `targetUsername` TO current user
     void listFilesSharedFrom(const QString &targetUsername);
 
+    // lists all users who have shared a file to the current user
     void listSharers();
 
+    // download a file that has been shared to you
     void downloadSharedFile(qint64 shareId, const QString &filename);
 
-    // Revoke a previously‐granted share (share_id).
+    // revoke a previously granted share (share_id)
     void revokeAccess(qint64 shareId);
 
 signals:
-    // Emitted when a share operation completes (success==true if server returned OK)
+    // emitted when a share operation completes (success==true if server returned OK)
     void shareFileResult(bool success, const QString &message);
 
+    // emits when revoking a user's access to a file you have shared with them
     void removeSharedFileResult(bool success, const QString &message);
 
-    // Emitted when “list to” comes back; the list is a vector of SharedFile
+    // emitted when “list to” comes back, the list is a vector of SharedFile
     void listSharedToResult(bool success,
                             const QList<SharedFile> &shares,
                             const QString &message);
@@ -63,8 +65,10 @@ signals:
                               const QList<SharedFile> &shares,
                               const QString &message);
 
+    // emits when "list sharers" comes back
     void listSharersResult(bool success, const QStringList &usernames, const QString &message);
 
+    // emits when "download shared file results comes back"
     void downloadSharedFileResult(bool success,
                                   const QString &filename,
                                   const QByteArray &data,
@@ -105,6 +109,7 @@ private slots:
                               const QStringList &usernames,
                               const QString &message);
 
+    // called when the download_shared response comes back
     void onDownloadSharedNetwork(bool   success,
                                  const QString &encryptedFileB64,
                                  const QString &fileNonceB64,
@@ -128,7 +133,7 @@ private:
     AuthController  *m_authController;
     ICryptoService  *m_cryptoService;
 
-    // We stash state so that when a challenge arrives, we know what to do:
+    // We stash state so that when a challenge arrives, we know what to do
     enum PendingOp {
         None,
         GetPreKeyBundle,
@@ -146,12 +151,12 @@ private:
     QString          m_pendingRecipient;   // for shareFile
     qint64           m_pendingFileId      = -1;
     QByteArray       m_recipientIkPub;    // after getPreKeyBundle
-    QByteArray       m_recipientSpkPub;      // <–– new: stash recipient’s SPK_pub
+    QByteArray       m_recipientSpkPub;      // stash recipient’s SPK_pub
     QByteArray       m_recipientSpkSignature;
 
     QString          m_pendingTargetUsername;  // for listSharedTo / listSharedFrom
 
-    // After retrieving DEK from server, stash it here until we do ECDH‐encrypt:
+    // after retrieving DEK from server, stash it here until we do ECDH‐encrypt
     QByteArray       m_stashedEncryptedDek; // raw bytes of encrypted DEK
     QByteArray       m_stashedDekNonce;     // raw nonce for that DEK
 
@@ -159,7 +164,7 @@ private:
     int              m_stashedOpkId = -1;
     QByteArray       m_stashedOpkPreKey;
 
-    // Helper: convert QJsonArray→QList<SharedFile>
+    // convert QJsonArray→QList<SharedFile>
     QList<SharedFile> parseSharedArray(const QJsonArray &arr) const;
 
     qint64           m_pendingShareId = -1;  // stash the share_id

@@ -13,16 +13,16 @@ public:
     explicit SharedFileManager(QObject *parent = nullptr);
     ~SharedFileManager() override = default;
 
-    /// Returns true if we have cached bytes for this filename.
+    // Returns true if we have cached bytes for this filename.
     bool has(const QString &filename) const;
 
-    /// Insert raw data (e.g. from `downloadSharedFileResult`) under this filename.
+    // Insert raw data (e.g. from `downloadSharedFileResult`) under this filename.
     void insert(const QString &filename, const QByteArray &data);
 
-    /// Retrieve the raw data (caller should check .has() first).
+    // Retrieve the raw data (caller should check .has() first).
     QByteArray get(const QString &filename) const;
 
-    /// Clear the entire cache (e.g. on logout).
+    // Clear the entire cache (e.g. on logout).
     void clear();
 
 private:
