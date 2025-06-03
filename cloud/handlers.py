@@ -67,7 +67,7 @@ ALLOWED_OPERATIONS = {
     "backup_tofu",
     "get_backup_tofu",
     "list_matching_users",
-    "list_sharers"
+    "list_sharers",
     "clear_user_opks"
 }
 

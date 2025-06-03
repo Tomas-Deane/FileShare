@@ -64,12 +64,12 @@ async def lifespan(app: FastAPI):
     finally:
         # Shutdown
         db = getattr(app.state, "db", None)
-        if db:
+        if db and hasattr(db, 'pool'):
             try:
-                db.conn.close()
-                logger.info("Lifespan shutdown: DB connection closed")
-            except Exception:
-                logger.exception("Error closing DB connection")
+                db.pool.close()
+                logger.info("Lifespan shutdown: DB connection pool closed")
+            except Exception as e:
+                logger.error(f"Error closing DB connection pool: {str(e)}")
 
 # ─── FastAPI app with lifespan ─────────────────────────────────────────────────
 app = FastAPI(

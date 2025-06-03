@@ -1,6 +1,6 @@
 export const securityConfig = {
   // Enforce HTTPS for all API calls
-  apiBaseUrl: 'https://gobbler.info:3220',
+  apiBaseUrl: 'https://gobbler.info:3230',
   
   // Security headers configuration
   headers: {
@@ -20,7 +20,7 @@ export const securityConfig = {
 
   // CORS configuration
   cors: {
-    allowedOrigins: ['https://gobbler.info:3220'],
+    allowedOrigins: ['https://gobbler.info:3230'],
     allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     allowCredentials: true,
