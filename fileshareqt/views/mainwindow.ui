@@ -70,7 +70,7 @@
              <string/>
             </property>
             <property name="pixmap">
-             <pixmap resource="../../../../projects/FileShare/fileshareqt/build/Desktop_Qt_6_9_0-Debug/qmake_qmake_immediate.qrc">:/nrmc_image.png</pixmap>
+             <pixmap resource="../build/Qt_6_9_0_for_macOS-Debug/qmake_qmake_immediate.qrc">:/nrmc_image.png</pixmap>
             </property>
             <property name="scaledContents">
              <bool>true</bool>
@@ -547,8 +547,8 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>171</width>
-                   <height>36</height>
+                   <width>163</width>
+                   <height>40</height>
                   </rect>
                  </property>
                  <layout class="QVBoxLayout" name="verticalLayout_10">
@@ -625,8 +625,8 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>713</width>
-                   <height>172</height>
+                   <width>667</width>
+                   <height>151</height>
                   </rect>
                  </property>
                  <layout class="QVBoxLayout" name="verticalLayout_12">
@@ -752,7 +752,7 @@
            </layout>
           </item>
           <item>
-           <widget class="QPushButton" name="pushButton">
+           <widget class="QPushButton" name="revokeAccessButton">
             <property name="text">
              <string>Revoke Access</string>
             </property>
@@ -821,8 +821,8 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>713</width>
-                   <height>183</height>
+                   <width>667</width>
+                   <height>165</height>
                   </rect>
                  </property>
                  <layout class="QVBoxLayout" name="verticalLayout_32">
@@ -1144,7 +1144,7 @@
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
  <resources>
-  <include location="../../../../projects/FileShare/fileshareqt/build/Desktop_Qt_6_9_0-Debug/qmake_qmake_immediate.qrc"/>
+  <include location="../build/Qt_6_9_0_for_macOS-Debug/qmake_qmake_immediate.qrc"/>
  </resources>
  <connections/>
 </ui>
