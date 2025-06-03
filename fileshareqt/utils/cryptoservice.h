@@ -6,8 +6,8 @@
 class CryptoService : public ICryptoService
 {
 public:
-    // Initialize libsodium library
     CryptoService();
+    ~CryptoService() override;
 
     // Derive a key (e.g. PDK) from password+salt
     QByteArray deriveKey(const QString &password,

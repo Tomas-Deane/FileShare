@@ -3,6 +3,7 @@
 
 #include <QString>
 #include <QByteArray>
+#include <QDebug>
 
 // pure virtual interface for all crypto operations
 class ICryptoService
@@ -12,7 +13,14 @@ protected:
     static const int MAX_RANDOM_LENGTH = 4096;
 
 public:
-    virtual ~ICryptoService() = default;
+    ICryptoService()
+    {
+        qDebug() << "ICryptoService ctor";
+    }
+    virtual ~ICryptoService()
+    {
+        qDebug() << "ICryptoService dtor";
+    }
 
     // default Argon2id parameters (matches libsodiums moderate settings)
     const static quint64 OPSLIMIT_MODERATE = 3;

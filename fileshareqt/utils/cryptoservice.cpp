@@ -1,9 +1,14 @@
 #include "cryptoservice.h"
 #include "crypto_utils.h"
 
-CryptoService::CryptoService()
+CryptoService::CryptoService() : ICryptoService()
 {
-    CryptoUtils::initializeLibrary();
+    qDebug() << "CryptoService ctor";
+}
+
+CryptoService::~CryptoService()
+{
+    qDebug() << "CryptoService dtor";
 }
 
 QByteArray CryptoService::deriveKey(const QString &password,
