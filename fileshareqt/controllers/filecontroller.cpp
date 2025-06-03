@@ -41,9 +41,10 @@ void FileController::listFiles()
     m_networkManager->requestChallenge(currentUsername(), "list_files");
 }
 
-void FileController::downloadFile(const QString &filename)
+void FileController::downloadFile(qint64 fileId, const QString &filename)
 {
-    m_selectedDownload = filename;
+    m_selectedDownloadId   = fileId;
+    m_selectedDownloadName = filename;
     m_networkManager->requestChallenge(currentUsername(), "download_file");
 }
 
@@ -120,13 +121,16 @@ void FileController::processList(const QByteArray &nonce)
 
 void FileController::processDownload(const QByteArray &nonce)
 {
+    // Sign the ASCII‐encoded file_id, not the filename
+    QByteArray idBytes = QByteArray::number(m_selectedDownloadId);
     QByteArray sig = m_cryptoService->sign(
-        m_selectedDownload.toUtf8(),
+        idBytes,
         m_authController->getSessionSecretKey()
         );
-    QJsonObject req{
+
+    QJsonObject req {
         { "username",  currentUsername() },
-        { "filename",  m_selectedDownload },
+        { "file_id",   m_selectedDownloadId },
         { "nonce",     QString::fromUtf8(nonce.toBase64()) },
         { "signature", QString::fromUtf8(sig.toBase64()) }
     };
@@ -170,31 +174,40 @@ void FileController::onDownloadNetwork(bool success,
                                        const QString &message)
 {
     if (!success) {
-        emit downloadFileResult(false, m_selectedDownload, {}, message);
+        emit downloadFileResult(false,
+                                m_selectedDownloadName,
+                                QByteArray(),
+                                message);
         return;
     }
 
+    // 1) Base64 → raw
     QByteArray encryptedFile = QByteArray::fromBase64(encryptedFileB64.toUtf8());
     QByteArray fileNonce     = QByteArray::fromBase64(fileNonceB64.toUtf8());
     QByteArray encryptedDek  = QByteArray::fromBase64(encryptedDekB64.toUtf8());
     QByteArray dekNonce      = QByteArray::fromBase64(dekNonceB64.toUtf8());
 
+    // 2) Decrypt DEK under session KEK
     QByteArray fileDek = m_cryptoService->decrypt(
         encryptedDek,
         m_authController->getSessionKek(),
         dekNonce
         );
-    QByteArray data = m_cryptoService->decrypt(
-        encryptedFile,
-        fileDek,
-        fileNonce
-        );
 
-    // zero out the raw DEK immediately
+    // 3) Decrypt file data under that DEK
+    QByteArray data = m_cryptoService->decrypt(encryptedFile, fileDek, fileNonce);
+
+    // 4) Zero out the raw DEK
     m_cryptoService->secureZeroMemory(fileDek);
 
-    m_downloadCache.insert(m_selectedDownload, data);
-    emit downloadFileResult(true, m_selectedDownload, data, {});
+    // 5) Cache it under the *filename* key
+    m_downloadCache.insert(m_selectedDownloadName, data);
+
+    // 6) Tell MainWindow “here’s your plaintext back”
+    emit downloadFileResult(true,
+                            m_selectedDownloadName,
+                            data,
+                            QString());
 }
 
 void FileController::onDeleteNetwork(bool success, const QString &message)

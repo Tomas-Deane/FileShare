@@ -24,7 +24,7 @@ public:
 
      void uploadFile(const QString &filename, const QByteArray &base64Contents);
      void listFiles();
-     void downloadFile(const QString &filename);
+     void downloadFile(qint64 fileId, const QString &filename);
      void deleteFile(const QString &filename);
 
     const QMap<QString, QByteArray>& downloadCache() const { return m_downloadCache; }
@@ -55,6 +55,9 @@ private:
     QByteArray         m_pendingFileContents;
     QString            m_selectedDownload;
     QMap<QString, QByteArray> m_downloadCache;
+
+    qint64       m_selectedDownloadId    = -1;
+    QString      m_selectedDownloadName;
 
     void processUpload(const QByteArray &nonce);
     void processList(const QByteArray &nonce);
