@@ -140,7 +140,7 @@ def init_db():
         SPK_signature        BLOB                NOT NULL,
         encrypted_file_key   BLOB                NOT NULL,
         file_key_nonce       BLOB                NOT NULL,
-        OPK_id               BIGINT              NOT NULL,
+        OPK_id               BIGINT              NULL,
         shared_at            DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT fk_shared_file
           FOREIGN KEY (file_id)
@@ -173,6 +173,18 @@ def init_db():
         INDEX idx_user (user_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
+
+    # Migrate OPK_id to be nullable
+    try:
+        cursor.execute("""
+            ALTER TABLE shared_files
+            MODIFY COLUMN OPK_id BIGINT NULL;
+        """)
+        conn.commit()
+    except Exception as e:
+        logging.warning(f"Migration to make OPK_id nullable failed (this is normal if already migrated): {str(e)}")
+        conn.rollback()
+
     conn.commit()
     cursor.close()
     conn.close()
