@@ -4,7 +4,7 @@ module.exports = function(app) {
   app.use(
     '/api',
     createProxyMiddleware({
-      target: 'https://gobbler.info:3230',
+      target: 'https://gobbler.info:3210',
       changeOrigin: true,
       secure: false, // This allows self-signed certificates
       proxyTimeout: 30000, // Increase timeout to 30 seconds
@@ -17,7 +17,7 @@ module.exports = function(app) {
         console.log('Proxy request:', {
           method: req.method,
           url: req.url,
-          target: 'https://gobbler.info:3230',
+          target: 'https://gobbler.info:3210',
           headers: proxyReq.getHeaders(),
           body: req.body
         });
@@ -60,7 +60,7 @@ module.exports = function(app) {
           method: req.method,
           stack: err.stack,
           host: req.headers.host,
-          target: 'https://gobbler.info:3230'
+          target: 'https://gobbler.info:3210'
         });
         
         // Send a more detailed error response

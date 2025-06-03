@@ -1518,6 +1518,111 @@ const TestButton = () => {
     await fetchSharedFiles();
   };
 
+  const handleSharedPreview = async (fileId: number) => {
+    const file = sharedFiles.find(f => f.id === fileId);
+    if (!file) return;
+    setOpenPreview(true);
+    setPreviewContent(null);
+    setPreviewImageUrl(null);
+    setPreviewError(null);
+    setPreviewLoading(true);
+
+    if (!isTextFile(file.filename) && !isImageFile(file.filename)) {
+      setPreviewContent(null);
+      setPreviewImageUrl(null);
+      setPreviewError('Preview not available for this file type.');
+      setPreviewLoading(false);
+      return;
+    }
+
+    try {
+      // Step 1: Request challenge
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'preview_shared_file'
+      });
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+
+      // Step 2: Sign the share_id
+      const signature = await signChallenge(
+        new TextEncoder().encode(file.share_id.toString()),
+        secretKey!
+      );
+
+      // Step 3: Get file preview
+      const previewResponse = await apiClient.post<any>('/preview_shared_file', {
+        username,
+        share_id: file.share_id,
+        nonce: challengeResponse.nonce,
+        signature: uint8ArrayToB64(signature)
+      });
+
+      if (previewResponse.status !== 'ok') {
+        throw new Error(previewResponse.detail || 'Failed to preview file');
+      }
+
+      // Step 4: Decrypt file
+      const encryptedFile = Uint8Array.from(atob(previewResponse.encrypted_file), c => c.charCodeAt(0));
+      const fileNonce = Uint8Array.from(atob(previewResponse.file_nonce), c => c.charCodeAt(0));
+      
+      // For shared files, we need to derive the shared secret using X3DH
+      if (!username) {
+        throw new Error('Username not found');
+      }
+      const myKeyBundle = storage.getKeyBundle(username);
+      if (!myKeyBundle) {
+        throw new Error('Key bundle not found');
+      }
+
+      // Get our private OPK that matches the OPK_id from the response
+      const myOPK = myKeyBundle.OPKs_priv?.[previewResponse.opk_id];
+      if (!myOPK) {
+        throw new Error('OPK not found in key bundle');
+      }
+
+      // Derive the shared secret using our private keys and sender's public keys
+      const sharedSecret = await deriveX3DHSharedSecretRecipient({
+        senderEKPub: Uint8Array.from(atob(previewResponse.EK_pub), c => c.charCodeAt(0)),
+        senderIKPub: Uint8Array.from(atob(previewResponse.IK_pub), c => c.charCodeAt(0)),
+        senderSPKPub: Uint8Array.from(atob(previewResponse.SPK_pub), c => c.charCodeAt(0)),
+        myIKPriv: Uint8Array.from(atob(myKeyBundle.IK_priv), c => c.charCodeAt(0)),
+        mySPKPriv: Uint8Array.from(atob(myKeyBundle.SPK_priv), c => c.charCodeAt(0)),
+        myOPKPriv: Uint8Array.from(atob(myOPK), c => c.charCodeAt(0))
+      });
+
+      // Decrypt the file key using the shared secret
+      const encryptedFileKey = Uint8Array.from(atob(previewResponse.encrypted_file_key), c => c.charCodeAt(0));
+      const fileKeyNonce = Uint8Array.from(atob(previewResponse.file_key_nonce), c => c.charCodeAt(0));
+      const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileKeyNonce);
+
+      // Decrypt the actual file
+      const decrypted = await decryptFile(encryptedFile, fileKey, fileNonce);
+
+      if (isTextFile(file.filename)) {
+        const text = new TextDecoder('utf-8').decode(decrypted);
+        setPreviewContent(text);
+        setPreviewImageUrl(null);
+      } else if (isImageFile(file.filename)) {
+        // Guess MIME type from extension
+        let mime = 'image/png';
+        if (/\.jpe?g$/i.test(file.filename)) mime = 'image/jpeg';
+        else if (/\.gif$/i.test(file.filename)) mime = 'image/gif';
+        else if (/\.bmp$/i.test(file.filename)) mime = 'image/bmp';
+        else if (/\.webp$/i.test(file.filename)) mime = 'image/webp';
+        const blob = new Blob([decrypted], { type: mime });
+        const url = URL.createObjectURL(blob);
+        setPreviewImageUrl(url);
+        setPreviewContent(null);
+      }
+    } catch (err: any) {
+      setPreviewError(err.message || 'Failed to preview file');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   return (
     <>
       <MatrixBackground />
@@ -1858,7 +1963,7 @@ const TestButton = () => {
                                 </IconButton>
                               </Tooltip>
                               <Tooltip title="Preview">
-                                <IconButton onClick={() => handlePreview(file.id)} sx={{ color: '#00ff00' }}>
+                                <IconButton onClick={() => handleSharedPreview(file.id)} sx={{ color: '#00ff00' }}>
                                   <VisibilityIcon />
                                 </IconButton>
                               </Tooltip>
