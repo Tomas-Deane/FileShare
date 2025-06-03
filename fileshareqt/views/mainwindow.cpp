@@ -150,6 +150,9 @@ MainWindow::MainWindow(AuthController* authCtrl,
     connect(shareController, &ShareController::downloadSharedFileResult,
             this, &MainWindow::on_downloadSharedFileResult);
 
+    connect(shareController, &ShareController::removeSharedFileResult,
+            this, &MainWindow::onRemoveSharedFileResult);
+
     connect(ui->generateCodeButton, &QPushButton::clicked, this, [=]{
         QString target = ui->targetUsernameLineEdit->text().trimmed();
         verifyController->generateOOBCode(target);
@@ -774,6 +777,56 @@ void MainWindow::on_downloadSharedFileResult(bool success,
         m_pendingSaveShare    = false;
         m_pendingSaveFilename.clear();
     }
+}
+
+void MainWindow::on_revokeAccessButton_clicked()
+{
+    // 1) Which verified user is selected?
+    QListWidgetItem *userItem = ui->sharesToVerifiedUsersList->currentItem();
+    if (!userItem) {
+        Logger::log("No user selected to revoke access from");
+        return;
+    }
+    QString targetUsername = userItem->text();
+
+    // 2) Which file is selected in “Shares To”?
+    QListWidgetItem *fileItem = ui->sharesToFilesList->currentItem();
+    if (!fileItem) {
+        Logger::log("No shared file selected to revoke");
+        return;
+    }
+
+    bool ok = false;
+    qint64 shareId = fileItem->data(Qt::UserRole).toLongLong(&ok);
+    if (!ok) {
+        Logger::log("Invalid share ID; cannot revoke");
+        return;
+    }
+
+    Logger::log(QString("Revoking share (share_id=%1) to user '%2'...").arg(shareId).arg(targetUsername));
+    shareController->revokeAccess(shareId);
+}
+
+// Handle the result from ShareController::removeSharedFile(...)
+void MainWindow::onRemoveSharedFileResult(bool success, const QString &message)
+{
+    if (!success) {
+        Logger::log("Failed to revoke access: " + message);
+        return;
+    }
+    Logger::log("Access revoked successfully");
+
+    // 1) Remove the file‐item from the UI list:
+    int row = ui->sharesToFilesList->currentRow();
+    if (row >= 0) {
+        ui->sharesToFilesList->takeItem(row);
+    }
+
+    // (Optional) If you prefer, you could re‐query the server again:
+    //   auto userItem = ui->sharesToVerifiedUsersList->currentItem();
+    //   if (userItem) {
+    //       shareController->listFilesSharedTo(userItem->text());
+    //   }
 }
 
 void MainWindow::on_sharesFromFilesList_itemSelectionChanged()
