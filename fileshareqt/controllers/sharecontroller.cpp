@@ -46,6 +46,10 @@ ShareController::ShareController(INetworkManager *networkManager,
     //  handle download_shared_file responses
     connect(m_networkManager, &INetworkManager::downloadSharedFileResult,
             this, &ShareController::onDownloadSharedNetwork);
+
+    // listen for removeSharedFile result
+    connect(m_networkManager, &INetworkManager::removeSharedFileResult,
+            this, &ShareController::onRemoveSharedFileNetwork);
 }
 
 // Start the “share file” flow.
@@ -332,11 +336,36 @@ void ShareController::onChallenge(const QByteArray &nonce, const QString &operat
         }
         break;
 
+    case RevokeShare:
+        if (operation == "remove_shared_file") {
+            // Sign the ASCII‐encoded share_id
+            QByteArray shareIdBytes = QByteArray::number(m_pendingShareId);
+            QByteArray sig = m_cryptoService->sign(
+                shareIdBytes,
+                m_authController->getSessionSecretKey()
+                );
+
+            QJsonObject req {
+                { "username",    me },
+                { "share_id",    m_pendingShareId },
+                { "nonce",       QString::fromUtf8(nonce.toBase64()) },
+                { "signature",   QString::fromUtf8(sig.toBase64()) }
+            };
+            m_networkManager->removeSharedFile(req);
+        }
+        break;
+
     default:
         break;
     }
 }
 
+void ShareController::onRemoveSharedFileNetwork(bool success, const QString &message)
+{
+    // Propagate the result back to whoever called revokeAccess()
+    emit removeSharedFileResult(success, message);
+    m_pendingOp = None;
+}
 
 // After /get_pre_key_bundle returns:
 void ShareController::onGetPreKeyBundleResult(bool success,
@@ -566,6 +595,20 @@ void ShareController::onDownloadSharedNetwork(bool success,
     QString outFilename = m_pendingFilename;
     emit downloadSharedFileResult(true, outFilename, plaintext, QString());
     m_pendingOp = None;
+}
+
+void ShareController::revokeAccess(qint64 shareId)
+{
+    if (m_authController->getSessionUsername().isEmpty()) {
+        emit removeSharedFileResult(false, "Not logged in");
+        return;
+    }
+
+    m_pendingOp = RevokeShare;
+    m_pendingShareId = shareId;
+
+    QString me = m_authController->getSessionUsername();
+    m_networkManager->requestChallenge(me, "remove_shared_file");
 }
 
 // Convert a JSON‐array of share records into QList<SharedFile>
