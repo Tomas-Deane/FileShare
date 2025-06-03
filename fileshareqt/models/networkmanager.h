@@ -15,6 +15,9 @@ class NetworkManager : public INetworkManager
 {
     Q_OBJECT
 
+    QString serverHost;
+    quint16 serverPort;
+
 public:
     NetworkManager(QObject *parent = nullptr);
     ~NetworkManager() override;
@@ -73,6 +76,21 @@ private:
                         const QJsonObject &obj,
                         bool &ok,
                         QString &message);
+
+    // Helper: check {"status": ...} and extract detail (if any)
+    bool parseStatus(const QJsonObject &obj, QString &outDetail)
+    {
+        if (obj.value("status").toString() == "ok")
+            return true;
+        outDetail = obj.value("detail").toString();
+        return false;
+    }
+
+    // Centralized boilerplate: POST JSON → check OK → invoke custom parser
+    template <typename ResponseParser>
+    void callEndpoint(const QString &path,
+                      const QJsonObject &payload,
+                      ResponseParser parser);
 };
 
 #endif // NETWORKMANAGER_H

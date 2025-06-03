@@ -21,6 +21,8 @@ NetworkManager::NetworkManager(QObject *parent)
 NetworkManager::~NetworkManager()
 {
     cleanupOpenSSL();
+    serverHost = QStringLiteral("nrmc.gobbler.info");
+    serverPort = 443;
 }
 
 void NetworkManager::initOpenSSL()
@@ -170,24 +172,18 @@ QByteArray NetworkManager::postJson(const QString &host,
 
 void NetworkManager::signup(const QJsonObject &payload)
 {
-    Logger::log("Sending signup request: " +
-                QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+    Logger::log("Signing up… payload: "
+                + QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
 
-    bool ok = false;
-    QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/signup", payload, ok, message);
-
-    Logger::log("Received signup response: " + QString::fromUtf8(resp));
-    if (!ok) {
-        emit signupResult(false, message);
-        return;
-    }
-    auto obj = QJsonDocument::fromJson(resp).object();
-    if (obj["status"].toString() == "ok") {
-        emit signupResult(true, obj["status"].toString());
-    } else {
-        emit signupResult(false, obj["detail"].toString());
-    }
+    callEndpoint("/signup", payload, [this](const QJsonObject &obj) {
+        QString detail;
+        if (parseStatus(obj, detail)) {
+            // On success, some servers echo back {"status":"ok"}, so detail=="ok" or no detail at all
+            emit signupResult(true, obj.value("message").toString(obj.value("status").toString()));
+        } else {
+            emit signupResult(false, detail);
+        }
+    });
 }
 
 void NetworkManager::login(const QString &username)
@@ -709,4 +705,32 @@ void NetworkManager::checkConnection()
     SSL_shutdown(ssl);
     SSL_free(ssl);
     ::close(sock);
+}
+
+template <typename ResponseParser>
+void NetworkManager::callEndpoint(const QString &path,
+                                  const QJsonObject &payload,
+                                  ResponseParser parser)
+{
+    // 1) Fire off the HTTP POST
+    bool ok = false;
+    QString message;
+    QByteArray respBytes = postJson(serverHost, serverPort, path, payload, ok, message);
+
+    // 2) If HTTP‐or‐connection error, immediately emit a generic networkError
+    if (!ok) {
+        emit networkError(message);
+        return;
+    }
+
+    // 3) Parse the JSON body
+    QJsonDocument doc = QJsonDocument::fromJson(respBytes);
+    if (!doc.isObject()) {
+        emit networkError(QStringLiteral("Malformed JSON response"));
+        return;
+    }
+    QJsonObject obj = doc.object();
+
+    // 4) Delegate to the user's parser, who can now inspect "status", fields, etc.
+    parser(obj);
 }
