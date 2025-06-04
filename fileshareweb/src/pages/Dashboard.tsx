@@ -1068,7 +1068,7 @@ const TestButton = () => {
       // IMPORTANT: For your own files, use KEK to decrypt the file key
       const previewEncryptedFile = b64ToUint8Array(downloadResponse.encrypted_file);
       const previewFileNonce = b64ToUint8Array(downloadResponse.file_nonce);
-      const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.file_nonce);
+      const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.dek_nonce);
       const decrypted = await decryptFile(previewEncryptedFile, dek, previewFileNonce);
 
       if (isTextFile(file.name)) {
@@ -1565,8 +1565,8 @@ const TestButton = () => {
       }
 
       // Step 4: Decrypt file (mirror download logic)
-      const encryptedFile = Uint8Array.from(atob(previewResponse.encrypted_file), c => c.charCodeAt(0));
-      const fileNonce = Uint8Array.from(atob(previewResponse.file_nonce), c => c.charCodeAt(0));
+      const encryptedFile = b64ToUint8Array(previewResponse.encrypted_file);
+      const fileNonce = b64ToUint8Array(previewResponse.file_nonce);
 
       if (!username) {
         throw new Error('Username not found');
@@ -1589,17 +1589,17 @@ const TestButton = () => {
 
       // Derive the shared secret using our private keys and sender's public keys
       const sharedSecret = await deriveX3DHSharedSecretRecipient({
-        senderEKPub: Uint8Array.from(atob(previewResponse.EK_pub), c => c.charCodeAt(0)),
-        senderIKPub: Uint8Array.from(atob(previewResponse.IK_pub), c => c.charCodeAt(0)),
-        senderSPKPub: Uint8Array.from(atob(previewResponse.SPK_pub), c => c.charCodeAt(0)),
-        myIKPriv: Uint8Array.from(atob(myKeyBundle.IK_priv), c => c.charCodeAt(0)),
-        mySPKPriv: Uint8Array.from(atob(myKeyBundle.SPK_priv), c => c.charCodeAt(0)),
-        myOPKPriv: myOPK ? Uint8Array.from(atob(myOPK), c => c.charCodeAt(0)) : undefined
+        senderEKPub: b64ToUint8Array(previewResponse.EK_pub),
+        senderIKPub: b64ToUint8Array(previewResponse.IK_pub),
+        senderSPKPub: b64ToUint8Array(previewResponse.SPK_pub),
+        myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
+        mySPKPriv: b64ToUint8Array(myKeyBundle.SPK_priv),
+        myOPKPriv: myOPK ? b64ToUint8Array(myOPK) : undefined
       });
 
       // Decrypt the file key using the shared secret
-      const encryptedFileKey = Uint8Array.from(atob(previewResponse.encrypted_file_key), c => c.charCodeAt(0));
-      const fileKeyNonce = Uint8Array.from(atob(previewResponse.file_key_nonce), c => c.charCodeAt(0));
+      const encryptedFileKey = b64ToUint8Array(previewResponse.encrypted_file_key);
+      const fileKeyNonce = b64ToUint8Array(previewResponse.file_key_nonce);
       const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileKeyNonce);
 
       // Decrypt the actual file
