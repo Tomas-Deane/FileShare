@@ -40,6 +40,9 @@ from schemas import (
     DownloadSharedFileRequest,
     ListMatchingUsersRequest,
     PreviewSharedFileRequest,
+    ListSharersRequest,
+    ClearUserOPKsRequest,
+    GetOPKCountRequest,
 )
 
 # ─── Allowed operations for challenge requests ────────────────────────────────
@@ -63,6 +66,7 @@ ALLOWED_OPERATIONS = {
     "list_shared_from",
     "remove_shared_file",
     "download_shared_file",
+    "preview_shared_file",
     "backup_tofu",
     "get_backup_tofu",
     "list_matching_users",
@@ -1071,7 +1075,6 @@ def preview_shared_file_handler(req: PreviewSharedFileRequest, db: models.UserDB
     user = db.get_user(req.username)
     if not user:
         raise HTTPException(404, "User not found")
-    
     user_id = user["user_id"]
     provided = base64.b64decode(req.nonce)
     stored = db.get_pending_challenge(user_id, "preview_shared_file")

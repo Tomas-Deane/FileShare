@@ -1068,7 +1068,7 @@ const TestButton = () => {
       // IMPORTANT: For your own files, use KEK to decrypt the file key
       const previewEncryptedFile = b64ToUint8Array(downloadResponse.encrypted_file);
       const previewFileNonce = b64ToUint8Array(downloadResponse.file_nonce);
-      const dek = await decryptFileKey(downloadResponse.encrypted_file_key, kek!, downloadResponse.file_nonce);
+      const dek = await decryptFileKey(downloadResponse.encrypted_dek, kek!, downloadResponse.file_nonce);
       const decrypted = await decryptFile(previewEncryptedFile, dek, previewFileNonce);
 
       if (isTextFile(file.name)) {
@@ -1537,10 +1537,10 @@ const TestButton = () => {
     }
 
     try {
-      // Step 1: Request challenge
+      // Step 1: Request challenge (use download_shared_file for preview as well)
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
-        operation: 'preview_shared_file'
+        operation: 'download_shared_file'
       });
       if (challengeResponse.status !== 'challenge') {
         throw new Error(challengeResponse.detail || 'Failed to get challenge');
@@ -1552,23 +1552,22 @@ const TestButton = () => {
         secretKey!
       );
 
-      // Step 3: Get file preview
+      // Step 3: Get file preview (use preview_shared_file endpoint)
       const previewResponse = await apiClient.post<any>('/preview_shared_file', {
         username,
         share_id: file.share_id,
         nonce: challengeResponse.nonce,
-        signature: uint8ArrayToB64(signature)
+        signature: btoa(String.fromCharCode.apply(null, Array.from(signature)))
       });
 
       if (previewResponse.status !== 'ok') {
         throw new Error(previewResponse.detail || 'Failed to preview file');
       }
 
-      // Step 4: Decrypt file
+      // Step 4: Decrypt file (mirror download logic)
       const encryptedFile = Uint8Array.from(atob(previewResponse.encrypted_file), c => c.charCodeAt(0));
       const fileNonce = Uint8Array.from(atob(previewResponse.file_nonce), c => c.charCodeAt(0));
-      
-      // For shared files, we need to derive the shared secret using X3DH
+
       if (!username) {
         throw new Error('Username not found');
       }
@@ -1577,10 +1576,15 @@ const TestButton = () => {
         throw new Error('Key bundle not found');
       }
 
-      // Get our private OPK that matches the OPK_id from the response
-      const myOPK = myKeyBundle.OPKs_priv?.[previewResponse.opk_id];
-      if (!myOPK) {
-        throw new Error('OPK not found in key bundle');
+      // Get our private OPK that matches the OPK_id from the response, if provided
+      let myOPK = undefined;
+      if (previewResponse.opk_id !== undefined) {
+        myOPK = myKeyBundle.OPKs_priv?.[previewResponse.opk_id];
+        if (!myOPK) {
+          console.log('OPK not found in key bundle, proceeding without OPK');
+        }
+      } else {
+        console.log('No OPK ID provided, proceeding without OPK');
       }
 
       // Derive the shared secret using our private keys and sender's public keys
@@ -1590,7 +1594,7 @@ const TestButton = () => {
         senderSPKPub: Uint8Array.from(atob(previewResponse.SPK_pub), c => c.charCodeAt(0)),
         myIKPriv: Uint8Array.from(atob(myKeyBundle.IK_priv), c => c.charCodeAt(0)),
         mySPKPriv: Uint8Array.from(atob(myKeyBundle.SPK_priv), c => c.charCodeAt(0)),
-        myOPKPriv: Uint8Array.from(atob(myOPK), c => c.charCodeAt(0))
+        myOPKPriv: myOPK ? Uint8Array.from(atob(myOPK), c => c.charCodeAt(0)) : undefined
       });
 
       // Decrypt the file key using the shared secret
@@ -2826,7 +2830,7 @@ const TestButton = () => {
                   recipientSPKPub: b64ToUint8Array(freshBundle.SPK_pub),
                   recipientSPKSignature: b64ToUint8Array(freshBundle.SPK_signature)
                 });
-                console.log('Derived shared secret without OPK');
+                console.log('Derived shared secret');
 
                 // Encrypt the file key with the shared secret
                 console.log('Encrypting file key with shared secret...');
