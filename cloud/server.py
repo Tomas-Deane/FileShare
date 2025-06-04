@@ -39,6 +39,8 @@ from schemas import (
     DownloadSharedFileRequest,
     ListMatchingUsersRequest,
     PreviewSharedFileRequest,
+    ClearUserOPKsRequest,
+    GetOPKCountRequest,
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
