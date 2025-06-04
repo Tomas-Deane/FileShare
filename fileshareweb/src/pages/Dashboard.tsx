@@ -284,6 +284,8 @@ const Dashboard: React.FC = () => {
   const [loadingSharedFiles, setLoadingSharedFiles] = useState(false);
   const [openNoOPKConfirm, setOpenNoOPKConfirm] = useState(false);
   const [pendingShare, setPendingShare] = useState<{recipient: string, fileKey: Uint8Array, freshBundle: any} | null>(null);
+  const [openUnverifiedSender, setOpenUnverifiedSender] = useState(false);
+  const [unverifiedSenderFile, setUnverifiedSenderFile] = useState<{id: number, sender: string} | null>(null);
 
   // Get current user and their key bundle
   const currentUsername = storage.getCurrentUser();
@@ -423,6 +425,32 @@ const Dashboard: React.FC = () => {
       const filename = isShared 
         ? (file as SharedFileData).filename 
         : (file as FileData).name;
+
+      // For shared files, check if the sender is verified
+      if (isShared) {
+        const sharedFile = file as SharedFileData;
+        const myUsername = storage.getCurrentUser();
+        if (!myUsername) {
+          throw new Error('No current user found');
+        }
+        const myKeyBundle = storage.getKeyBundle(myUsername);
+        if (!myKeyBundle) {
+          throw new Error('Key bundle not found');
+        }
+
+        // Check if the sender is verified
+        const isSenderVerified = myKeyBundle.recipients?.[sharedFile.shared_by]?.verified;
+        if (!isSenderVerified) {
+          // Set the unverified sender file info and show dialog
+          setUnverifiedSenderFile({
+            id: fileId,
+            sender: sharedFile.shared_by
+          });
+          setOpenUnverifiedSender(true);
+          setLoading(false);
+          return;
+        }
+      }
 
       // Step 1: Request challenge
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
@@ -2767,6 +2795,59 @@ const TestButton = () => {
             }}
           >
             Share Anyway
+          </CyberButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* Unverified Sender Dialog */}
+      <Dialog
+        open={openUnverifiedSender}
+        onClose={() => {
+          setOpenUnverifiedSender(false);
+          setUnverifiedSenderFile(null);
+        }}
+        PaperProps={{
+          sx: {
+            background: 'rgba(0, 0, 0, 0.9)',
+            border: '1px solid rgba(0, 255, 0, 0.2)',
+            color: '#00ff00',
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#00ffff', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
+          Unverified Sender
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Typography sx={{ color: '#00ff00', mb: 2 }}>
+            The file you are trying to download was shared by {unverifiedSenderFile?.sender}, who is not a verified user.
+          </Typography>
+          <Typography sx={{ color: 'rgba(0, 255, 0, 0.7)', fontSize: '0.9rem', mb: 2 }}>
+            While you can still download the file, it is recommended to verify the sender first to ensure the file's authenticity and security.
+          </Typography>
+          <Typography sx={{ color: 'rgba(255, 0, 0, 0.7)', fontSize: '0.9rem' }}>
+            Would you like to proceed with downloading anyway?
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
+          <Button 
+            onClick={() => {
+              setOpenUnverifiedSender(false);
+              setUnverifiedSenderFile(null);
+            }}
+            sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+          >
+            Cancel
+          </Button>
+          <CyberButton
+            onClick={async () => {
+              if (!unverifiedSenderFile) return;
+              setOpenUnverifiedSender(false);
+              setUnverifiedSenderFile(null);
+              // Continue with download
+              await handleDownload(unverifiedSenderFile.id, true);
+            }}
+          >
+            Download Anyway
           </CyberButton>
         </DialogActions>
       </Dialog>
