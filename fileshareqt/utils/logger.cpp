@@ -5,10 +5,14 @@
 #include <QTextStream>
 #include <QDir>
 #include <QCoreApplication>
+#include <memory>
+#include <vector>
 
 // static data for the log file on disk:
 QFile     Logger::logFile;
 QTextStream Logger::logStream;
+
+std::shared_ptr<std::vector<QString>> Logger::s_history = nullptr;
 
 // initialize the global formatter to “identity” (no changes)
 Logger::LogFormatter Logger::s_formatter = nullptr;
@@ -16,6 +20,10 @@ Logger::LogFormatter Logger::s_formatter = nullptr;
 void Logger::initialize(QPlainTextEdit *console)
 {
     Logger::instance().consoleWidget = console;
+    // if history isn’t already allocated, give it one
+    if (!s_history) {
+        s_history = std::make_shared<std::vector<QString>>();
+    }
 }
 
 void Logger::ensureLogOpen() {
@@ -57,6 +65,10 @@ void Logger::log(const QString &msg) {
     if (s_formatter) {
         // apply the registered formatter first
         toWrite = s_formatter(msg);
+    }
+    // append to the in‐memory history first
+    if (s_history) {
+        s_history->push_back(toWrite);
     }
     Logger::instance().logInternal(toWrite);
 }
@@ -109,7 +121,16 @@ void Logger::logInternal(const QString &msg)
     }
 }
 
-// demonstartion function for pointers and/vs arrays
+std::shared_ptr<std::vector<QString>> Logger::getHistory()
+{
+    // If initialize(...) hasn’t run yet, create it on‐demand
+    if (!s_history) {
+        s_history = std::make_shared<std::vector<QString>>();
+    }
+    return s_history;
+}
+
+// demonstration function for pointers and/vs arrays
 void Logger::demonstratePointers() {
     int vals[] = { 10, 20, 30, 40, 50 };
     int *ptr = vals;

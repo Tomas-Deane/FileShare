@@ -14,6 +14,7 @@
 #include <QFileInfo>
 #include <QMimeDatabase>
 #include <QFile>
+#include <QDebug>
 
 MainWindow::MainWindow(AuthController* authCtrl,
                        FileController* fileCtrl,
@@ -242,6 +243,12 @@ MainWindow::MainWindow(AuthController* authCtrl,
 
 MainWindow::~MainWindow()
 {
+    // adds a ref count to the shared pointer
+    auto historyPtr = Logger::getHistory();
+    long refCount   = historyPtr.use_count();
+    // logs the final reference count:
+    qDebug() << "Final Logger::s_history use_count() =" << refCount;
+
     Logger::log("Application exiting");
     delete ui;
 }

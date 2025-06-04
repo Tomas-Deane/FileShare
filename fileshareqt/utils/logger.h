@@ -5,8 +5,7 @@
 #include <QString>
 #include <QByteArray>
 #include <QDebug>
-
-// (Keep all existing includes and code…)
+#include <memory>
 
 class Logger {
 public:
@@ -40,6 +39,8 @@ public:
 
     static void demonstratePointers();
 
+    static std::shared_ptr<std::vector<QString>> getHistory();
+
 private:
     // private constructor enforces singleton
     Logger() : consoleWidget(nullptr) {}
@@ -56,6 +57,8 @@ private:
     static QTextStream logStream;
 
     static void ensureLogOpen();
+
+    static std::shared_ptr<std::vector<QString>> s_history;
 
     void logInternal(const QString &msg);
 
