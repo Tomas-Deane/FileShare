@@ -34,7 +34,6 @@ HEADERS += \
     utils/services.h \
     utils/sharedfilemanager.h \
     utils/tofumanager.h \
-    utils/cryptoservice.h \
     utils/icryptoservice.h \
     utils/inetworkmanager.h \
     utils/logger.h \
@@ -52,7 +51,6 @@ SOURCES += \
     models/passwordstrength.cpp \
     utils/sharedfilemanager.cpp \
     utils/tofumanager.cpp \
-    utils/cryptoservice.cpp \
     utils/logger.cpp \
     controllers/verifycontroller.cpp \
     views/mainwindow.cpp

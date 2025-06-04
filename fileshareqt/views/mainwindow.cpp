@@ -251,7 +251,7 @@ MainWindow::~MainWindow()
 
     Logger::log("Application exiting");
 
-    // explicit use of "delete" keyword
+    //  use of "delete" keyword
     delete ui;
 }
 

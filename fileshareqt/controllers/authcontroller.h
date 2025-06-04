@@ -13,7 +13,7 @@ class AuthController : public QObject {
     Q_OBJECT
 
 public:
-    explicit AuthController(INetworkManager *networkManager,
+     AuthController(INetworkManager *networkManager,
                             ICryptoService *cryptoService,
                             QObject *parent = nullptr);
 

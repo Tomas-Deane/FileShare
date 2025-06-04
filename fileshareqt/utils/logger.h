@@ -29,7 +29,7 @@ public:
     // function pointer that takes a raw QString and returns a formatted QString
     using LogFormatter = QString (*)(const QString &raw);
 
-    // log with an explicit formatter (passed as a function pointer)
+    // log with an  formatter (passed as a function pointer)
     static void logWithFormatter(const QString &msg, LogFormatter fmt);
 
     // register a global formatter (called inside every log call)

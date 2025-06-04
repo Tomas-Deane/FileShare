@@ -1,71 +1,78 @@
+// crypto_utils.h
+
 #ifndef CRYPTO_UTILS_H
 #define CRYPTO_UTILS_H
 
 #include <QByteArray>
 #include <QString>
+#include <QDebug>
 
-class CryptoUtils {
+#include "icryptoservice.h"
+
+class CryptoUtils : public ICryptoService {
 public:
-    // called once at startup
-    static void initializeLibrary();
-
-    // Argon2id key derivation
-    static QByteArray derivePDK(const QString &password,
-                                const QByteArray &salt,
-                                quint64 opslimit,
-                                quint64 memlimit);
-
-    // generates secure random bytes (wrapper around sodium_randombytes_buf())
-    static QByteArray randomBytes(int length);
-
-    // generates a new X25519 keypair (Curve25519) for X3DH (32-byte public and secret)
-    static void generateX25519KeyPair(QByteArray &publicKey,
-                                      QByteArray &secretKey);
-
-    // Inline Function: creates one “one-time pre-key” (Curve25519) // identical to generateX25519KeyPair()
-    static inline void generateOneTimePreKey(QByteArray &opkPub,
-                                             QByteArray &opkPriv)
-    {
-        // forwards to generateX25519KeyPair
-        generateX25519KeyPair(opkPub, opkPriv);
+    CryptoUtils() {
+        qDebug() << "CryptoUtils Ctor";
+    }
+    ~CryptoUtils() override {
+        qDebug() << "CryptoUtils Dtor";
     }
 
-    // Compute the 60 hex character OOB verification code from two IK_pubs:
-    //   sort them (bytewise), concat, SHA-256, hex, truncate(60)
-    static QString computeOOBCode(const QByteArray &ik1_pub,
-                                  const QByteArray &ik2_pub);
+    // deriveKey (Argon2id)
+    QByteArray deriveKey(const QString &password,
+                         const QByteArray &salt,
+                         quint64 opslimit,
+                         quint64 memlimit) override;
 
-    // generate an AEAD key for file encryption or KEK (32 bytes)
-    static QByteArray generateAeadKey();
+    // randomBytes
+    QByteArray randomBytes(int length) override;
 
-    // Ed25519 keypair
-    static void generateKeyPair(QByteArray &publicKey,
-                                QByteArray &secretKey);
+    // generateKeyPair (Ed25519)
+    void generateKeyPair(QByteArray &publicKey,
+                         QByteArray &secretKey) override;
 
-    // AEAD encrypt a secret-key under PDK
-    static QByteArray encryptSecretKey(const QByteArray &secretKey,
-                                       const QByteArray &pdk,
-                                       QByteArray &nonce);
+    // generateAeadKey
+    QByteArray generateAeadKey() override;
 
-    // AEAD decrypt a secret-key under PDK
-    static QByteArray decryptSecretKey(const QByteArray &encryptedSK,
-                                       const QByteArray &pdk,
-                                       const QByteArray &nonce);
+    // generateX25519KeyPair
+    void generateX25519KeyPair(QByteArray &publicKey,
+                               QByteArray &secretKey) override;
 
-    // Ed25519 signature
-    static QByteArray signMessage(const QByteArray &message,
-                                  const QByteArray &secretKey);
+    // generateOneTimePreKey
+    void generateOneTimePreKey(QByteArray &opkPub,
+                               QByteArray &opkPriv) override;
 
-    // Securely zero and clear memory (uses sodium_memzero)
-    static void secureZeroMemory(QByteArray &data);
+    // computeOOBVerificationCode
+    QString computeOOBVerificationCode(const QByteArray &ik1_pub,
+                                       const QByteArray &ik2_pub) override;
 
-    // Perform a Curve25519 ECDH (crypto_scalarmult)
-    static QByteArray computeSharedKey(const QByteArray &ourPriv,
-                                       const QByteArray &theirPub);
+    // encrypt (AEAD)
+    QByteArray encrypt(const QByteArray &plaintext,
+                       const QByteArray &key,
+                       QByteArray &nonce) override;
 
-    static QByteArray hkdfSha256(const QByteArray &salt,
-                                 const QByteArray &ikm,
-                                 int outputLength);
+    // decrypt (AEAD)
+    QByteArray decrypt(const QByteArray &ciphertext,
+                       const QByteArray &key,
+                       const QByteArray &nonce) override;
+
+    // sign (Ed25519)
+    QByteArray sign(const QByteArray &message,
+                    const QByteArray &secretKey) override;
+
+    // secureZeroMemory
+    void secureZeroMemory(QByteArray &data) override;
+
+    // deriveSharedKey (Curve25519/ECDH)
+    QByteArray deriveSharedKey(const QByteArray &ourPriv,
+                               const QByteArray &theirPub) override;
+
+    // hkdfSha256
+    QByteArray hkdfSha256(const QByteArray &salt,
+                          const QByteArray &ikm,
+                          int outputLength) override;
+
+    static void initialiseLibrary();
 };
 
 #endif // CRYPTO_UTILS_H

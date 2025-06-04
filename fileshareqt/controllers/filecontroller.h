@@ -19,7 +19,7 @@ class FileController : public QObject
     Q_OBJECT
 
 public:
-    explicit FileController(INetworkManager *networkManager,
+     FileController(INetworkManager *networkManager,
                             AuthController    *authController,
                             ICryptoService    *cryptoService,
                             QObject           *parent = nullptr);

@@ -11,7 +11,7 @@ class SharedFileManager : public QObject
     Q_OBJECT
 
 public:
-    explicit SharedFileManager(QObject *parent = nullptr);
+     SharedFileManager(QObject *parent = nullptr);
     ~SharedFileManager() override = default;
 
     // Returns true if we have cached bytes for this filename.

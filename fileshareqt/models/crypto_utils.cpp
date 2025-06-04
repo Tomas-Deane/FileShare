@@ -2,7 +2,7 @@
 #include "logger.h"
 #include <sodium.h>
 
-void CryptoUtils::initializeLibrary()
+void CryptoUtils::initialiseLibrary()
 {
     static bool initialized = false;
     if (!initialized) {
@@ -13,60 +13,8 @@ void CryptoUtils::initializeLibrary()
     }
 }
 
-QByteArray CryptoUtils::randomBytes(int length)
-{
-    QByteArray buf(length, 0);
-    randombytes_buf(reinterpret_cast<unsigned char*>(buf.data()), buf.size());
-    return buf;
-}
-
-QByteArray CryptoUtils::generateAeadKey()
-{
-    return randomBytes(crypto_aead_xchacha20poly1305_ietf_KEYBYTES);
-}
-
-void CryptoUtils::generateX25519KeyPair(QByteArray &publicKey,
-                                        QByteArray &secretKey)
-{
-    // libsodium: crypto_kx_keypair (or crypto_box_keypair) produces X25519 keys
-    publicKey.resize(crypto_kx_PUBLICKEYBYTES);
-    secretKey.resize(crypto_kx_SECRETKEYBYTES);
-    crypto_kx_keypair(
-        reinterpret_cast<unsigned char*>(publicKey.data()),
-        reinterpret_cast<unsigned char*>(secretKey.data())
-        );
-    Logger::log("Generated X25519 keypair (Curve25519)");
-}
-
-QString CryptoUtils::computeOOBCode(const QByteArray &ik1_pub,
-                                    const QByteArray &ik2_pub)
-{
-    // Sort the two QByteArrays bytewise:
-    QByteArray a = ik1_pub, b = ik2_pub;
-    if (a < b) {
-        // keep as-is
-    } else {
-        std::swap(a, b);
-    }
-    // Concatenate
-    QByteArray concat = a + b;
-    // SHA256
-    unsigned char hash[crypto_hash_sha256_BYTES];
-    crypto_hash_sha256(hash,
-                       reinterpret_cast<const unsigned char*>(concat.constData()),
-                       (unsigned long long)concat.size());
-    // Convert to lowercase hex:
-    char hexOut[crypto_hash_sha256_BYTES * 2 + 1];
-    sodium_bin2hex(hexOut,
-                   sizeof(hexOut),
-                   hash,
-                   crypto_hash_sha256_BYTES);
-    // Take the first 60 hex chars
-    QString hexStr = QString::fromUtf8(hexOut);
-    return hexStr.left(60).toLower();
-}
-
-QByteArray CryptoUtils::derivePDK(const QString &password,
+// (1) deriveKey
+QByteArray CryptoUtils::deriveKey(const QString &password,
                                   const QByteArray &salt,
                                   quint64 opslimit,
                                   quint64 memlimit)
@@ -86,6 +34,15 @@ QByteArray CryptoUtils::derivePDK(const QString &password,
     return pdk;
 }
 
+// (2) randomBytes
+QByteArray CryptoUtils::randomBytes(int length)
+{
+    QByteArray buf(length, 0);
+    randombytes_buf(reinterpret_cast<unsigned char*>(buf.data()), buf.size());
+    return buf;
+}
+
+// (3) generateKeyPair (Ed25519)
 void CryptoUtils::generateKeyPair(QByteArray &publicKey,
                                   QByteArray &secretKey)
 {
@@ -98,51 +55,103 @@ void CryptoUtils::generateKeyPair(QByteArray &publicKey,
     Logger::log("Generated Ed25519 keypair");
 }
 
-QByteArray CryptoUtils::encryptSecretKey(const QByteArray &secretKey,
-                                         const QByteArray &pdk,
-                                         QByteArray &nonce)
+// (4) generateAeadKey
+QByteArray CryptoUtils::generateAeadKey()
+{
+    return randomBytes(crypto_aead_xchacha20poly1305_ietf_KEYBYTES);
+}
+
+// (5) generateX25519KeyPair
+void CryptoUtils::generateX25519KeyPair(QByteArray &publicKey,
+                                        QByteArray &secretKey)
+{
+    publicKey.resize(crypto_kx_PUBLICKEYBYTES);
+    secretKey.resize(crypto_kx_SECRETKEYBYTES);
+    crypto_kx_keypair(
+        reinterpret_cast<unsigned char*>(publicKey.data()),
+        reinterpret_cast<unsigned char*>(secretKey.data())
+        );
+    Logger::log("Generated X25519 keypair (Curve25519)");
+}
+
+// (6) generateOneTimePreKey  (just forward to the above)
+void CryptoUtils::generateOneTimePreKey(QByteArray &opkPub,
+                                        QByteArray &opkPriv)
+{
+    generateX25519KeyPair(opkPub, opkPriv);
+}
+
+// (7) computeOOBVerificationCode
+QString CryptoUtils::computeOOBVerificationCode(const QByteArray &ik1_pub,
+                                                const QByteArray &ik2_pub)
+{
+    QByteArray a = ik1_pub, b = ik2_pub;
+    if (a < b) {
+        // keep as-is
+    } else {
+        std::swap(a, b);
+    }
+    QByteArray concat = a + b;
+    unsigned char hash[crypto_hash_sha256_BYTES];
+    crypto_hash_sha256(hash,
+                       reinterpret_cast<const unsigned char*>(concat.constData()),
+                       (unsigned long long)concat.size());
+    char hexOut[crypto_hash_sha256_BYTES * 2 + 1];
+    sodium_bin2hex(hexOut,
+                   sizeof(hexOut),
+                   hash,
+                   crypto_hash_sha256_BYTES);
+    QString hexStr = QString::fromUtf8(hexOut);
+    return hexStr.left(60).toLower();
+}
+
+// (8) encrypt (AEAD)
+QByteArray CryptoUtils::encrypt(const QByteArray &plaintext,
+                                const QByteArray &key,
+                                QByteArray &nonce)
 {
     nonce = randomBytes(crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
     Logger::log("Generated nonce for encryption");
-
-    QByteArray out(secretKey.size() + crypto_aead_xchacha20poly1305_ietf_ABYTES, 0);
+    QByteArray out(plaintext.size() + crypto_aead_xchacha20poly1305_ietf_ABYTES, 0);
     unsigned long long clen;
     crypto_aead_xchacha20poly1305_ietf_encrypt(
         reinterpret_cast<unsigned char*>(out.data()), &clen,
-        reinterpret_cast<const unsigned char*>(secretKey.constData()), (unsigned long long)secretKey.size(),
+        reinterpret_cast<const unsigned char*>(plaintext.constData()), (unsigned long long)plaintext.size(),
         nullptr, 0, nullptr,
         reinterpret_cast<const unsigned char*>(nonce.constData()),
-        reinterpret_cast<const unsigned char*>(pdk.constData())
+        reinterpret_cast<const unsigned char*>(key.constData())
         );
     out.resize((int)clen);
-    Logger::log("Encrypted secret key");
+    Logger::log("Encrypted data");
     return out;
 }
 
-QByteArray CryptoUtils::decryptSecretKey(const QByteArray &encryptedSK,
-                                         const QByteArray &pdk,
-                                         const QByteArray &nonce)
+// (9) decrypt (AEAD)
+QByteArray CryptoUtils::decrypt(const QByteArray &ciphertext,
+                                const QByteArray &key,
+                                const QByteArray &nonce)
 {
-    QByteArray out(encryptedSK.size(), 0);
+    QByteArray out(ciphertext.size(), 0);
     unsigned long long plen;
     if (crypto_aead_xchacha20poly1305_ietf_decrypt(
             reinterpret_cast<unsigned char*>(out.data()), &plen,
             nullptr,
-            reinterpret_cast<const unsigned char*>(encryptedSK.constData()), (unsigned long long)encryptedSK.size(),
+            reinterpret_cast<const unsigned char*>(ciphertext.constData()), (unsigned long long)ciphertext.size(),
             nullptr, 0,
             reinterpret_cast<const unsigned char*>(nonce.constData()),
-            reinterpret_cast<const unsigned char*>(pdk.constData())
+            reinterpret_cast<const unsigned char*>(key.constData())
             ) != 0) {
-        Logger::log("Secret key decryption failed");
+        Logger::log("Decryption failed");
         return {};
     }
     out.resize((int)plen);
-    Logger::log("Decrypted secret key");
+    Logger::log("Decrypted data");
     return out;
 }
 
-QByteArray CryptoUtils::signMessage(const QByteArray &message,
-                                    const QByteArray &secretKey)
+// (10) sign (Ed25519)
+QByteArray CryptoUtils::sign(const QByteArray &message,
+                             const QByteArray &secretKey)
 {
     QByteArray sig(crypto_sign_BYTES, 0);
     crypto_sign_detached(
@@ -154,14 +163,23 @@ QByteArray CryptoUtils::signMessage(const QByteArray &message,
     return sig;
 }
 
-QByteArray CryptoUtils::computeSharedKey(const QByteArray &ourPriv,
-                                         const QByteArray &theirPub)
+// (11) secureZeroMemory
+void CryptoUtils::secureZeroMemory(QByteArray &data)
+{
+    if (!data.isEmpty()) {
+        sodium_memzero(data.data(), data.size());
+        data.clear();
+    }
+}
+
+// (12) deriveSharedKey (Curve25519/ECDH)
+QByteArray CryptoUtils::deriveSharedKey(const QByteArray &ourPriv,
+                                        const QByteArray &theirPub)
 {
     if (ourPriv.size() != crypto_scalarmult_SCALARBYTES ||
         theirPub.size() != crypto_scalarmult_BYTES) {
         return {};
     }
-
     QByteArray shared(crypto_scalarmult_BYTES, 0);
     if (crypto_scalarmult(
             reinterpret_cast<unsigned char*>(shared.data()),
@@ -174,11 +192,11 @@ QByteArray CryptoUtils::computeSharedKey(const QByteArray &ourPriv,
     return shared;
 }
 
+// (13) hkdfSha256
 QByteArray CryptoUtils::hkdfSha256(const QByteArray &salt,
                                    const QByteArray &ikm,
                                    int outputLength)
 {
-    // Extract: PRK = HMAC-SHA256(salt, ikm)
     unsigned char prk[crypto_auth_hmacsha256_BYTES];
     crypto_auth_hmacsha256_state state;
     crypto_auth_hmacsha256_init(&state, (const unsigned char*)salt.constData(), salt.size());
@@ -190,17 +208,8 @@ QByteArray CryptoUtils::hkdfSha256(const QByteArray &salt,
     info_and_counter[0] = 0x01; // single block
     crypto_auth_hmacsha256_state state2;
     crypto_auth_hmacsha256_init(&state2, prk, sizeof(prk));
-    // no "info" field ⇒ just the single counter
     crypto_auth_hmacsha256_update(&state2, info_and_counter, 1);
     crypto_auth_hmacsha256_final(&state2, okm);
 
     return QByteArray((char*)okm, outputLength);
-}
-
-void CryptoUtils::secureZeroMemory(QByteArray &data)
-{
-    if (!data.isEmpty()) {
-        sodium_memzero(data.data(), data.size());
-        data.clear();
-    }
 }

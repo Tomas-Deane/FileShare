@@ -24,7 +24,7 @@ class ShareController : public QObject
     Q_OBJECT
 
 public:
-    explicit ShareController(INetworkManager  *networkManager,
+     ShareController(INetworkManager  *networkManager,
                              AuthController   *authController,
                              ICryptoService   *cryptoService,
                              QObject          *parent = nullptr);

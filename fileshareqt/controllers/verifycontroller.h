@@ -19,7 +19,7 @@ class TofuManager;
 class VerifyController : public QObject {
     Q_OBJECT
 public:
-    explicit VerifyController(INetworkManager *networkManager,
+     VerifyController(INetworkManager *networkManager,
                               AuthController    *authController,
                               ICryptoService    *cryptoService,
                               QObject           *parent = nullptr);
