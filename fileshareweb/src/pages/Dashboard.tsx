@@ -20,8 +20,7 @@ import { apiClient } from '../utils/apiClient';
 import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
 import { storage } from '../utils/storage';
 import sodium from 'libsodium-wrappers-sumo';
-import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithAESGCM, deriveX3DHSharedSecretRecipient, encryptWithPublicKey } from '../utils/crypto';
-import { testX3DHKeyExchange } from '../utils/crypto';
+import { generateEphemeralKeyPair, deriveX3DHSharedSecret, deriveX3DHSharedSecretRecipient, encryptWithPublicKey, encryptWithAESGCM, testX3DHKeyExchange, derivePDK } from '../utils/crypto';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -1518,6 +1517,132 @@ const TestButton = () => {
     await fetchSharedFiles();
   };
 
+  // Add state for password change dialog
+  const [openChangePassword, setOpenChangePassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [changePasswordLoading, setChangePasswordLoading] = useState(false);
+  const [changePasswordError, setChangePasswordError] = useState<string | null>(null);
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState<string | null>(null);
+
+  // Password change handler
+  const handleChangePassword = async () => {
+    setChangePasswordLoading(true);
+    setChangePasswordError(null);
+    setChangePasswordSuccess(null);
+    try {
+      if (!username || !keyBundle) throw new Error('No user or key bundle loaded');
+      await sodium.ready;
+      // 1. Generate new salt and Argon2 params
+      const salt = sodium.randombytes_buf(16);
+      const opslimit = 3; // or your default
+      const memlimit = 67108864; // or your default
+      // Debug log: print salt and params
+      console.log('[Password Change] New salt (b64):', uint8ArrayToB64(salt));
+      console.log('[Password Change] Argon2 opslimit:', opslimit, 'memlimit:', memlimit);
+      // 2. Derive new PDK
+      const newPDK = await derivePDK(newPassword, salt, opslimit, memlimit);
+      // 3. Re-encrypt private key and KEK
+      const privKey = Uint8Array.from(atob(keyBundle.secretKey), c => c.charCodeAt(0));
+      const kekKey = Uint8Array.from(atob(keyBundle.kek), c => c.charCodeAt(0));
+      // Encrypt private key
+      const { ciphertext: encryptedPrivKey, nonce: privKeyNonce } = await encryptWithAESGCM(newPDK, privKey);
+      // Encrypt KEK
+      const { ciphertext: encryptedKEK, nonce: kekNonce } = await encryptWithAESGCM(newPDK, kekKey);
+      // 4. Request challenge
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'change_password'
+      });
+      if (challengeResponse.status !== 'challenge') throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      // 5. Sign the encrypted private key
+      const signature = await signChallenge(encryptedPrivKey, privKey);
+      // 6. Send change_password request
+      const resp: any = await apiClient.post('/change_password', {
+        username,
+        salt: uint8ArrayToB64(salt),
+        argon2_opslimit: opslimit,
+        argon2_memlimit: memlimit,
+        encrypted_privkey: uint8ArrayToB64(encryptedPrivKey),
+        privkey_nonce: uint8ArrayToB64(privKeyNonce),
+        encrypted_kek: uint8ArrayToB64(encryptedKEK),
+        kek_nonce: uint8ArrayToB64(kekNonce),
+        nonce: challengeResponse.nonce,
+        signature: uint8ArrayToB64(signature)
+      });
+      if (resp.status === 'ok') {
+        // --- TOFU BACKUP UPDATE ---
+        try {
+          // Prepare backup data (update pdk and salt in keyBundle for backup)
+          const updatedKeyBundle = {
+            ...keyBundle,
+            pdk: btoa(String.fromCharCode.apply(null, Array.from(newPDK))),
+            // Optionally update salt/params if you store them in keyBundle
+            // salt: uint8ArrayToB64(salt),
+            // argon2_opslimit: opslimit,
+            // argon2_memlimit: memlimit,
+          };
+          // Request challenge for backup_tofu
+          const backupChallengeResponse = await apiClient.post<{ status: string; nonce: string }>('/challenge', {
+            username,
+            operation: 'backup_tofu'
+          });
+          if (backupChallengeResponse.status !== 'challenge') throw new Error('Failed to get challenge for backup');
+          // Sign the nonce for backup
+          const backupNonce = Uint8Array.from(atob(backupChallengeResponse.nonce), c => c.charCodeAt(0));
+          const backupSignature = await signChallenge(backupNonce, privKey);
+          // Prepare backup data (same as in verification)
+          const backupData = {
+            username,
+            IK_priv: keyBundle.IK_priv,
+            SPK_priv: keyBundle.SPK_priv,
+            OPKs_priv: keyBundle.OPKs_priv,
+            IK_pub: keyBundle.IK_pub,
+            SPK_pub: keyBundle.SPK_pub,
+            SPK_signature: keyBundle.SPK_signature,
+            OPKs: keyBundle.OPKs,
+            secretKey: keyBundle.secretKey,
+            pdk: btoa(String.fromCharCode.apply(null, Array.from(newPDK))),
+            kek: keyBundle.kek,
+            recipients: keyBundle.recipients,
+            verified: true,
+            lastVerified: new Date().toISOString()
+          };
+          // Generate a new nonce for the backup encryption
+          const encryptionNonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+          // Encrypt the backup with the new PDK
+          const encryptedBackup = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+            JSON.stringify(backupData),
+            null,
+            null,
+            encryptionNonce,
+            newPDK
+          );
+          // Send the backup to the server
+          await apiClient.post('/backup_tofu', {
+            username,
+            encrypted_backup: uint8ArrayToB64(encryptedBackup),
+            backup_nonce: uint8ArrayToB64(encryptionNonce),
+            nonce: backupChallengeResponse.nonce,
+            signature: uint8ArrayToB64(backupSignature)
+          });
+          setChangePasswordSuccess('Password changed successfully. Please log in again.');
+          setOpenChangePassword(false);
+        } catch (backupErr: any) {
+          setChangePasswordError('Password changed, but failed to update backup: ' + (backupErr.message || backupErr));
+          return;
+        }
+        // Optionally, log out the user here
+      } else {
+        throw new Error(resp.detail || 'Password change failed');
+      }
+    } catch (err: any) {
+      setChangePasswordError(err.message || 'Failed to change password');
+    } finally {
+      setChangePasswordLoading(false);
+      setNewPassword('');
+    }
+  };
+
   return (
     <>
       <MatrixBackground />
@@ -1830,7 +1955,7 @@ const TestButton = () => {
                             key={file.id}
                             sx={{
                               border: '1px solid rgba(0, 255, 0, 0.2)',
-                              borderRadius: 1,
+                              borderRadius:  1,
                               mb: 1,
                               '&:hover': {
                                 border: '1px solid rgba(0, 255, 0, 0.4)',
@@ -2049,6 +2174,26 @@ const TestButton = () => {
                     </Paper>
                   </Grid>
                 </Grid>
+
+                {/* Change Password Section */}
+                <Box sx={{ mt: 4 }}>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      color: '#00ffff',
+                      textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                      mb: 2,
+                    }}
+                  >
+                    Change Password
+                  </Typography>
+                  <CyberButton
+                    onClick={() => setOpenChangePassword(true)}
+                    sx={{ minWidth: 180, height: 48, fontSize: '1rem' }}
+                  >
+                    Open Change Password Dialog
+                  </CyberButton>
+                </Box>
               </DashboardCard>
             )}
           </Container>
@@ -2720,11 +2865,15 @@ const TestButton = () => {
                   recipientSPKPub: b64ToUint8Array(freshBundle.SPK_pub),
                   recipientSPKSignature: b64ToUint8Array(freshBundle.SPK_signature)
                 });
-                console.log('Derived shared secret without OPK');
+                console.log('Derived shared secret');
 
                 // Encrypt the file key with the shared secret
                 console.log('Encrypting file key with shared secret...');
                 const { ciphertext, nonce } = await encryptWithAESGCM(sharedSecret, fileKey);
+                console.log('Encrypted file key:', {
+                  ciphertext_length: ciphertext.length,
+                  nonce_length: nonce.length
+                });
 
                 // Request challenge for share_file
                 const shareChallengeResponse = await apiClient.post<{ status: string; nonce: string; detail?: string }>('/challenge', {
@@ -2735,10 +2884,12 @@ const TestButton = () => {
                 if (shareChallengeResponse.status !== 'challenge') {
                   throw new Error('Failed to get challenge for sharing');
                 }
+                console.log('Got challenge for share_file');
 
                 // Sign the encrypted file key
                 if (!secretKey) throw new Error('Secret key not available');
                 const shareSignature = await signChallenge(ciphertext, secretKey);
+                console.log('Signed share request');
 
                 // Send share_file request without OPK
                 await apiClient.post('/share_file', {
@@ -2767,6 +2918,69 @@ const TestButton = () => {
             }}
           >
             Share Anyway
+          </CyberButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* Change Password Dialog */}
+      <Dialog
+        open={openChangePassword}
+        onClose={() => setOpenChangePassword(false)}
+        PaperProps={{
+          sx: {
+            background: 'rgba(0, 0, 0, 0.9)',
+            border: '1px solid rgba(0, 255, 0, 0.2)',
+            color: '#00ff00',
+            minWidth: '400px',
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#00ffff', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
+          Change Password
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <TextField
+            fullWidth
+            label="New Password"
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            sx={{
+              mb: 2,
+              '& .MuiOutlinedInput-root': {
+                '& fieldset': {
+                  borderColor: 'rgba(0, 255, 0, 0.3)',
+                },
+                '&:hover fieldset': {
+                  borderColor: 'rgba(0, 255, 0, 0.5)',
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: '#00ff00',
+                },
+              },
+              '& .MuiInputLabel-root': {
+                color: 'rgba(0, 255, 0, 0.7)',
+              },
+              '& .MuiInputBase-input': {
+                color: '#fff',
+              },
+            }}
+          />
+          {changePasswordError && <Typography color="error">{changePasswordError}</Typography>}
+          {changePasswordSuccess && <Typography color="primary">{changePasswordSuccess}</Typography>}
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
+          <CyberButton
+            onClick={() => setOpenChangePassword(false)}
+            disabled={changePasswordLoading}
+          >
+            Cancel
+          </CyberButton>
+          <CyberButton
+            onClick={handleChangePassword}
+            disabled={changePasswordLoading || !newPassword}
+          >
+            {changePasswordLoading ? 'Changing...' : 'Change Password'}
           </CyberButton>
         </DialogActions>
       </Dialog>
