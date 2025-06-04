@@ -965,8 +965,13 @@ class UserDB:
             JOIN username_map um ON sf.recipient_id = um.user_id
             WHERE sf.file_id = %s
         """
+        logging.debug(f"Executing query: {sql} with file_id={file_id}")
         cursor.execute(sql, (file_id,))
-        return cursor.fetchall()
+        rows = cursor.fetchall()
+        logging.debug(f"Query results: {rows}")
+        if not rows:
+            logging.warning(f"No shared files found for file_id={file_id}")
+        return rows
 
     def update_shared_file_entry(self, share_id: int, encrypted_file_key: bytes,
                                file_key_nonce: bytes, EK_pub: bytes, IK_pub: bytes,

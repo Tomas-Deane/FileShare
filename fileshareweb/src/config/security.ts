@@ -1,6 +1,6 @@
 export const securityConfig = {
   // Enforce HTTPS for all API calls
-  apiBaseUrl: 'https://nrmc.gobbler.info',
+  apiBaseUrl: 'https://gobbler.info:3250',
   
   // Security headers configuration
   headers: {
@@ -20,7 +20,7 @@ export const securityConfig = {
 
   // CORS configuration
   cors: {
-    allowedOrigins: ['https://nrmc.gobbler.info'],
+    allowedOrigins: ['https://gobbler.info:3250'],
     allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     allowCredentials: true,

@@ -1319,7 +1319,7 @@ def list_users_with_access_handler(req: ListUsersWithAccessRequest, db: models.U
         UserAccessInfo(
             share_id=share['share_id'],
             recipient_username=share['recipient_username'],
-            shared_at=share['shared_at']
+            shared_at=share['shared_at'].isoformat()
         )
         for share in shares
     ]
