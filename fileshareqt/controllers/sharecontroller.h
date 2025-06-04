@@ -165,9 +165,9 @@ private:
     QByteArray       m_stashedOpkPreKey;
 
     // convert QJsonArray→QList<SharedFile>
-    QList<SharedFile> parseSharedArray(const QJsonArray &arr) const;
+    QList<SharedFile> parseSharedArray(const QJsonArray &arr);
 
-    qint64           m_pendingShareId = -1;  // stash the share_id
+    qint64  m_pendingShareId = -1;  // stash the share_id
     QString m_pendingFilename;
 
     static const int X25519_PUBKEY_LEN = 32;

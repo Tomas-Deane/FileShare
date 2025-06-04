@@ -13,7 +13,7 @@ void CryptoUtils::initialiseLibrary()
     }
 }
 
-// (1) deriveKey
+// deriveKey
 QByteArray CryptoUtils::deriveKey(const QString &password,
                                   const QByteArray &salt,
                                   quint64 opslimit,
@@ -34,7 +34,7 @@ QByteArray CryptoUtils::deriveKey(const QString &password,
     return pdk;
 }
 
-// (2) randomBytes
+// randomBytes
 QByteArray CryptoUtils::randomBytes(int length)
 {
     QByteArray buf(length, 0);
@@ -42,7 +42,7 @@ QByteArray CryptoUtils::randomBytes(int length)
     return buf;
 }
 
-// (3) generateKeyPair (Ed25519)
+// generateKeyPair (Ed25519)
 void CryptoUtils::generateKeyPair(QByteArray &publicKey,
                                   QByteArray &secretKey)
 {
@@ -55,13 +55,13 @@ void CryptoUtils::generateKeyPair(QByteArray &publicKey,
     Logger::log("Generated Ed25519 keypair");
 }
 
-// (4) generateAeadKey
+// generateAeadKey
 QByteArray CryptoUtils::generateAeadKey()
 {
     return randomBytes(crypto_aead_xchacha20poly1305_ietf_KEYBYTES);
 }
 
-// (5) generateX25519KeyPair
+// generateX25519KeyPair
 void CryptoUtils::generateX25519KeyPair(QByteArray &publicKey,
                                         QByteArray &secretKey)
 {
@@ -74,20 +74,19 @@ void CryptoUtils::generateX25519KeyPair(QByteArray &publicKey,
     Logger::log("Generated X25519 keypair (Curve25519)");
 }
 
-// (6) generateOneTimePreKey  (just forward to the above)
+// generateOneTimePreKey  (just forward to the above)
 void CryptoUtils::generateOneTimePreKey(QByteArray &opkPub,
                                         QByteArray &opkPriv)
 {
     generateX25519KeyPair(opkPub, opkPriv);
 }
 
-// (7) computeOOBVerificationCode
+// computeOOBVerificationCode
 QString CryptoUtils::computeOOBVerificationCode(const QByteArray &ik1_pub,
                                                 const QByteArray &ik2_pub)
 {
     QByteArray a = ik1_pub, b = ik2_pub;
     if (a < b) {
-        // keep as-is
     } else {
         std::swap(a, b);
     }
@@ -105,7 +104,7 @@ QString CryptoUtils::computeOOBVerificationCode(const QByteArray &ik1_pub,
     return hexStr.left(60).toLower();
 }
 
-// (8) encrypt (AEAD)
+// encrypt (AEAD)
 QByteArray CryptoUtils::encrypt(const QByteArray &plaintext,
                                 const QByteArray &key,
                                 QByteArray &nonce)
@@ -126,7 +125,7 @@ QByteArray CryptoUtils::encrypt(const QByteArray &plaintext,
     return out;
 }
 
-// (9) decrypt (AEAD)
+// decrypt (AEAD)
 QByteArray CryptoUtils::decrypt(const QByteArray &ciphertext,
                                 const QByteArray &key,
                                 const QByteArray &nonce)
@@ -149,7 +148,7 @@ QByteArray CryptoUtils::decrypt(const QByteArray &ciphertext,
     return out;
 }
 
-// (10) sign (Ed25519)
+// sign (Ed25519)
 QByteArray CryptoUtils::sign(const QByteArray &message,
                              const QByteArray &secretKey)
 {
@@ -163,7 +162,7 @@ QByteArray CryptoUtils::sign(const QByteArray &message,
     return sig;
 }
 
-// (11) secureZeroMemory
+// secureZeroMemory
 void CryptoUtils::secureZeroMemory(QByteArray &data)
 {
     if (!data.isEmpty()) {
@@ -172,7 +171,7 @@ void CryptoUtils::secureZeroMemory(QByteArray &data)
     }
 }
 
-// (12) deriveSharedKey (Curve25519/ECDH)
+// deriveSharedKey (Curve25519/ECDH)
 QByteArray CryptoUtils::deriveSharedKey(const QByteArray &ourPriv,
                                         const QByteArray &theirPub)
 {
@@ -192,7 +191,7 @@ QByteArray CryptoUtils::deriveSharedKey(const QByteArray &ourPriv,
     return shared;
 }
 
-// (13) hkdfSha256
+// hkdfSha256
 QByteArray CryptoUtils::hkdfSha256(const QByteArray &salt,
                                    const QByteArray &ikm,
                                    int outputLength)
@@ -205,7 +204,7 @@ QByteArray CryptoUtils::hkdfSha256(const QByteArray &salt,
 
     unsigned char okm[crypto_auth_hmacsha256_BYTES];
     unsigned char info_and_counter[1];
-    info_and_counter[0] = 0x01; // single block
+    info_and_counter[0] = 0x01;
     crypto_auth_hmacsha256_state state2;
     crypto_auth_hmacsha256_init(&state2, prk, sizeof(prk));
     crypto_auth_hmacsha256_update(&state2, info_and_counter, 1);

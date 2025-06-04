@@ -510,7 +510,7 @@ void NetworkManager::getBackupTOFU(const QJsonObject &payload)
     }
 }
 
-// ─── /share_file ─────────────────────────────────────────────────────────────
+// /share_file
 void NetworkManager::shareFile(const QJsonObject &payload)
 {
     bool ok = false;
@@ -529,7 +529,7 @@ void NetworkManager::shareFile(const QJsonObject &payload)
     }
 }
 
-// ─── /list_shared_to ─────────────────────────────────────────────────────────
+// /list_shared_to
 void NetworkManager::listSharedTo(const QJsonObject &payload)
 {
     bool ok = false;
@@ -549,7 +549,7 @@ void NetworkManager::listSharedTo(const QJsonObject &payload)
     }
 }
 
-// ─── /list_shared_from ───────────────────────────────────────────────────────
+//  /list_shared_from
 void NetworkManager::listSharedFrom(const QJsonObject &payload)
 {
     bool ok = false;
@@ -569,7 +569,7 @@ void NetworkManager::listSharedFrom(const QJsonObject &payload)
     }
 }
 
-// ─── /list_sharers ─────────────────────────────────────────────────────────
+// /list_sharers
 void NetworkManager::listSharers(const QJsonObject &payload)
 {
     bool ok = false;
@@ -582,7 +582,6 @@ void NetworkManager::listSharers(const QJsonObject &payload)
     }
     auto obj = QJsonDocument::fromJson(resp).object();
     if (obj["status"].toString() == "ok") {
-        // Expect: { "status":"ok", "usernames":[ "alice", "bob", … ] }
         QStringList users;
         for (const QJsonValue &v : obj["usernames"].toArray())
             users.append(v.toString());
@@ -608,7 +607,7 @@ void NetworkManager::getOPK(const QJsonObject &payload)
 
     auto obj = QJsonDocument::fromJson(resp).object();
 
-    // <—– Changed: if “opk_id” is present, treat as success
+    // Changed: if “opk_id” is present, treat as success
     if (obj.contains("opk_id"))
     {
         int opk_id            = obj["opk_id"].toInt();
@@ -632,11 +631,11 @@ void NetworkManager::downloadSharedFile(const QJsonObject &payload)
 {
     bool ok = false;
     QString message;
-    // POST to /download_shared_file exactly as you do for downloadFile:
+    // POST to /download_shared_file exactly as you do for downloadFile
     QByteArray resp = postJson("gobbler.info", 3220, "/download_shared_file", payload, ok, message);
 
     if (!ok) {
-        // Failed HTTP or JSON parse → emit all‐empty fields + error
+        // Failed HTTP or JSON parse , emit all‐empty fields + error
         emit downloadSharedFileResult(false,
                                       QString(),
                                       QString(),

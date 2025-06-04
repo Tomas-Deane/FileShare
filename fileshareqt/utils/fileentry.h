@@ -8,7 +8,7 @@ struct FileEntry {
     QString  filename;
     qint64   id;
 
-    // Default destructor
+    // Default constructor
     FileEntry() = default;
 
     // default destructor

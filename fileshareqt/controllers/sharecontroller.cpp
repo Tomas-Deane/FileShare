@@ -16,11 +16,11 @@ ShareController::ShareController(INetworkManager *networkManager,
     , m_authController(authController)
     , m_cryptoService(cryptoService)
 {
-    // Listen for *any* challenge. We'll filter by operation name ourselves.
+    // Listen for any challenge
     connect(m_networkManager, &INetworkManager::challengeResult,
             this, &ShareController::onChallenge);
 
-    //  Server responses:
+    //  Server responses
     connect(m_networkManager, &INetworkManager::getPreKeyBundleResult,
             this, &ShareController::onGetPreKeyBundleResult);
 
@@ -52,7 +52,7 @@ ShareController::ShareController(INetworkManager *networkManager,
             this, &ShareController::onRemoveSharedFileNetwork);
 }
 
-// Start the “share file” flow.
+// Start the “share file” flow
 void ShareController::shareFile(qint64 fileId, const QString &recipientUsername)
 {
     if (m_authController->getSessionUsername().isEmpty()) {
@@ -378,7 +378,7 @@ void ShareController::onGetPreKeyBundleResult(bool success,
         return;
     }
 
-    // 1) Decode the recipient’s IK_pub
+    // Decode the recipient’s IK_pub
     m_recipientIkPub = QByteArray::fromBase64(ik_pub_b64.toUtf8());
     if (m_recipientIkPub.size() != X25519_PUBKEY_LEN) {
         emit shareFileResult(false, "Invalid recipient IK_pub");
@@ -386,7 +386,7 @@ void ShareController::onGetPreKeyBundleResult(bool success,
         return;
     }
 
-    // 2) Decode and stash the recipient’s SPK_pub and its signature
+    // Decode and stash the recipient’s SPK_pub and its signature
     m_recipientSpkPub       = QByteArray::fromBase64(spk_pub_b64.toUtf8());
     m_recipientSpkSignature = QByteArray::fromBase64(spk_sig_b64.toUtf8());
     if (m_recipientSpkPub.size() != X25519_PUBKEY_LEN) {
@@ -395,14 +395,14 @@ void ShareController::onGetPreKeyBundleResult(bool success,
         return;
     }
 
-    // 3) Next: fetch the file’s existing encrypted DEK from server
+    // fetch the file’s existing encrypted DEK from server
     m_pendingOp = RetrieveFileDEK;
     QString me = m_authController->getSessionUsername();
     m_networkManager->requestChallenge(me, "retrieve_file_dek");
 }
 
 
-// After /retrieve_file_dek returns:
+// After /retrieve_file_dek returns
 void ShareController::onRetrieveFileDEKResult(bool success,
                                               const QString &encryptedDekB64,
                                               const QString &dekNonceB64,
@@ -414,25 +414,25 @@ void ShareController::onRetrieveFileDEKResult(bool success,
         return;
     }
 
-    // 1) Stash the file’s encrypted DEK & nonce for later re‐encryption:
+    // Stash the file’s encrypted DEK & nonce for later re‐encryption
     m_stashedEncryptedDek = QByteArray::fromBase64(encryptedDekB64.toUtf8());
     m_stashedDekNonce     = QByteArray::fromBase64(dekNonceB64.toUtf8());
 
-    // 2) Next: fetch exactly one OPK for the recipient
+    // Next: fetch exactly one OPK for the recipient
     m_pendingOp = GetOPK;
     QString me = m_authController->getSessionUsername();
     m_networkManager->requestChallenge(me, "get_opk");
 }
 
 
-// After /share_file completes:
+// After /share_file completes
 void ShareController::onShareFileNetwork(bool success, const QString &message)
 {
     emit shareFileResult(success, message);
     m_pendingOp = None;
 }
 
-// After /list_shared_to completes:
+// After /list_shared_to completes
 void ShareController::onListSharedToNetwork(bool success,
                                             const QJsonArray &shares,
                                             const QString &message)
@@ -447,7 +447,7 @@ void ShareController::onListSharedToNetwork(bool success,
     m_pendingOp = None;
 }
 
-// After /list_shared_from completes:
+// After /list_shared_from completes
 void ShareController::onListSharedFromNetwork(bool success,
                                               const QJsonArray &shares,
                                               const QString &message)
@@ -474,7 +474,7 @@ void ShareController::onGetOPKResult(bool success,
         return;
     }
 
-    // Stash the OPK ID and raw OPK public:
+    // Stash the OPK ID and raw OPK public
     m_stashedOpkId     = opk_id;
     m_stashedOpkPreKey = QByteArray::fromBase64(pre_key_b64.toUtf8());
     if (m_stashedOpkPreKey.size() != X25519_PUBKEY_LEN) {
@@ -483,7 +483,7 @@ void ShareController::onGetOPKResult(bool success,
         return;
     }
 
-    // Now request a challenge for “share_file” so we can do DoShareFile():
+    // Now request a challenge for “share_file” so we can do DoShareFile()
     m_pendingOp = DoShareFile;
     QString me = m_authController->getSessionUsername();
     m_networkManager->requestChallenge(me, "share_file");
@@ -559,7 +559,7 @@ void ShareController::onDownloadSharedNetwork(bool success,
     QByteArray dh3 = m_cryptoService->deriveSharedKey( ourSpkPriv, ekPubInitiator);
     QByteArray dh4 = m_cryptoService->deriveSharedKey( ourOpkPriv, ekPubInitiator);
 
-    // Concatenate ∥ run HKDF exactly as the sender did:
+    // Concatenate ∥ run HKDF exactly as the sender did
     QByteArray concatenatedDH = dh1 + dh2 + dh3 + dh4;
     QByteArray zeroSalt(32, '\0');
     QByteArray sharedKey = m_cryptoService->hkdfSha256(zeroSalt, concatenatedDH, 32);
@@ -575,7 +575,7 @@ void ShareController::onDownloadSharedNetwork(bool success,
         return;
     }
 
-    // Decrypt the file’s encrypted DEK with sharedKey (NOT the session-KEK!)
+    // Decrypt the file’s encrypted DEK with sharedKey
     QByteArray fileDek = m_cryptoService->decrypt(encryptedFileKey, sharedKey, fileKeyNonce);
     if (fileDek.isEmpty()) {
         emit downloadSharedFileResult(false, QString(), QByteArray(), "Failed to decrypt file DEK");
@@ -610,7 +610,7 @@ void ShareController::revokeAccess(qint64 shareId)
 }
 
 // Convert a JSON‐array of share records into QList<SharedFile>
-QList<SharedFile> ShareController::parseSharedArray(const QJsonArray &arr) const
+QList<SharedFile> ShareController::parseSharedArray(const QJsonArray &arr)
 {
     QList<SharedFile> output;
     for (auto v : arr) {

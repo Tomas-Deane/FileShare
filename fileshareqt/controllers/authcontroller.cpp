@@ -95,7 +95,7 @@ void AuthController::signup(const QString &username, const QString &password)
     pendingUsername = username;
     pendingPassword = password;
 
-    // 1) Make a fresh salt + derive PDK
+    // Make a fresh salt + derive PDK
     QByteArray salt = cryptoService->randomBytes(16);
     sessionPdk = cryptoService->deriveKey(
         password,
@@ -104,24 +104,24 @@ void AuthController::signup(const QString &username, const QString &password)
         ICryptoService::MEMLIMIT_MODERATE
         );
 
-    // 2) Generate Ed25519 keypair (for signing)
+    // Generate Ed25519 keypair (for signing)
     QByteArray edPubKey, edPrivKey;
     cryptoService->generateKeyPair(edPubKey, edPrivKey);
 
-    // 3) Encrypt the Ed25519 SK under PDK
+    // Encrypt the Ed25519 SK under PDK
     QByteArray skNonce, encryptedSK = cryptoService->encrypt(edPrivKey, sessionPdk, skNonce);
     cryptoService->secureZeroMemory(edPrivKey);
 
-    // 4) Generate a fresh KEK (for file encryption) and encrypt it under PDK
+    // Generate a fresh KEK (for file encryption) and encrypt it under PDK
     QByteArray kek = cryptoService->generateAeadKey();
     sessionKek = kek;  // keep the KEK in memory for future file ops
     QByteArray kekNonce, encryptedKek = cryptoService->encrypt(kek, sessionPdk, kekNonce);
     cryptoService->secureZeroMemory(kek);
 
-    // 5) Generate X25519 identity key pair
+    // Generate X25519 identity key pair
     cryptoService->generateX25519KeyPair(ikPublic, ikPrivate);
 
-    // 6) Generate X25519 signed‐pre‐key pair
+    // Generate X25519 signed‐pre‐key pair
     cryptoService->generateX25519KeyPair(spkPublic, spkPrivate);
 
     // Decrypt the Ed25519 secret we just encrypted:
@@ -130,7 +130,7 @@ void AuthController::signup(const QString &username, const QString &password)
     QByteArray spkSig = cryptoService->sign(spkPublic, sessionSecretKey);
     spkSignature = spkSig;         // store SPK signature
 
-    // 8) Generate OPKs (private + public) in memory
+    // Generate OPKs (private + public) in memory
     const int OPK_COUNT = 10;
     for (int i = 0; i < OPK_COUNT; i++) {
         QByteArray opkPub, opkPriv;
@@ -139,7 +139,7 @@ void AuthController::signup(const QString &username, const QString &password)
         opkPrivs.push_back(opkPriv);
     }
 
-    // 9) Build backup JSON with all X3DH fields and an empty "tofusers" array
+    // Build backup JSON with all X3DH fields and an empty "tofusers" array
     QJsonObject backupObj;
     backupObj.insert("IK_pub",        QString::fromUtf8(ikPublic.toBase64()));
     backupObj.insert("IK_priv",       QString::fromUtf8(ikPrivate.toBase64()));
@@ -167,7 +167,7 @@ void AuthController::signup(const QString &username, const QString &password)
     QJsonDocument backupDoc(backupObj);
     QByteArray plaintextBackup = backupDoc.toJson(QJsonDocument::Compact);
 
-    // 10) Encrypt that entire JSON under sessionKek
+    // Encrypt that entire JSON under sessionKek
     QByteArray backupNonce, ciphertextBackup =
                             cryptoService->encrypt(plaintextBackup, sessionKek, backupNonce);
 
@@ -176,7 +176,7 @@ void AuthController::signup(const QString &username, const QString &password)
     QString encryptedBackupB64 = QString::fromUtf8(ciphertextBackup.toBase64());
     QString backupNonceB64     = QString::fromUtf8(backupNonce.toBase64());
 
-    // 11) Build SignUpRequest payload
+    // Build SignUpRequest payload
     QJsonObject req{
         { "username",          username },
         { "salt",              QString::fromUtf8(salt.toBase64()) },
@@ -279,7 +279,7 @@ void AuthController::requestGetBackupTOFU()
     networkManager->requestChallenge(sessionUsername, "get_backup_tofu");
 }
 
-// **NEW**: handle challenge for "get_backup_tofu"
+// handle challenge for "get_backup_tofu"
 void AuthController::onChallengeReceived(const QByteArray &nonce, const QString &operation)
 {
     if (operation != "get_backup_tofu") {
@@ -304,30 +304,29 @@ void AuthController::onGetBackupTOFUResult(bool success,
                                            const QString &message)
 {
     if (!success) {
-        // No backup found or error; you might log and continue with defaults
         Logger::log("No existing TOFU backup or error: " + message);
         return;
     }
 
-    // 1) Base64 decode ciphertext & nonce
+    // Base64 decode ciphertext & nonce
     QByteArray ciphertext = QByteArray::fromBase64(encryptedBackupB64.toUtf8());
     QByteArray nonce      = QByteArray::fromBase64(backupNonceB64.toUtf8());
 
-    // 2) Decrypt with sessionKek
+    // Decrypt with sessionKek
     QByteArray plain = cryptoService->decrypt(ciphertext, sessionKek, nonce);
     if (plain.isEmpty()) {
         Logger::log("Failed to decrypt TOFU backup (maybe wrong KEK)");
         return;
     }
 
-    // 3) Parse the JSON into our in-memory key variables
+    // Parse the JSON into our in-memory key variables
     parseBackupJson(plain);
     cryptoService->secureZeroMemory(plain);
 
     Logger::log("Successfully loaded X3DH keys from TOFU backup");
 }
 
-// Parse the JSON structure created at signup (or a later backup):
+// Parse the JSON structure created at signup (or a later backup)
 void AuthController::parseBackupJson(const QByteArray &plaintext)
 {
     QJsonDocument doc = QJsonDocument::fromJson(plaintext);
@@ -337,13 +336,13 @@ void AuthController::parseBackupJson(const QByteArray &plaintext)
     }
     QJsonObject obj = doc.object();
 
-    // 1) IK_pub, IK_priv
+    // IK_pub, IK_priv
     QString ikPubB64  = obj.value("IK_pub").toString();
     QString ikPrivB64 = obj.value("IK_priv").toString();
     ikPublic  = QByteArray::fromBase64(ikPubB64.toUtf8());
     ikPrivate = QByteArray::fromBase64(ikPrivB64.toUtf8());
 
-    // 2) SPK_pub, SPK_priv, SPK_signature
+    // SPK_pub, SPK_priv, SPK_signature
     QString spkPubB64     = obj.value("SPK_pub").toString();
     QString spkPrivB64    = obj.value("SPK_priv").toString();
     QString spkSigB64     = obj.value("SPK_signature").toString();
@@ -351,7 +350,7 @@ void AuthController::parseBackupJson(const QByteArray &plaintext)
     spkPrivate   = QByteArray::fromBase64(spkPrivB64.toUtf8());
     spkSignature = QByteArray::fromBase64(spkSigB64.toUtf8());
 
-    // 3) OPKs_pub, OPKs_priv
+    // OPKs_pub, OPKs_priv
     opkPubs.clear();
     opkPrivs.clear();
     if (obj.contains("OPKs_pub") && obj["OPKs_pub"].isArray()) {
@@ -367,7 +366,7 @@ void AuthController::parseBackupJson(const QByteArray &plaintext)
         }
     }
 
-    // 4) We ignore "tofusers" here because that’s just the verified‐users list; TofuManager handles that.
+    //  We ignore "tofusers" here because that’s just the verified‐users list; TofuManager handles that.
 }
 
 void AuthController::onConnectionStatusChanged(bool online)

@@ -6,7 +6,6 @@
 #include <QString>
 
 // A simple, generic cache that maps from Key→Value.
-// Internally uses QHash (for O(1) lookups) by default, but can be switched to QMap if needed.
 template<
     typename Key,
     typename Value,
@@ -21,7 +20,7 @@ public:
     Cache(QObject* parent = nullptr) : m_parent(parent) {}
 
     // Return true if key is present
-    bool contains(const Key& key) const {
+    bool contains(const Key& key) {
         return m_storage.contains(key);
     }
 
@@ -31,7 +30,7 @@ public:
     }
 
     // Retrieve (returns default‐constructed Value if missing)
-    Value value(const Key& key) const {
+    Value value(const Key& key) {
         return m_storage.value(key);
     }
 
@@ -46,7 +45,7 @@ public:
     }
 
     // Number of entries
-    int size() const {
+    int size() {
         return m_storage.size();
     }
 
@@ -61,7 +60,7 @@ class Cache<Key, Value, false> {
 public:
     Cache(QObject* parent = nullptr) : m_parent(parent) {}
 
-    bool contains(const Key& key) const {
+    bool contains(const Key& key) {
         return m_storage.contains(key);
     }
 
@@ -69,7 +68,7 @@ public:
         m_storage.insert(key, value);
     }
 
-    Value value(const Key& key) const {
+    Value value(const Key& key) {
         return m_storage.value(key);
     }
 
@@ -81,7 +80,7 @@ public:
         m_storage.clear();
     }
 
-    int size() const {
+    int size() {
         return m_storage.size();
     }
 

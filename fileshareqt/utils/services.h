@@ -26,7 +26,7 @@ struct Services {
     Services()
     {
         net = std::make_unique<NetworkManager>();
-        cs  = std::make_unique<CryptoUtils>();   // ← use CryptoUtils directly
+        cs  = std::make_unique<CryptoUtils>();
 
         auth    = std::make_unique<AuthController>(net.get(), cs.get());
         profile = std::make_unique<ProfileController>(net.get(), auth.get(), cs.get());

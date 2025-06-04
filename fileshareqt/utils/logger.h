@@ -40,7 +40,6 @@ public:
 
     static void demonstratePointers();
 
-    // a buffer that keeps the last 1000 messages by default
     static std::shared_ptr<std::vector<QString>> getHistory();
 
 private:

@@ -61,7 +61,6 @@ private:
     QByteArray         m_pendingFileContents;
     QString            m_selectedDownload;
 
-    // Replace QMap<…> with our generic Cache<…>
     Cache<QString, QByteArray, true> m_downloadCache;
 
     qint64       m_selectedDownloadId    = -1;

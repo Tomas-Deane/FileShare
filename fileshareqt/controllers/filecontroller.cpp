@@ -188,29 +188,29 @@ void FileController::onDownloadNetwork(bool success,
         return;
     }
 
-    // 1) Base64 → raw
+    // Base64 -> raw
     QByteArray encryptedFile = QByteArray::fromBase64(encryptedFileB64.toUtf8());
     QByteArray fileNonce     = QByteArray::fromBase64(fileNonceB64.toUtf8());
     QByteArray encryptedDek  = QByteArray::fromBase64(encryptedDekB64.toUtf8());
     QByteArray dekNonce      = QByteArray::fromBase64(dekNonceB64.toUtf8());
 
-    // 2) Decrypt DEK under session KEK
+    // Decrypt DEK under session KEK
     QByteArray fileDek = m_cryptoService->decrypt(
         encryptedDek,
         m_authController->getSessionKek(),
         dekNonce
         );
 
-    // 3) Decrypt file data under that DEK
+    // Decrypt file data under that DEK
     QByteArray data = m_cryptoService->decrypt(encryptedFile, fileDek, fileNonce);
 
-    // 4) Zero out the raw DEK
+    // Zero out the raw DEK
     m_cryptoService->secureZeroMemory(fileDek);
 
-    // 5) Cache it under the *filename* key
+    // Cache it under the *filename* key
     m_downloadCache.insert(m_selectedDownloadName, data);
 
-    // 6) Tell MainWindow “here’s your plaintext back”
+    // Tell MainWindow “here’s your plaintext back”
     emit downloadFileResult(true,
                             m_selectedDownloadName,
                             data,

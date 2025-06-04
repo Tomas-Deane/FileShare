@@ -30,14 +30,13 @@ public:
     QByteArray getSessionSecretKey() const;
     QByteArray getSessionKek() const;
 
-    // Expose *your* X25519 identity public key (IK_pub) to other controllers (for OOB code).
-    // After we load the backup, this will be overwritten with the backed‐up copy.
+    // After we load the backup, this will be overwritten with the backed‐up copy
     QByteArray getIdentityPublicKey() const;
 
-    // Expose the private half too (in case you need it; typically you only need the pub for verify)
+    // Expose the private half too
     QByteArray getIdentityPrivateKey() const;
 
-    // Expose SPK and OPKs if needed (not used in OOB code, but you might need them later)
+    // Expose SPK and OPKs if needed
     QByteArray getSignedPreKeyPublic()   const;
     QByteArray getSignedPreKeyPrivate()  const;
     QByteArray getSignedPreKeySignature() const;
@@ -90,9 +89,7 @@ private:
     QByteArray spkSignature;     // Ed25519 signature over spkPublic (64 bytes)
     QList<QByteArray> opkPrivs;  // in-memory private halves of OPKs (each 32 bytes)
     QList<QByteArray> opkPubs;   // public halves of one-time keys (each 32 bytes)
-    // —————————————————————————————————————————
 
-    // Helpers:
     void requestGetBackupTOFU();
     void parseBackupJson(const QByteArray &plaintext);
 
