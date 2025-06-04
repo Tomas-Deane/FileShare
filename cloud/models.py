@@ -975,3 +975,17 @@ class UserDB:
         cursor.execute(sql, (encrypted_file, file_nonce, encrypted_dek, dek_nonce, file_id))
         conn.commit()
 
+    def update_share_dek(self, share_id: int, encrypted_file_key: str, file_key_nonce: str):
+        """
+        Update the encrypted DEK+nonce for a share row.
+        """
+        conn, cursor = self._get_connection()
+        sql = '''
+            UPDATE shared_files
+            SET encrypted_file_key = %s,
+                file_key_nonce = %s
+            WHERE share_id = %s
+        '''
+        cursor.execute(sql, (encrypted_file_key, file_key_nonce, share_id))
+        conn.commit()
+

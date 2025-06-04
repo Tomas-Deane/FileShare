@@ -45,7 +45,9 @@ from schemas import (
     ListFileSharesResponse,
     UserData,
     RotateFileRequest,
-    RotateFileResponse
+    RotateFileResponse,
+    UpdateShareRequest,
+    UpdateShareResponse
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -367,6 +369,27 @@ async def rotate_file(req: RotateFileRequest, db: models.UserDB = Depends(get_db
     db.update_file_blob(req.file_id, req.encrypted_file, req.file_nonce, req.encrypted_dek, req.dek_nonce)
     resp = RotateFileResponse(status="ok", message="File rotated")
     logger.debug(f"RotateFile response: {resp}")
+    return resp
+
+@app.post("/update_share", response_model=UpdateShareResponse)
+async def update_share(req: UpdateShareRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"UpdateShareRequest body: {req.model_dump_json()}")
+    # Get the share row and file owner
+    share = db.get_shared_file_details(req.share_id)
+    if not share:
+        raise HTTPException(status_code=404, detail="Share not found")
+    file_id = share["file_id"]
+    file = db.get_file_by_id(file_id)
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+    owner_id = file["owner_id"]
+    user = db.get_user(req.username)
+    if not user or user["user_id"] != owner_id:
+        raise HTTPException(status_code=403, detail="Not file owner")
+    # Update the encrypted DEK+nonce for this share
+    db.update_share_dek(req.share_id, req.encrypted_file_key, req.file_key_nonce)
+    resp = UpdateShareResponse(status="ok", message="Share updated")
+    logger.debug(f"UpdateShare response: {resp}")
     return resp
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────

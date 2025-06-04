@@ -313,3 +313,16 @@ class RotateFileRequest(BaseModel):
 class RotateFileResponse(BaseModel):
     status: str
     message: str
+
+
+class UpdateShareRequest(BaseModel):
+    username: str  # Owner
+    share_id: int
+    encrypted_file_key: str
+    file_key_nonce: str
+    nonce: str
+    signature: str
+
+class UpdateShareResponse(BaseModel):
+    status: str
+    message: str
