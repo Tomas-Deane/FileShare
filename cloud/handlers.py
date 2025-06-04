@@ -1319,17 +1319,14 @@ def list_users_with_access_handler(req: ListUsersWithAccessRequest, db: models.U
     shares = db.get_shared_files_for_file(req.file_id)
     
     # 5) format response
-    users = []
-    for share in shares:
-        # Convert datetime to ISO format string
-        shared_at = share['shared_at'].isoformat() if share['shared_at'] else None
-        users.append(
-            UserAccessInfo(
-                share_id=share['share_id'],
-                recipient_username=share['recipient_username'],
-                shared_at=shared_at
-            )
+    users = [
+        UserAccessInfo(
+            share_id=share['share_id'],
+            recipient_username=share['recipient_username'],
+            shared_at=share['shared_at'].isoformat()
         )
+        for share in shares
+    ]
 
     db.delete_challenge(uid)
     return ListUsersWithAccessResponse(status="ok", users=users)

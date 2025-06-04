@@ -648,6 +648,53 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const handleRevokeConfirm = async () => {
+    if (!fileToRevoke || !selectedRecipients.length) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Step 1: Request challenge
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'revoke_access'
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+
+      // Step 2: Sign the nonce
+      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonce, secretKey!);
+
+      // Step 3: Send revoke request
+      const response = await apiClient.post<{ status: string; message?: string }>('/revoke_access', {
+        username,
+        file_id: fileToRevoke.id,
+        revoked_usernames: selectedRecipients,
+        nonce: challengeResponse.nonce,
+        signature: uint8ArrayToB64(signature)
+      });
+
+      if (response.status !== 'ok') {
+        throw new Error(response.message || 'Failed to revoke access');
+      }
+
+      // Close the dialog and refresh the file list
+      setOpenRevoke(false);
+      setFileToRevoke(null);
+      setSelectedRecipients([]);
+      await refreshFiles();
+    } catch (error) {
+      console.error('Error revoking access:', error);
+      setError('Failed to revoke access');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Add this to Dashboard.tsx temporarily
 const TestButton = () => {
   const runTest = async () => {
@@ -2990,6 +3037,105 @@ const TestButton = () => {
           >
             Share Anyway
           </CyberButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* Revoke Access Dialog */}
+      <Dialog
+        open={openRevoke}
+        onClose={() => {
+          setOpenRevoke(false);
+          setFileToRevoke(null);
+          setSelectedRecipients([]);
+        }}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: 'rgba(0, 0, 0, 0.9)',
+            border: '1px solid rgba(0, 255, 0, 0.2)',
+            backdropFilter: 'blur(10px)',
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#00ff00', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
+          Revoke Access
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          {loadingSharedAccess ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+              <CircularProgress sx={{ color: '#00ff00' }} />
+            </Box>
+          ) : (
+            <>
+              <Typography sx={{ color: '#00ffff', mb: 2 }}>
+                Select users to revoke access from:
+              </Typography>
+              <List>
+                {sharedAccess.map((user) => (
+                  <ListItem
+                    key={user.id}
+                    sx={{
+                      border: '1px solid rgba(0, 255, 0, 0.2)',
+                      borderRadius: 1,
+                      mb: 1,
+                      '&:hover': {
+                        bgcolor: 'rgba(0, 255, 0, 0.1)',
+                      },
+                    }}
+                  >
+                    <ListItemIcon>
+                      <PersonIcon sx={{ color: '#00ff00' }} />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={user.username}
+                      sx={{ color: '#00ffff' }}
+                    />
+                    <Checkbox
+                      checked={selectedRecipients.includes(user.username)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedRecipients([...selectedRecipients, user.username]);
+                        } else {
+                          setSelectedRecipients(selectedRecipients.filter(u => u !== user.username));
+                        }
+                      }}
+                      sx={{
+                        color: 'rgba(0, 255, 0, 0.5)',
+                        '&.Mui-checked': {
+                          color: '#00ff00',
+                        },
+                      }}
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
+          <Button
+            onClick={() => {
+              setOpenRevoke(false);
+              setFileToRevoke(null);
+              setSelectedRecipients([]);
+            }}
+            sx={{ color: 'rgba(255, 0, 0, 0.7)' }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleRevokeConfirm}
+            disabled={!selectedRecipients.length || loading}
+            sx={{
+              color: '#00ff00',
+              '&.Mui-disabled': {
+                color: 'rgba(0, 255, 0, 0.3)',
+              },
+            }}
+          >
+            {loading ? <CircularProgress size={24} sx={{ color: '#00ff00' }} /> : 'Revoke Access'}
+          </Button>
         </DialogActions>
       </Dialog>
     </>

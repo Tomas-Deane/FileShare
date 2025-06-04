@@ -960,7 +960,6 @@ class UserDB:
                 sf.encrypted_file_key,
                 sf.file_key_nonce,
                 sf.OPK_id,
-                sf.shared_at,
                 um.username as recipient_username
             FROM shared_files sf
             JOIN username_map um ON sf.recipient_id = um.user_id
