@@ -1687,7 +1687,7 @@ const TestButton = () => {
                           </ListItemIcon>
                           <ListItemText
                             primary={f.name}
-                            secondary={`${f.type.toUpperCase()} • ${f.size} • ${f.date.toLocaleDateString('en-GB')} ${f.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                            secondary={`${f.type.toUpperCase()} • ${f.date.toLocaleDateString('en-GB')} ${f.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
                             primaryTypographyProps={{
                               sx: { color: '#00ffff', fontWeight: 'bold' },
                             }}
@@ -1757,7 +1757,7 @@ const TestButton = () => {
                           </ListItemIcon>
                           <ListItemText
                             primary={file.name}
-                            secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                            secondary={`${file.type.toUpperCase()} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
                             primaryTypographyProps={{
                               sx: { color: '#00ffff', fontWeight: 'bold' },
                             }}
