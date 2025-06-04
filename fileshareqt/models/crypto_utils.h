@@ -3,6 +3,8 @@
 
 #include <QByteArray>
 #include <QString>
+#include <sodium.h>
+
 
 class CryptoUtils {
 public:
@@ -62,6 +64,16 @@ public:
     static QByteArray hkdfSha256(const QByteArray &salt,
                                  const QByteArray &ikm,
                                  int outputLength);
+
+    // Convert a 32‐byte Ed25519 public key to a 32‐byte X25519 public key.
+    // Returns true on success.
+    static bool ed25519PubKeyToCurve25519(QByteArray &curvePub,
+                                const QByteArray &edPub);
+
+    // Convert a 64‐byte Ed25519 secret key (sk) to a 32‐byte X25519 private key.
+    // Returns true on success.
+    static bool ed25519PrivKeyToCurve25519(QByteArray &curvePriv,
+                                const QByteArray &edPriv);
 };
 
 #endif // CRYPTO_UTILS_H
