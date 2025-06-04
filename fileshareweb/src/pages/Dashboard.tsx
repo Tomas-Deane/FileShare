@@ -1520,6 +1520,7 @@ const TestButton = () => {
   // Add state for password change dialog
   const [openChangePassword, setOpenChangePassword] = useState(false);
   const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [changePasswordLoading, setChangePasswordLoading] = useState(false);
   const [changePasswordError, setChangePasswordError] = useState<string | null>(null);
   const [changePasswordSuccess, setChangePasswordSuccess] = useState<string | null>(null);
@@ -2939,46 +2940,75 @@ const TestButton = () => {
           Change Password
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
-          <TextField
-            fullWidth
-            label="New Password"
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            sx={{
-              mb: 2,
-              '& .MuiOutlinedInput-root': {
-                '& fieldset': {
-                  borderColor: 'rgba(0, 255, 0, 0.3)',
+          <Box>
+            <TextField
+              fullWidth
+              label="New Password"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              sx={{
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  '& fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.3)',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.5)',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#00ff00',
+                  },
                 },
-                '&:hover fieldset': {
-                  borderColor: 'rgba(0, 255, 0, 0.5)',
+                '& .MuiInputLabel-root': {
+                  color: 'rgba(0, 255, 0, 0.7)',
                 },
-                '&.Mui-focused fieldset': {
-                  borderColor: '#00ff00',
+                '& .MuiInputBase-input': {
+                  color: '#fff',
                 },
-              },
-              '& .MuiInputLabel-root': {
-                color: 'rgba(0, 255, 0, 0.7)',
-              },
-              '& .MuiInputBase-input': {
-                color: '#fff',
-              },
-            }}
-          />
-          {changePasswordError && <Typography color="error">{changePasswordError}</Typography>}
-          {changePasswordSuccess && <Typography color="primary">{changePasswordSuccess}</Typography>}
+              }}
+            />
+            <TextField
+              fullWidth
+              label="Confirm Password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              error={!!changePasswordError}
+              helperText={changePasswordError}
+              sx={{
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  '& fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.3)',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'rgba(0, 255, 0, 0.5)',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#00ff00',
+                  },
+                },
+                '& .MuiInputLabel-root': {
+                  color: 'rgba(0, 255, 0, 0.7)',
+                },
+                '& .MuiInputBase-input': {
+                  color: '#fff',
+                },
+              }}
+            />
+            {changePasswordSuccess && (
+              <Alert severity="success" sx={{ mt: 2, bgcolor: 'rgba(0, 255, 0, 0.1)' }}>
+                {changePasswordSuccess}
+              </Alert>
+            )}
+          </Box>
         </DialogContent>
         <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
           <CyberButton
-            onClick={() => setOpenChangePassword(false)}
-            disabled={changePasswordLoading}
-          >
-            Cancel
-          </CyberButton>
-          <CyberButton
             onClick={handleChangePassword}
-            disabled={changePasswordLoading || !newPassword}
+            disabled={!newPassword || !confirmPassword || changePasswordLoading}
+            sx={{ width: '100%' }}
           >
             {changePasswordLoading ? 'Changing...' : 'Change Password'}
           </CyberButton>
