@@ -1610,19 +1610,21 @@ const TestButton = () => {
             {debugSection}
 
             <Box sx={{ mb: 4 }}>
-              <SearchField
-                fullWidth
-                placeholder="Search files..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon sx={{ color: '#00ff00' }} />
-                    </InputAdornment>
-                  ),
-                }}
-              />
+              {activeTab !== 'profile' && (
+                <SearchField
+                  fullWidth
+                  placeholder="Search files..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon sx={{ color: '#00ff00' }} />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              )}
             </Box>
 
             {/* Content Area */}
