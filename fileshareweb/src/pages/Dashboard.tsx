@@ -1305,26 +1305,27 @@ const TestButton = () => {
         console.log(`Processing recipient: ${recipientUsername}`);
         
         if(test_empty_opk_share){
-        // Clear recipient's OPKs first (for testing)
-        console.log('Clearing recipient OPKs...');
-        const clearOPKsChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
-          username,
-          operation: 'clear_user_opks'
-        });
+          // Clear recipient's OPKs first (for testing)
+          console.log('Clearing recipient OPKs...');
+          const clearOPKsChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+            username,
+            operation: 'clear_user_opks'
+          });
 
-        if (clearOPKsChallengeResponse.status !== 'challenge') {
-          throw new Error('Failed to get challenge for clearing OPKs');
+          if (clearOPKsChallengeResponse.status !== 'challenge') {
+            throw new Error('Failed to get challenge for clearing OPKs');
+          }
+
+          const clearOPKsSignature = await signChallenge(b64ToUint8Array(clearOPKsChallengeResponse.nonce), secretKey!);
+          await apiClient.post('/clear_user_opks', {
+            username,
+            target_username: recipientUsername,
+            nonce: clearOPKsChallengeResponse.nonce,
+            signature: uint8ArrayToB64(clearOPKsSignature)
+          });
+          console.log('Cleared recipient OPKs');
         }
 
-        const clearOPKsSignature = await signChallenge(b64ToUint8Array(clearOPKsChallengeResponse.nonce), secretKey!);
-        await apiClient.post('/clear_user_opks', {
-          username,
-          target_username: recipientUsername,
-          nonce: clearOPKsChallengeResponse.nonce,
-          signature: uint8ArrayToB64(clearOPKsSignature)
-        });
-        console.log('Cleared recipient OPKs');
-      }
         // 2. Get recipient's verified pre-key bundle from local storage
         const myUsername = storage.getCurrentUser();
         if (!myUsername) throw new Error('No current user found');
@@ -1394,8 +1395,16 @@ const TestButton = () => {
         } catch (err: any) {
           // Check for both 404 and "No OPK available" message
           if (err.response?.status === 404 || err.message === 'No OPK available' || err.response?.data?.detail === 'No OPK available') {
-            console.log('No OPK available, proceeding without OPK');
-            // Continue execution with opkResponse as null
+            console.log('No OPK available, showing warning dialog');
+            // Show warning dialog for no OPK
+            setPendingShare({
+              recipient: recipientUsername,
+              fileKey,
+              freshBundle
+            });
+            setOpenNoOPKConfirm(true);
+            setLoading(false);
+            return;
           } else {
             console.error('Error getting OPK:', err);
             throw err;
@@ -2731,23 +2740,34 @@ const TestButton = () => {
         }}
       >
         <DialogTitle sx={{ color: '#00ffff', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
-          Share Without One-Time Keys
+          No One-Time Keys Available
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
           <Typography sx={{ color: '#00ff00', mb: 2 }}>
-            {pendingShare?.recipient} has no available one-time keys. While you can still share the file, this is less secure than using one-time keys.
+            {pendingShare?.recipient} has no available one-time keys.
           </Typography>
-          <Typography sx={{ color: 'rgba(0, 255, 0, 0.7)', fontSize: '0.9rem' }}>
+          <Typography sx={{ color: 'rgba(0, 255, 0, 0.7)', fontSize: '0.9rem', mb: 2 }}>
+            While you can still share the file, this is less secure than using one-time keys. One-time keys provide forward secrecy and protect against future key compromises.
+          </Typography>
+          <Typography sx={{ color: 'rgba(255, 0, 0, 0.7)', fontSize: '0.9rem' }}>
             Would you like to proceed with sharing anyway?
           </Typography>
         </DialogContent>
-        <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
+        <DialogActions sx={{ 
+          borderTop: '1px solid rgba(0, 255, 0, 0.2)', 
+          p: 2,
+          display: 'flex',
+          justifyContent: 'space-between'
+        }}>
           <Button 
             onClick={() => {
               setOpenNoOPKConfirm(false);
               setPendingShare(null);
             }}
-            sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+            sx={{ 
+              color: 'rgba(0, 255, 0, 0.7)',
+              mr: 'auto'
+            }}
           >
             Cancel
           </Button>
@@ -2818,6 +2838,17 @@ const TestButton = () => {
               } catch (err: any) {
                 console.error('Share process failed:', err);
                 setError(err.message || 'Failed to share file');
+              }
+            }}
+            sx={{
+              minWidth: 120,
+              fontSize: '0.9rem',
+              height: 32,
+              px: 2,
+              py: 0.5,
+              backgroundColor: 'rgba(255, 0, 0, 0.2)',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 0, 0, 0.3)'
               }
             }}
           >
