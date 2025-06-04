@@ -2195,8 +2195,10 @@ const TestButton = () => {
       <Dialog
         open={openShare}
         onClose={() => {
-          setOpenShare(false);
-          setSelectedRecipients([]);
+          if (!loading) {
+            setOpenShare(false);
+            setSelectedRecipients([]);
+          }
         }}
         PaperProps={{
           sx: {
@@ -2313,6 +2315,30 @@ const TestButton = () => {
                     </ListItem>
                   ))}
                 </List>
+                {loading && (
+                  <Box sx={{ width: '100%', mt: 2 }}>
+                    <LinearProgress 
+                      sx={{
+                        backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                        '& .MuiLinearProgress-bar': {
+                          backgroundColor: '#00ff00',
+                          boxShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                        },
+                      }}
+                    />
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: 'rgba(0, 255, 0, 0.7)', 
+                        mt: 1,
+                        textAlign: 'center',
+                        fontFamily: 'monospace'
+                      }}
+                    >
+                      Encrypting and sharing file...
+                    </Typography>
+                  </Box>
+                )}
               </>
             );
           })()}
@@ -2324,6 +2350,7 @@ const TestButton = () => {
               setSelectedRecipients([]);
             }}
             sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+            disabled={loading}
           >
             Cancel
           </Button>
@@ -2331,7 +2358,7 @@ const TestButton = () => {
             onClick={handleShareConfirm}
             size="small"
             sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
-            disabled={selectedRecipients.length === 0}
+            disabled={selectedRecipients.length === 0 || loading}
           >
             Share
           </CyberButton>
