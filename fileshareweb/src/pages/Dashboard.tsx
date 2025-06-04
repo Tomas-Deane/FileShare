@@ -2855,13 +2855,21 @@ const TestButton = () => {
             Would you like to proceed with downloading anyway?
           </Typography>
         </DialogContent>
-        <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
+        <DialogActions sx={{ 
+          borderTop: '1px solid rgba(0, 255, 0, 0.2)', 
+          p: 2,
+          display: 'flex',
+          justifyContent: 'space-between'
+        }}>
           <Button 
             onClick={() => {
               setOpenUnverifiedSender(false);
               setUnverifiedSenderFile(null);
             }}
-            sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+            sx={{ 
+              color: 'rgba(0, 255, 0, 0.7)',
+              mr: 'auto'
+            }}
           >
             Cancel
           </Button>
@@ -2870,8 +2878,18 @@ const TestButton = () => {
               if (!unverifiedSenderFile) return;
               setOpenUnverifiedSender(false);
               setUnverifiedSenderFile(null);
-              // Continue with download
               await handleDownload(unverifiedSenderFile.id, true);
+            }}
+            sx={{
+              minWidth: 120,
+              fontSize: '0.9rem',
+              height: 32,
+              px: 2,
+              py: 0.5,
+              backgroundColor: 'rgba(255, 0, 0, 0.2)',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 0, 0, 0.3)'
+              }
             }}
           >
             Download Anyway
