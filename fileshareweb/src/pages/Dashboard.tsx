@@ -1537,10 +1537,10 @@ const TestButton = () => {
     }
 
     try {
-      // Step 1: Request challenge (use download_shared_file for preview as well)
+      // Step 1: Request challenge (use preview_shared_file for preview)
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
-        operation: 'download_shared_file'
+        operation: 'preview_shared_file'
       });
       if (challengeResponse.status !== 'challenge') {
         throw new Error(challengeResponse.detail || 'Failed to get challenge');
@@ -1892,7 +1892,7 @@ const TestButton = () => {
                               </IconButton>
                             </Tooltip>
                             <Tooltip title="Preview">
-                              <IconButton onClick={() => handlePreview(file.id)} sx={{ color: '#00ff00' }}>
+                                                           <IconButton onClick={() => handlePreview(file.id)} sx={{ color: '#00ff00' }}>
                                 <VisibilityIcon />
                               </IconButton>
                             </Tooltip>
