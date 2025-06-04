@@ -35,6 +35,7 @@ from schemas import (
     ListUsersRequest,
     ListSharedToRequest, 
     ListSharedFromRequest,
+    ListSharersRequest,
     RetrieveFileDEKRequest,
     DownloadSharedFileRequest,
     ListMatchingUsersRequest,
@@ -327,6 +328,13 @@ async def get_opk_count(req: GetOPKCountRequest, db: models.UserDB = Depends(get
     logger.debug(f"GetOPKCountRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.get_opk_count_handler, req, db)
     logger.debug(f"GetOPKCount response: {resp}")
+    return resp
+
+@app.post("/list_sharers")
+async def list_sharers(req: ListSharersRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListSharersRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.list_sharers_handler, req, db)
+    logger.debug(f"ListSharers response: {resp}")
     return resp
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
