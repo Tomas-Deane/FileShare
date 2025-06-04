@@ -959,3 +959,19 @@ class UserDB:
         cursor.execute(sql, (file_id,))
         return cursor.fetchall()
 
+    def update_file_blob(self, file_id: int, encrypted_file: str, file_nonce: str, encrypted_dek: str, dek_nonce: str):
+        """
+        Replace the encrypted file and DEK for a file.
+        """
+        conn, cursor = self._get_connection()
+        sql = '''
+            UPDATE files
+            SET encrypted_file = %s,
+                file_nonce = %s,
+                encrypted_dek = %s,
+                dek_nonce = %s
+            WHERE id = %s
+        '''
+        cursor.execute(sql, (encrypted_file, file_nonce, encrypted_dek, dek_nonce, file_id))
+        conn.commit()
+

@@ -43,7 +43,9 @@ from schemas import (
     GetOPKCountRequest,
     ListFileSharesRequest,
     ListFileSharesResponse,
-    UserData
+    UserData,
+    RotateFileRequest,
+    RotateFileResponse
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -349,6 +351,22 @@ async def list_file_shares(req: ListFileSharesRequest, db: models.UserDB = Depen
     users = [UserData(id=row["id"], username=row["username"]) for row in recipients]
     resp = ListFileSharesResponse(status="ok", shares=users)
     logger.debug(f"ListFileShares response: {resp}")
+    return resp
+
+@app.post("/rotate_file", response_model=RotateFileResponse)
+async def rotate_file(req: RotateFileRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"RotateFileRequest body: {req.model_dump_json()}")
+    file = db.get_file_by_id(req.file_id)
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+    owner_id = file["owner_id"]
+    user = db.get_user(req.username)
+    if not user or user["user_id"] != owner_id:
+        raise HTTPException(status_code=403, detail="Not file owner")
+    # Update the file blob and DEK
+    db.update_file_blob(req.file_id, req.encrypted_file, req.file_nonce, req.encrypted_dek, req.dek_nonce)
+    resp = RotateFileResponse(status="ok", message="File rotated")
+    logger.debug(f"RotateFile response: {resp}")
     return resp
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────

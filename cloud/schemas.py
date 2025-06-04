@@ -298,3 +298,18 @@ class ListFileSharesRequest(BaseModel):
 class ListFileSharesResponse(BaseModel):
     status: str
     shares: list[UserData]
+
+
+class RotateFileRequest(BaseModel):
+    username: str
+    file_id: int
+    encrypted_file: str
+    file_nonce: str
+    encrypted_dek: str
+    dek_nonce: str
+    nonce: str
+    signature: str
+
+class RotateFileResponse(BaseModel):
+    status: str
+    message: str
