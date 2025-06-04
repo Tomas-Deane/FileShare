@@ -3,7 +3,7 @@ import {
   Box, Container, Typography, Button, Paper, Grid, List, ListItem, ListItemText,
   ListItemIcon, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider, Checkbox,
-  LinearProgress, ListItemSecondaryAction
+  LinearProgress, ListItemSecondaryAction, CircularProgress
 } from '@mui/material';
 import {
   Upload as UploadIcon, Share as ShareIcon, Delete as DeleteIcon, Download as DownloadIcon,
@@ -339,10 +339,50 @@ const Dashboard: React.FC = () => {
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: 'home'|'files'|'users'|'profile') => setActiveTab(newValue);
   const handleUpload = () => setOpenUpload(true);
-  const handleShare = (fileId: number) => {
+  const handleShare = async (fileId: number) => {
     logDebug('Share initiated', { fileId });
     setSelectedFile(fileId);
-    setOpenShare(true);
+    setLoadingSharedAccess(true);
+    setError(null);
+
+    try {
+      // Step 1: Request challenge
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'list_users_with_access'
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+
+      // Step 2: Sign the nonce
+      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonce, secretKey!);
+      
+      // Step 3: Get list of users with access
+      const response = await apiClient.post<{ status: string; users: UserAccessInfo[] }>('/list_users_with_access', {
+        username,
+        file_id: fileId,
+        nonce: challengeResponse.nonce,
+        signature: uint8ArrayToB64(signature)
+      });
+
+      if (response.status !== 'ok') {
+        throw new Error('Failed to fetch users with access');
+      }
+
+      setSharedAccess(response.users.map(user => ({
+        id: user.share_id,
+        username: user.recipient_username
+      })));
+      setOpenShare(true);
+    } catch (error) {
+      console.error('Error fetching users with access:', error);
+      setError('Failed to fetch users with access');
+    } finally {
+      setLoadingSharedAccess(false);
+    }
   };
   const handleDelete = async (fileId: number) => {
     setFileToDelete(fileId);
@@ -2308,6 +2348,7 @@ const TestButton = () => {
           Share File
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
+          {/* Current Users with Access Section */}
           <Typography
             variant="subtitle1"
             sx={{
@@ -2316,7 +2357,67 @@ const TestButton = () => {
               fontFamily: 'monospace',
             }}
           >
-            Select Verified Recipients
+            Current Users with Access
+          </Typography>
+          
+          {loadingSharedAccess ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
+              <CircularProgress sx={{ color: '#00ff00' }} />
+            </Box>
+          ) : sharedAccess.length > 0 ? (
+            <List>
+              {sharedAccess.map((user) => (
+                <ListItem
+                  key={user.id}
+                  sx={{
+                    border: '1px solid rgba(0, 255, 0, 0.2)',
+                    borderRadius: 1,
+                    mb: 1,
+                    '&:hover': {
+                      border: '1px solid rgba(0, 255, 0, 0.4)',
+                      backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                    },
+                  }}
+                >
+                  <ListItemIcon>
+                    <PersonIcon sx={{ color: '#00ff00' }} />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={user.username}
+                    sx={{
+                      '& .MuiListItemText-primary': {
+                        color: '#00ff00',
+                        fontFamily: 'monospace',
+                      },
+                    }}
+                  />
+                  <IconButton
+                    onClick={() => handleRevoke(files.find(f => f.id === selectedFile)!)}
+                    sx={{ color: 'rgba(255, 0, 0, 0.7)' }}
+                  >
+                    <BlockIcon />
+                  </IconButton>
+                </ListItem>
+              ))}
+            </List>
+          ) : (
+            <Typography sx={{ color: 'rgba(0, 255, 0, 0.7)', mb: 3 }}>
+              No users currently have access to this file.
+            </Typography>
+          )}
+
+          <Divider sx={{ my: 3, borderColor: 'rgba(0, 255, 0, 0.2)' }} />
+
+          {/* Share with New Users Section */}
+          <Typography
+            variant="subtitle1"
+            sx={{
+              color: '#00ffff',
+              mb: 2,
+              fontFamily: 'monospace',
+            }}
+          >
+            Share with New Users
           </Typography>
           
           {(() => {
@@ -2354,34 +2455,17 @@ const TestButton = () => {
                     </Button>
                   )}
                 </Box>
-                <List sx={{ 
-                  maxHeight: 300, 
-                  overflowY: 'auto',
-                  border: '1px solid rgba(0, 255, 0, 0.2)',
-                  borderRadius: 1,
-                }}>
+                <List>
                   {Object.entries(verifiedRecipients).map(([username, bundle]: [string, RecipientKeyBundle]) => (
                     <ListItem
                       key={username}
-                      button
-                      onClick={() => {
-                        setSelectedRecipients(prev => 
-                          prev.includes(username)
-                            ? prev.filter(u => u !== username)
-                            : [...prev, username]
-                        );
-                      }}
-                      selected={selectedRecipients.includes(username)}
                       sx={{
-                        borderBottom: '1px solid rgba(0, 255, 0, 0.1)',
+                        border: '1px solid rgba(0, 255, 0, 0.2)',
+                        borderRadius: 1,
+                        mb: 1,
                         '&:hover': {
+                          border: '1px solid rgba(0, 255, 0, 0.4)',
                           backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                        },
-                        '&.Mui-selected': {
-                          backgroundColor: 'rgba(0, 255, 0, 0.1)',
-                          '&:hover': {
-                            backgroundColor: 'rgba(0, 255, 0, 0.15)',
-                          },
                         },
                       }}
                     >
@@ -2390,17 +2474,29 @@ const TestButton = () => {
                       </ListItemIcon>
                       <ListItemText
                         primary={username}
-                        primaryTypographyProps={{
-                          sx: { color: '#00ffff', fontWeight: 'bold' },
-                        }}
-                        secondary={`Verified on ${new Date(bundle.lastVerified || '').toLocaleDateString()}`}
-                        secondaryTypographyProps={{
-                          sx: { color: 'rgba(0, 255, 0, 0.7)' },
+                        secondary={`Last verified: ${bundle.lastVerified || 'Never'}`}
+                        sx={{
+                          '& .MuiListItemText-primary': {
+                            color: '#00ff00',
+                            fontFamily: 'monospace',
+                          },
+                          '& .MuiListItemText-secondary': {
+                            color: 'rgba(0, 255, 0, 0.5)',
+                            fontFamily: 'monospace',
+                            fontSize: '0.8rem',
+                          },
                         }}
                       />
                       <Checkbox
                         edge="end"
                         checked={selectedRecipients.includes(username)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedRecipients([...selectedRecipients, username]);
+                          } else {
+                            setSelectedRecipients(selectedRecipients.filter(u => u !== username));
+                          }
+                        }}
                         sx={{
                           color: 'rgba(0, 255, 0, 0.3)',
                           '&.Mui-checked': {

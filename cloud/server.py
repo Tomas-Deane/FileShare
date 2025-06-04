@@ -350,16 +350,16 @@ async def update_share_entry(req: UpdateShareEntryRequest, db: models.UserDB = D
     return resp
 
 @app.post("/list_users_with_access", response_model=ListUsersWithAccessResponse)
-def list_users_with_access(req: ListUsersWithAccessRequest, db: models.UserDB = Depends(get_db)):
+async def list_users_with_access(req: ListUsersWithAccessRequest, db: models.UserDB = Depends(get_db)):
     logger.debug(f"ListUsersWithAccessRequest body: {req.model_dump_json()}")
-    resp = run_in_threadpool(handlers.list_users_with_access_handler, req, db)
+    resp = await run_in_threadpool(handlers.list_users_with_access_handler, req, db)
     logger.debug(f"ListUsersWithAccess response: {resp}")
     return resp
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     host     = os.environ.get('FS_HOST', '0.0.0.0')
-    port     = int(os.environ.get('FS_HTTPS_PORT', '3230'))
+    port     = int(os.environ.get('FS_HTTPS_PORT', '3210'))
     certfile = os.environ.get('SSL_CERTFILE', 'cert.pem')
     keyfile  = os.environ.get('SSL_KEYFILE', 'key.pem')
 
