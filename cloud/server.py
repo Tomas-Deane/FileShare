@@ -332,7 +332,7 @@ async def get_opk_count(req: GetOPKCountRequest, db: models.UserDB = Depends(get
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     host     = os.environ.get('FS_HOST', '0.0.0.0')
-    port     = int(os.environ.get('FS_HTTPS_PORT', '3230'))
+    port     = int(os.environ.get('FS_HTTPS_PORT', '3240'))
     certfile = os.environ.get('SSL_CERTFILE', 'cert.pem')
     keyfile  = os.environ.get('SSL_KEYFILE', 'key.pem')
 
