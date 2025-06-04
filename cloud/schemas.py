@@ -3,7 +3,7 @@
 Common request schemas for FileShare API (shared between server and handlers).
 """
 from pydantic import BaseModel, conint
-from typing import Optional
+from typing import Optional, List
 
 # Constants for Argon2 parameter limits
 MIN_OPS_LIMIT = 1
@@ -286,3 +286,42 @@ class GetOPKCountRequest(BaseModel):
 class GetOPKCountResponse(BaseModel):
     status: str
     count: int
+
+class RevokeAccessRequest(BaseModel):
+    username: str
+    file_id: int
+    revoked_usernames: List[str]
+    signature: str
+    nonce: str
+
+class UpdateShareEntryRequest(BaseModel):
+    username: str
+    share_id: int
+    signature: str
+    EK_pub: str
+    IK_pub: str
+    SPK_pub: str
+    SPK_signature: str
+    OPK_ID: Optional[int] = None
+    encrypted_file_key: str
+    file_key_nonce: str
+    nonce: str
+
+class RevokeAccessResponse(BaseModel):
+    status: str
+    message: Optional[str] = None
+
+class ListUsersWithAccessRequest(BaseModel):
+    username: str
+    file_id: int
+    nonce: str
+    signature: str
+
+class UserAccessInfo(BaseModel):
+    share_id: int
+    recipient_username: str
+    shared_at: str
+
+class ListUsersWithAccessResponse(BaseModel):
+    status: str
+    users: List[UserAccessInfo]

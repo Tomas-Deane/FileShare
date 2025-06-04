@@ -3,14 +3,14 @@ import {
   Box, Container, Typography, Button, Paper, Grid, List, ListItem, ListItemText,
   ListItemIcon, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, Tabs, Tab, Tooltip, Alert, Drawer, InputAdornment, Divider, Checkbox,
-  LinearProgress
+  LinearProgress, ListItemSecondaryAction
 } from '@mui/material';
 import {
   Upload as UploadIcon, Share as ShareIcon, Delete as DeleteIcon, Download as DownloadIcon,
   Folder as FolderIcon, Person as PersonIcon, Lock as LockIcon, LockOpen as LockOpenIcon,
   Search as SearchIcon, VerifiedUser as VerifiedUserIcon, People as PeopleIcon,
   Home as HomeIcon, Storage as StorageIcon, Security as SecurityIcon, Settings as SettingsIcon,
-  Edit as EditIcon, Visibility as VisibilityIcon, Refresh as RefreshIcon
+  Edit as EditIcon, Visibility as VisibilityIcon, Refresh as RefreshIcon, Block as BlockIcon
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
@@ -188,6 +188,12 @@ interface SharedFileData {
   created_at: string;
 }
 
+interface UserAccessInfo {
+  share_id: number;
+  recipient_username: string;
+  shared_at: string;
+}
+
 const DEBUG = true; // Toggle for development
 
 const logDebug = (message: string, data?: any) => {
@@ -284,6 +290,10 @@ const Dashboard: React.FC = () => {
   const [loadingSharedFiles, setLoadingSharedFiles] = useState(false);
   const [openNoOPKConfirm, setOpenNoOPKConfirm] = useState(false);
   const [pendingShare, setPendingShare] = useState<{recipient: string, fileKey: Uint8Array, freshBundle: any} | null>(null);
+  const [sharedAccess, setSharedAccess] = useState<UserData[]>([]);
+  const [openRevoke, setOpenRevoke] = useState(false);
+  const [fileToRevoke, setFileToRevoke] = useState<FileData | null>(null);
+  const [loadingSharedAccess, setLoadingSharedAccess] = useState(false);
 
   // Get current user and their key bundle
   const currentUsername = storage.getCurrentUser();
@@ -554,9 +564,48 @@ const Dashboard: React.FC = () => {
       setLoading(false);
     }
   };
-  const handleRevoke = (fileId: number) => {
-    logDebug('Revoke initiated', { fileId });
-    // TODO: Implement revoke
+  const handleRevoke = async (file: FileData) => {
+    try {
+      setLoadingSharedAccess(true);
+      setFileToRevoke(file);
+      
+      // Step 1: Request challenge
+      const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username,
+        operation: 'list_users_with_access'
+      });
+
+      if (challengeResponse.status !== 'challenge') {
+        throw new Error(challengeResponse.detail || 'Failed to get challenge');
+      }
+
+      // Step 2: Sign the nonce
+      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+      const signature = await signChallenge(nonce, secretKey!);
+      
+      // Step 3: Get list of users with access
+      const response = await apiClient.post<{ status: string; users: UserAccessInfo[] }>('/list_users_with_access', {
+        username,
+        file_id: file.id,
+        nonce: challengeResponse.nonce,
+        signature: uint8ArrayToB64(signature)
+      });
+
+      if (response.status !== 'ok') {
+        throw new Error('Failed to fetch users with access');
+      }
+
+      setSharedAccess(response.users.map(user => ({
+        id: user.share_id,
+        username: user.recipient_username
+      })));
+      setOpenRevoke(true);
+    } catch (error) {
+      console.error('Error fetching users with access:', error);
+      setError('Failed to fetch users with access');
+    } finally {
+      setLoadingSharedAccess(false);
+    }
   };
 
   // Add this to Dashboard.tsx temporarily

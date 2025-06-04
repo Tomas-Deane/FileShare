@@ -944,3 +944,69 @@ class UserDB:
         row = cursor.fetchone()
         return row['count'] if row else 0
 
+    def get_shared_files_for_file(self, file_id: int):
+        """
+        Get all shared file entries for a specific file.
+        """
+        conn, cursor = self._get_connection()
+        sql = """
+            SELECT 
+                sf.share_id,
+                sf.recipient_id,
+                sf.EK_pub,
+                sf.IK_pub,
+                sf.SPK_pub,
+                sf.SPK_signature,
+                sf.encrypted_file_key,
+                sf.file_key_nonce,
+                sf.OPK_id,
+                um.username as recipient_username
+            FROM shared_files sf
+            JOIN username_map um ON sf.recipient_id = um.user_id
+            WHERE sf.file_id = %s
+        """
+        cursor.execute(sql, (file_id,))
+        return cursor.fetchall()
+
+    def update_shared_file_entry(self, share_id: int, encrypted_file_key: bytes,
+                               file_key_nonce: bytes, EK_pub: bytes, IK_pub: bytes,
+                               SPK_pub: bytes, SPK_signature: bytes, OPK_id: Optional[int] = None):
+        """
+        Update a shared file entry with new encryption parameters.
+        """
+        conn, cursor = self._get_connection()
+        sql = """
+            UPDATE shared_files
+            SET encrypted_file_key = %s,
+                file_key_nonce = %s,
+                EK_pub = %s,
+                IK_pub = %s,
+                SPK_pub = %s,
+                SPK_signature = %s,
+                OPK_id = %s
+            WHERE share_id = %s
+        """
+        cursor.execute(sql, (
+            encrypted_file_key,
+            file_key_nonce,
+            EK_pub,
+            IK_pub,
+            SPK_pub,
+            SPK_signature,
+            OPK_id,
+            share_id
+        ))
+        conn.commit()
+
+    def remove_shared_file_access(self, share_id: int):
+        """
+        Remove a shared file entry.
+        """
+        conn, cursor = self._get_connection()
+        sql = """
+            DELETE FROM shared_files
+            WHERE share_id = %s
+        """
+        cursor.execute(sql, (share_id,))
+        conn.commit()
+

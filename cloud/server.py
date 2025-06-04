@@ -40,7 +40,12 @@ from schemas import (
     ListMatchingUsersRequest,
     PreviewSharedFileRequest,
     ClearUserOPKsRequest,
-    GetOPKCountRequest
+    GetOPKCountRequest,
+    RevokeAccessRequest,
+    RevokeAccessResponse,
+    UpdateShareEntryRequest,
+    ListUsersWithAccessRequest,
+    ListUsersWithAccessResponse
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -327,6 +332,28 @@ async def get_opk_count(req: GetOPKCountRequest, db: models.UserDB = Depends(get
     logger.debug(f"GetOPKCountRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.get_opk_count_handler, req, db)
     logger.debug(f"GetOPKCount response: {resp}")
+    return resp
+
+
+@app.post("/revoke_access", response_model=RevokeAccessResponse)
+def revoke_access(req: RevokeAccessRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"RevokeAccessRequest body: {req.model_dump_json()}")
+    resp = run_in_threadpool(handlers.revoke_access_handler, req, db)
+    logger.debug(f"RevokeAccess response: {resp}")
+    return resp
+
+@app.post("/update_share_entry", response_model=RevokeAccessResponse)
+async def update_share_entry(req: UpdateShareEntryRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"UpdateShareEntryRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.update_share_entry_handler, req, db)
+    logger.debug(f"UpdateShareEntry response: {resp}")
+    return resp
+
+@app.post("/list_users_with_access", response_model=ListUsersWithAccessResponse)
+def list_users_with_access(req: ListUsersWithAccessRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListUsersWithAccessRequest body: {req.model_dump_json()}")
+    resp = run_in_threadpool(handlers.list_users_with_access_handler, req, db)
+    logger.debug(f"ListUsersWithAccess response: {resp}")
     return resp
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────

@@ -42,6 +42,11 @@ from schemas import (
     ListSharersRequest,
     ClearUserOPKsRequest,
     GetOPKCountRequest,
+    RevokeAccessRequest,
+    UpdateShareEntryRequest,
+    ListUsersWithAccessRequest,
+    ListUsersWithAccessResponse,
+    UserAccessInfo,
 )
 
 # ─── Allowed operations for challenge requests ────────────────────────────────
@@ -70,7 +75,10 @@ ALLOWED_OPERATIONS = {
     "list_matching_users",
     "list_sharers",
     "clear_user_opks",
-    "get_opk_count"
+    "get_opk_count",
+    "revoke_access",
+    "update_share_entry",
+    "list_users_with_access"
 }
 
 def validate_filename(filename: str) -> bool:
@@ -1202,4 +1210,120 @@ def get_opk_count_handler(req: GetOPKCountRequest, db: models.UserDB) -> dict:
         "status": "ok",
         "count": count
     }
+
+def revoke_access_handler(req: RevokeAccessRequest, db: models.UserDB):
+    # 1) verify owner & challenge
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    uid = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(uid, "revoke_access")
+    if stored is None or provided != stored:
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+
+    # 2) verify signature
+    signature = base64.b64decode(req.signature)
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(signature, provided)
+    except InvalidSignature:
+        db.delete_challenge(uid)
+        raise HTTPException(status_code=401, detail="Bad signature")
+
+    # 3) verify user owns the file
+    owner_id = db.get_file_owner(req.file_id)
+    if owner_id != uid:
+        raise HTTPException(status_code=403, detail="Not the file owner")
+
+    # 4) Get all current shares for this file
+    current_shares = db.get_shared_files_for_file(req.file_id)
+    
+    # 5) Remove access for revoked users
+    for share in current_shares:
+        if share["recipient_username"] in req.revoked_usernames:
+            db.remove_shared_file_access(share["share_id"])
+
+    db.delete_challenge(uid)
+    return {"status": "ok", "message": "Access revoked successfully"}
+
+def update_share_entry_handler(req: UpdateShareEntryRequest, db: models.UserDB):
+    # 1) verify owner & challenge
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # 2) verify challenge signature
+    nonce = base64.b64decode(req.nonce)
+    signature = base64.b64decode(req.signature)
+    if not verify_signature(req.username, nonce, signature):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    # 3) Update the share entry with new encryption parameters
+    try:
+        encrypted_file_key = base64.b64decode(req.encrypted_file_key)
+        file_key_nonce = base64.b64decode(req.file_key_nonce)
+        EK_pub = base64.b64decode(req.EK_pub)
+        IK_pub = base64.b64decode(req.IK_pub)
+        SPK_pub = base64.b64decode(req.SPK_pub)
+        SPK_signature = base64.b64decode(req.SPK_signature)
+        OPK_id = req.OPK_ID
+
+        db.update_shared_file_entry(
+            share_id=req.share_id,
+            encrypted_file_key=encrypted_file_key,
+            file_key_nonce=file_key_nonce,
+            EK_pub=EK_pub,
+            IK_pub=IK_pub,
+            SPK_pub=SPK_pub,
+            SPK_signature=SPK_signature,
+            OPK_id=OPK_id
+        )
+        return {"status": "ok"}
+    except Exception as e:
+        logging.error(f"Error updating share entry: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error updating share entry: {str(e)}")
+
+def list_users_with_access_handler(req: ListUsersWithAccessRequest, db: models.UserDB) -> ListUsersWithAccessResponse:
+    # 1) verify owner & challenge
+    user = db.get_user(req.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    uid = user["user_id"]
+    provided = base64.b64decode(req.nonce)
+    stored = db.get_pending_challenge(uid, "list_users_with_access")
+    if stored is None or provided != stored:
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge")
+
+    # 2) verify signature
+    signature = base64.b64decode(req.signature)
+    try:
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(signature, provided)
+    except InvalidSignature:
+        db.delete_challenge(uid)
+        raise HTTPException(status_code=401, detail="Bad signature")
+
+    # 3) verify user owns the file
+    owner_id = db.get_file_owner(req.file_id)
+    if owner_id != uid:
+        raise HTTPException(status_code=403, detail="Not authorized to access this file")
+
+    # 4) get list of users with access
+    shares = db.get_shared_files_for_file(req.file_id)
+    
+    # 5) format response
+    users = [
+        UserAccessInfo(
+            share_id=share['share_id'],
+            recipient_username=share['recipient_username'],
+            shared_at=share['shared_at']
+        )
+        for share in shares
+    ]
+
+    db.delete_challenge(uid)
+    return ListUsersWithAccessResponse(status="ok", users=users)
 
