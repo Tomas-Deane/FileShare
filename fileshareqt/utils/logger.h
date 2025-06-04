@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 
+// class template
 // a small, reusable history buffer
 template<typename T, size_t Capacity>
 class HistoryBuffer {

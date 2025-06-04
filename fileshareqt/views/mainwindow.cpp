@@ -250,6 +250,8 @@ MainWindow::~MainWindow()
     qDebug() << "Final Logger::s_history use_count() =" << refCount;
 
     Logger::log("Application exiting");
+
+    // explicit use of "delete" keyword
     delete ui;
 }
 

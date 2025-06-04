@@ -16,7 +16,7 @@ VerifyController::VerifyController(INetworkManager  *networkManager,
     , m_authController(authController)
     , m_cryptoService(cryptoService)
 {
-    // Instantiate TofuManager
+    // explicit use of "new" keyword // instantiates TofuManager
     m_tofuManager = new TofuManager(m_cryptoService, m_authController, this);
 
     // Listen for challengeResult → onChallengeReceived

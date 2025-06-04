@@ -22,11 +22,11 @@ AuthController::AuthController(INetworkManager *netMgr,
     connect(networkManager, &INetworkManager::loginResult,
             this, &AuthController::onLoginResult);
 
-    // **NEW**: listen for any challengeResult in order to handle "get_backup_tofu"
+    // listen for any challengeResult in order to handle "get_backup_tofu"
     connect(networkManager, &INetworkManager::challengeResult,
             this, &AuthController::onChallengeReceived);
 
-    // **NEW**: listen for the /get_backup_tofu response
+    // listen for the /get_backup_tofu response
     connect(networkManager, &INetworkManager::getBackupTOFUResult,
             this, &AuthController::onGetBackupTOFUResult);
 
