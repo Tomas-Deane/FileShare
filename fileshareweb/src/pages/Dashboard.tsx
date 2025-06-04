@@ -1607,8 +1607,6 @@ const TestButton = () => {
         <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
           <Container maxWidth="xl">
             {/* Header with Search */}
-            {debugSection}
-
             <Box sx={{ mb: 4 }}>
               <SearchField
                 fullWidth
