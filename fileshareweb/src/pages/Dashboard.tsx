@@ -20,8 +20,8 @@ import { apiClient } from '../utils/apiClient';
 import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
 import { storage } from '../utils/storage';
 import sodium from 'libsodium-wrappers-sumo';
-import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithAESGCM, deriveX3DHSharedSecretRecipient, encryptWithPublicKey } from '../utils/crypto';
-import { testX3DHKeyExchange } from '../utils/crypto';
+import { generateEphemeralKeyPair, deriveX3DHSharedSecret,encryptWithXChaCha20Poly, deriveX3DHSharedSecretRecipient, encryptWithPublicKey } from '../utils/crypto';
+import { testX3DH } from '../utils/crypto';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -491,19 +491,19 @@ const Dashboard: React.FC = () => {
         }
 
         // Derive the shared secret using our private keys and sender's public keys
-        const sharedSecret = await deriveX3DHSharedSecretRecipient({
-          senderEKPub: Uint8Array.from(atob(downloadResponse.EK_pub), c => c.charCodeAt(0)),
-          senderIKPub: Uint8Array.from(atob(downloadResponse.IK_pub), c => c.charCodeAt(0)),
-          senderSPKPub: Uint8Array.from(atob(downloadResponse.SPK_pub), c => c.charCodeAt(0)),
-          myIKPriv: Uint8Array.from(atob(myKeyBundle.IK_priv), c => c.charCodeAt(0)),
-          mySPKPriv: Uint8Array.from(atob(myKeyBundle.SPK_priv), c => c.charCodeAt(0)),
-          myOPKPriv: myOPK ? Uint8Array.from(atob(myOPK), c => c.charCodeAt(0)) : undefined
+        const sharedSecretResult = await deriveX3DHSharedSecret({
+          myEd25519Priv: b64ToUint8Array(myKeyBundle.IK_priv).slice(0, 32),  // Take only first 32 bytes
+          myEKPriv: Uint8Array.from(atob(myKeyBundle.SPK_priv), c => c.charCodeAt(0)),
+          theirIKEd25519Pub: Uint8Array.from(atob(downloadResponse.EK_pub), c => c.charCodeAt(0)),
+          theirSPKPub: Uint8Array.from(atob(downloadResponse.SPK_pub), c => c.charCodeAt(0)),
+          theirSPKSignature: b64ToUint8Array(downloadResponse.SPK_signature),
+          theirOPKPub: downloadResponse.opk_id ? Uint8Array.from(atob(downloadResponse.pre_key), c => c.charCodeAt(0)) : undefined
         });
 
         console.log('Shared Secret Debug:', {
-          hasSharedSecret: !!sharedSecret,
-          sharedSecretLength: sharedSecret?.length,
-          sharedSecretHex: sharedSecret ? Array.from(sharedSecret).map(b => b.toString(16).padStart(2, '0')).join('') : null
+          hasSharedSecret: !!sharedSecretResult,
+          sharedSecretLength: sharedSecretResult.sharedSecret.length,
+          sharedSecretHex: Array.from(sharedSecretResult.sharedSecret).map(b => b.toString(16).padStart(2, '0')).join('')
         });
 
         // Decrypt the file key using the shared secret
@@ -520,7 +520,7 @@ const Dashboard: React.FC = () => {
         });
 
         // Use fileKeyNonce for decrypting the file key
-        const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileKeyNonce);
+        const fileKey = await decryptFile(encryptedFileKey, sharedSecretResult.sharedSecret, fileKeyNonce);
         console.log('Decrypted File Key Debug:', {
           hasFileKey: !!fileKey,
           fileKeyLength: fileKey?.length
@@ -563,8 +563,7 @@ const Dashboard: React.FC = () => {
 const TestButton = () => {
   const runTest = async () => {
     try {
-      const results = await testX3DHKeyExchange();
-      console.log('X3DH Test Results:', results);
+      await testX3DH();
     } catch (error) {
       console.error('X3DH Test Failed:', error);
     }
@@ -937,9 +936,9 @@ const TestButton = () => {
       logDebug('Encrypting file', {
         fileSize: fileData.byteLength
       });
-      const { ciphertext: encryptedFile, nonce: fileNonce } = await encryptWithAESGCM(fileKey, new Uint8Array(fileData));
+      const { encrypted, nonce: fileNonce } = await encryptWithXChaCha20Poly(fileKey, new Uint8Array(fileData));
       logDebug('File encrypted', {
-        encryptedSize: encryptedFile.length,
+        encryptedSize: encrypted.length,
         nonceLength: fileNonce.length
       });
 
@@ -952,7 +951,7 @@ const TestButton = () => {
       if (!kek) {
         throw new Error('KEK is not available. Please log out and log back in to refresh your keys.');
       }
-      const { ciphertext: encryptedDek, nonce: kekNonce } = await encryptWithAESGCM(kek, fileKey);
+      const { encrypted: encryptedDek, nonce: kekNonce } = await encryptWithXChaCha20Poly(kek, fileKey);
       logDebug('File key encrypted', {
         encryptedDekLength: encryptedDek.length,
         kekNonceLength: kekNonce.length
@@ -960,24 +959,27 @@ const TestButton = () => {
 
       // Step 4: Sign the encrypted DEK
       logDebug('Signing encrypted DEK');
-      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+      const challengeNonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
       const signature = await signChallenge(encryptedDek, secretKey!);
       logDebug('DEK signed', {
         signatureLength: signature.length
       });
 
       // Step 5: Upload the file
+      logDebug('Uploading file');
+      const formData = new FormData();
+      formData.append('username', username!);
+      formData.append('filename', file.name);
+      formData.append('file', new Blob([encrypted]));
+      formData.append('encrypted_file', uint8ArrayToB64(encrypted));
+      formData.append('file_nonce', uint8ArrayToB64(fileNonce));
+      formData.append('nonce', challengeResponse.nonce); // Use the challenge nonce from the server
+      formData.append('encrypted_dek', uint8ArrayToB64(encryptedDek));
+      formData.append('dek_nonce', uint8ArrayToB64(kekNonce));
+      formData.append('signature', uint8ArrayToB64(signature));
+      formData.append('challenge_nonce', uint8ArrayToB64(challengeNonce));
       logDebug('Sending upload request');
-      const uploadResponse = await apiClient.post<UploadResponse>('/upload_file', {
-        username,
-        filename: file.name,
-        encrypted_file: uint8ArrayToB64(encryptedFile),
-        file_nonce: uint8ArrayToB64(fileNonce),
-        encrypted_dek: uint8ArrayToB64(encryptedDek),
-        dek_nonce: uint8ArrayToB64(kekNonce),
-        nonce: challengeResponse.nonce,
-        signature: uint8ArrayToB64(signature)
-      });
+      const uploadResponse = await apiClient.post<UploadResponse>('/upload_file', formData);
       logDebug('Upload response received', {
         status: uploadResponse.status,
         message: uploadResponse.message,
@@ -1353,7 +1355,7 @@ const TestButton = () => {
         console.log('Got challenge for OPK');
 
         const opkSignature = await signChallenge(b64ToUint8Array(opkChallengeResponse.nonce), secretKey!);
-        let opkResponse = null;
+        let opkData: { opk_id: number; pre_key: string } | undefined;
         try {
           const response = await apiClient.post<{ opk_id: number; pre_key: string }>('/opk', {
             username: myUsername,
@@ -1361,13 +1363,13 @@ const TestButton = () => {
             nonce: opkChallengeResponse.nonce,
             signature: uint8ArrayToB64(opkSignature)
           });
-          opkResponse = response;
-          console.log('Retrieved OPK:', { opk_id: opkResponse.opk_id });
+          opkData = response;
+          console.log('Retrieved OPK:', { opk_id: opkData.opk_id });
         } catch (err: any) {
           // Check for both 404 and "No OPK available" message
           if (err.response?.status === 404 || err.message === 'No OPK available' || err.response?.data?.detail === 'No OPK available') {
             console.log('No OPK available, proceeding without OPK');
-            // Continue execution with opkResponse as null
+            // Continue execution with opkData as undefined
           } else {
             console.error('Error getting OPK:', err);
             throw err;
@@ -1383,27 +1385,51 @@ const TestButton = () => {
         console.log('Deriving X3DH shared secret...');
         console.log('Key data:', {
           myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv).length,
-          myEKPriv: ephemeralKeyPair.privateKey.length,
-          recipientIKPub: b64ToUint8Array(freshBundle.IK_pub).length,
-          recipientSPKPub: b64ToUint8Array(freshBundle.SPK_pub).length,
-          hasOPK: !!opkResponse
+          myEKPriv: ephemeralKeyPair.secretKey.length,
+          recipientIKPub: Uint8Array.from(atob(freshBundle.IK_pub), c => c.charCodeAt(0)).length,
+          recipientSPKPub: Uint8Array.from(atob(freshBundle.SPK_pub), c => c.charCodeAt(0)).length,
+          hasOPK: !!opkData
         });
 
-        const sharedSecret = await deriveX3DHSharedSecret({
-          myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
-          myEKPriv: ephemeralKeyPair.privateKey,
-          recipientIKPub: b64ToUint8Array(freshBundle.IK_pub),
-          recipientSPKPub: b64ToUint8Array(freshBundle.SPK_pub),
-          recipientSPKSignature: b64ToUint8Array(freshBundle.SPK_signature),
-          recipientOPKPub: opkResponse ? b64ToUint8Array(opkResponse.pre_key) : undefined
+        // Add detailed debug logging
+        console.log('Detailed key data:', {
+          myIKPriv: {
+            length: b64ToUint8Array(myKeyBundle.IK_priv).length,
+            first10Bytes: Array.from(b64ToUint8Array(myKeyBundle.IK_priv).slice(0, 10))
+              .map(b => b.toString(16).padStart(2, '0')).join('')
+          },
+          myEKPriv: {
+            length: ephemeralKeyPair.secretKey.length,
+            first10Bytes: Array.from(ephemeralKeyPair.secretKey.slice(0, 10))
+              .map(b => b.toString(16).padStart(2, '0')).join('')
+          },
+          recipientIKPub: {
+            length: Uint8Array.from(atob(freshBundle.IK_pub), c => c.charCodeAt(0)).length,
+            first10Bytes: Array.from(Uint8Array.from(atob(freshBundle.IK_pub), c => c.charCodeAt(0)).slice(0, 10))
+              .map(b => b.toString(16).padStart(2, '0')).join('')
+          },
+          recipientSPKPub: {
+            length: Uint8Array.from(atob(freshBundle.SPK_pub), c => c.charCodeAt(0)).length,
+            first10Bytes: Array.from(Uint8Array.from(atob(freshBundle.SPK_pub), c => c.charCodeAt(0)).slice(0, 10))
+              .map(b => b.toString(16).padStart(2, '0')).join('')
+          }
+        });
+
+        const sharedSecretResult = await deriveX3DHSharedSecret({
+          myEd25519Priv: b64ToUint8Array(myKeyBundle.IK_priv),  // Pass the full 64-byte key
+          myEKPriv: ephemeralKeyPair.secretKey,
+          theirIKEd25519Pub: Uint8Array.from(atob(freshBundle.IK_pub), c => c.charCodeAt(0)),
+          theirSPKPub: Uint8Array.from(atob(freshBundle.SPK_pub), c => c.charCodeAt(0)),
+          theirSPKSignature: b64ToUint8Array(freshBundle.SPK_signature),
+          theirOPKPub: opkData ? Uint8Array.from(atob(opkData.pre_key), c => c.charCodeAt(0)) : undefined
         });
         console.log('Derived shared secret');
 
         // 8. Encrypt the file key (DEK) with the shared secret
         console.log('Encrypting file key with shared secret...');
-        const { ciphertext, nonce } = await encryptWithAESGCM(sharedSecret, fileKey);
+        const { encrypted, nonce } = await encryptWithXChaCha20Poly(sharedSecretResult.sharedSecret, fileKey);
         console.log('Encrypted file key:', {
-          ciphertext_length: ciphertext.length,
+          encrypted_length: encrypted.length,
           nonce_length: nonce.length
         });
 
@@ -1419,12 +1445,12 @@ const TestButton = () => {
         }
         console.log('Got challenge for share_file');
 
-        // 10. Sign the encrypted file key
+        // Sign the encrypted file key
         if (!secretKey) throw new Error('Secret key not available');
-        const shareSignature = await signChallenge(ciphertext, secretKey);
+        const shareSignature = await signChallenge(encrypted, secretKey);
         console.log('Signed share request');
 
-        // 11. Send /share_file request
+        // Send /share_file request
         console.log('Sending share_file request...');
         await apiClient.post('/share_file', {
           username,
@@ -1432,13 +1458,13 @@ const TestButton = () => {
           recipient_username: recipientUsername,
           EK_pub: uint8ArrayToB64(ephemeralKeyPair.publicKey),
           IK_pub: myKeyBundle.IK_pub,
-          encrypted_file_key: uint8ArrayToB64(ciphertext),
+          encrypted_file_key: uint8ArrayToB64(encrypted),
           file_key_nonce: uint8ArrayToB64(nonce),
           SPK_pub: myKeyBundle.SPK_pub,
           SPK_signature: myKeyBundle.SPK_signature,
-          ...(opkResponse && {
-            OPK_ID: opkResponse.opk_id,
-            pre_key: opkResponse.pre_key
+          ...(opkData && {
+            OPK_ID: opkData.opk_id,
+            pre_key: opkData.pre_key
           }),
           nonce: shareChallengeResponse.nonce,
           signature: uint8ArrayToB64(shareSignature)
@@ -2713,18 +2739,19 @@ const TestButton = () => {
 
                 // Derive X3DH shared secret without OPK
                 console.log('Deriving X3DH shared secret without OPK...');
-                const sharedSecret = await deriveX3DHSharedSecret({
-                  myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
-                  myEKPriv: ephemeralKeyPair.privateKey,
-                  recipientIKPub: b64ToUint8Array(freshBundle.IK_pub),
-                  recipientSPKPub: b64ToUint8Array(freshBundle.SPK_pub),
-                  recipientSPKSignature: b64ToUint8Array(freshBundle.SPK_signature)
+                const sharedSecretResult = await deriveX3DHSharedSecret({
+                  myEd25519Priv: b64ToUint8Array(myKeyBundle.IK_priv),  // Pass the full 64-byte key
+                  myEKPriv: ephemeralKeyPair.secretKey,
+                  theirIKEd25519Pub: Uint8Array.from(atob(freshBundle.IK_pub), c => c.charCodeAt(0)),
+                  theirSPKPub: Uint8Array.from(atob(freshBundle.SPK_pub), c => c.charCodeAt(0)),
+                  theirSPKSignature: b64ToUint8Array(freshBundle.SPK_signature),
+                  theirOPKPub: undefined
                 });
                 console.log('Derived shared secret without OPK');
 
                 // Encrypt the file key with the shared secret
                 console.log('Encrypting file key with shared secret...');
-                const { ciphertext, nonce } = await encryptWithAESGCM(sharedSecret, fileKey);
+                const { encrypted, nonce } = await encryptWithXChaCha20Poly(sharedSecretResult.sharedSecret, fileKey);
 
                 // Request challenge for share_file
                 const shareChallengeResponse = await apiClient.post<{ status: string; nonce: string; detail?: string }>('/challenge', {
@@ -2738,7 +2765,7 @@ const TestButton = () => {
 
                 // Sign the encrypted file key
                 if (!secretKey) throw new Error('Secret key not available');
-                const shareSignature = await signChallenge(ciphertext, secretKey);
+                const shareSignature = await signChallenge(encrypted, secretKey);
 
                 // Send share_file request without OPK
                 await apiClient.post('/share_file', {
@@ -2747,7 +2774,7 @@ const TestButton = () => {
                   recipient_username: recipient,
                   EK_pub: uint8ArrayToB64(ephemeralKeyPair.publicKey),
                   IK_pub: myKeyBundle.IK_pub,
-                  encrypted_file_key: uint8ArrayToB64(ciphertext),
+                  encrypted_file_key: uint8ArrayToB64(encrypted),
                   file_key_nonce: uint8ArrayToB64(nonce),
                   SPK_pub: myKeyBundle.SPK_pub,
                   SPK_signature: myKeyBundle.SPK_signature,
