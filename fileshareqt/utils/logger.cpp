@@ -12,7 +12,8 @@
 QFile     Logger::logFile;
 QTextStream Logger::logStream;
 
-std::shared_ptr<std::vector<QString>> Logger::s_history = nullptr;
+// <<< MODIFIED: instantiate shared_ptr<HistoryBuffer<QString,1000>> to nullptr
+std::shared_ptr<HistoryBuffer<QString, 1000>> Logger::s_history = nullptr;
 
 // initialize the global formatter to “identity” (no changes)
 Logger::LogFormatter Logger::s_formatter = nullptr;
@@ -22,7 +23,7 @@ void Logger::initialize(QPlainTextEdit *console)
     Logger::instance().consoleWidget = console;
     // if history isn’t already allocated, give it one
     if (!s_history) {
-        s_history = std::make_shared<std::vector<QString>>();
+        s_history = std::make_shared<HistoryBuffer<QString, 1000>>();
     }
 }
 
@@ -68,7 +69,7 @@ void Logger::log(const QString &msg) {
     }
     // append to the in‐memory history first
     if (s_history) {
-        s_history->push_back(toWrite);
+        s_history->push(toWrite);  // <<< MODIFIED: push into templated buffer
     }
     Logger::instance().logInternal(toWrite);
 }
@@ -121,11 +122,12 @@ void Logger::logInternal(const QString &msg)
     }
 }
 
-std::shared_ptr<std::vector<QString>> Logger::getHistory()
+// <<< MODIFIED: returns the shared_ptr<HistoryBuffer<…>>
+std::shared_ptr<HistoryBuffer<QString, 1000>> Logger::getHistory()
 {
     // If initialize(...) hasn’t run yet, create it on‐demand
     if (!s_history) {
-        s_history = std::make_shared<std::vector<QString>>();
+        s_history = std::make_shared<HistoryBuffer<QString, 1000>>();
     }
     return s_history;
 }

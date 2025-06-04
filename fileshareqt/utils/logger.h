@@ -6,6 +6,38 @@
 #include <QByteArray>
 #include <QDebug>
 #include <memory>
+#include <vector>
+
+// a small, reusable history buffer
+template<typename T, size_t Capacity>
+class HistoryBuffer {
+public:
+    // Push a new element onto the buffer. if we exceed Capacity, discard oldest
+    void push(const T &item) {
+        if (data.size() < Capacity) {
+            data.push_back(item);
+        } else {
+            // shift left by one
+            for (size_t i = 1; i < Capacity; ++i) {
+                data[i - 1] = std::move(data[i]);
+            }
+            data[Capacity - 1] = item;
+        }
+    }
+
+    // Return all stored elements, in insertion order (oldest first)
+    const std::vector<T>& all() const {
+        return data;
+    }
+
+    // Clear out everything
+    void clear() {
+        data.clear();
+    }
+
+private:
+    std::vector<T> data;
+};
 
 class Logger {
 public:
@@ -39,7 +71,8 @@ public:
 
     static void demonstratePointers();
 
-    static std::shared_ptr<std::vector<QString>> getHistory();
+    // a buffer that keeps the last 1000 messages by default
+    static std::shared_ptr<HistoryBuffer<QString, 1000>> getHistory();
 
 private:
     // private constructor enforces singleton
@@ -58,11 +91,12 @@ private:
 
     static void ensureLogOpen();
 
-    static std::shared_ptr<std::vector<QString>> s_history;
+    // replaced vector<QString> with HistoryBuffer<QString,1000>
+    static std::shared_ptr<HistoryBuffer<QString, 1000>> s_history;
 
     void logInternal(const QString &msg);
 
-    // --- hold the currently‐registered formatter (default = identity) ---
+    // hold the currently‐registered formatter (default = identity)
     static LogFormatter s_formatter;
 };
 
