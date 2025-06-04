@@ -8,38 +8,6 @@
 #include <memory>
 #include <vector>
 
-// class template
-// a small, reusable history buffer
-template<typename T, size_t Capacity>
-class HistoryBuffer {
-public:
-    // Push a new element onto the buffer. if we exceed Capacity, discard oldest
-    void push(const T &item) {
-        if (data.size() < Capacity) {
-            data.push_back(item);
-        } else {
-            // shift left by one
-            for (size_t i = 1; i < Capacity; ++i) {
-                data[i - 1] = std::move(data[i]);
-            }
-            data[Capacity - 1] = item;
-        }
-    }
-
-    // Return all stored elements, in insertion order (oldest first)
-    const std::vector<T>& all() const {
-        return data;
-    }
-
-    // Clear out everything
-    void clear() {
-        data.clear();
-    }
-
-private:
-    std::vector<T> data;
-};
-
 class Logger {
 public:
     // still keep these two static for everyone else to call
@@ -73,7 +41,7 @@ public:
     static void demonstratePointers();
 
     // a buffer that keeps the last 1000 messages by default
-    static std::shared_ptr<HistoryBuffer<QString, 1000>> getHistory();
+    static std::shared_ptr<std::vector<QString>> getHistory();
 
 private:
     // private constructor enforces singleton
@@ -87,13 +55,13 @@ private:
 
     QPlainTextEdit *consoleWidget;
 
-    static QFile     logFile;
+    static QFile       logFile;
     static QTextStream logStream;
 
     static void ensureLogOpen();
 
-    // replaced vector<QString> with HistoryBuffer<QString,1000>
-    static std::shared_ptr<HistoryBuffer<QString, 1000>> s_history;
+    // in‐memory history buffer (vector of QString)
+    static std::shared_ptr<std::vector<QString>> s_history;
 
     void logInternal(const QString &msg);
 

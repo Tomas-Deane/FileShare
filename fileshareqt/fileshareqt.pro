@@ -29,6 +29,7 @@ HEADERS += \
     models/crypto_utils.h \
     models/networkmanager.h \
     models/passwordstrength.h \
+    utils/cache.h \
     utils/fileentry.h \
     utils/services.h \
     utils/sharedfilemanager.h \
