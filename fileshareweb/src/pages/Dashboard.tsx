@@ -1610,7 +1610,7 @@ const TestButton = () => {
             {debugSection}
 
             <Box sx={{ mb: 4 }}>
-              {activeTab !== 'profile' && (
+              {activeTab === 'files' && (
                 <SearchField
                   fullWidth
                   placeholder="Search files..."
