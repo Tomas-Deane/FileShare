@@ -47,6 +47,8 @@ from schemas import (
     ListUsersWithAccessRequest,
     ListUsersWithAccessResponse,
     UserAccessInfo,
+    RotateFileRequest,
+    UpdateShareRequest,
 )
 
 # ─── Allowed operations for challenge requests ────────────────────────────────
@@ -78,7 +80,9 @@ ALLOWED_OPERATIONS = {
     "get_opk_count",
     "revoke_access",
     "update_share_entry",
-    "list_users_with_access"
+    "list_users_with_access",
+    "rotate_file",
+    "update_share",
 }
 
 def validate_filename(filename: str) -> bool:
@@ -1315,15 +1319,116 @@ def list_users_with_access_handler(req: ListUsersWithAccessRequest, db: models.U
     shares = db.get_shared_files_for_file(req.file_id)
     
     # 5) format response
-    users = [
-        UserAccessInfo(
-            share_id=share['share_id'],
-            recipient_username=share['recipient_username'],
-            shared_at=share['shared_at'].isoformat()
+    users = []
+    for share in shares:
+        # Convert datetime to ISO format string
+        shared_at = share['shared_at'].isoformat() if share['shared_at'] else None
+        users.append(
+            UserAccessInfo(
+                share_id=share['share_id'],
+                recipient_username=share['recipient_username'],
+                shared_at=shared_at
+            )
         )
-        for share in shares
-    ]
 
     db.delete_challenge(uid)
     return ListUsersWithAccessResponse(status="ok", users=users)
+
+def rotate_file_handler(req: RotateFileRequest, db: models.UserDB):
+    # 1) verify owner & challenge
+    uid = db.get_user_id(req.username)
+    if not uid:
+        raise HTTPException(status_code=401, detail="User not found")
+    
+    challenge = db.get_challenge(uid)
+    if not challenge:
+        raise HTTPException(status_code=401, detail="No challenge found")
+    
+    if challenge.operation != "rotate_file":
+        raise HTTPException(status_code=401, detail="Invalid challenge operation")
+    
+    # 2) verify signature
+    try:
+        provided = base64.b64decode(req.nonce)
+        signature = base64.b64decode(req.signature)
+        user = db.get_user(req.username)
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(signature, provided)
+    except InvalidSignature:
+        db.delete_challenge(uid)
+        raise HTTPException(status_code=401, detail="Bad signature")
+
+    # 3) verify user owns the file
+    owner_id = db.get_file_owner(req.file_id)
+    if owner_id != uid:
+        raise HTTPException(status_code=403, detail="Not authorized to access this file")
+
+    # 4) validate the new encrypted file and DEK
+    try:
+        encrypted_file = validate_base64(req.encrypted_file, "encrypted_file")
+        file_nonce = validate_base64(req.file_nonce, "file_nonce")
+        encrypted_dek = validate_base64(req.encrypted_dek, "encrypted_dek")
+        dek_nonce = validate_base64(req.dek_nonce, "dek_nonce")
+    except ValueError as e:
+        db.delete_challenge(uid)
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # 5) update the file with new encryption
+    db.update_file_encryption(
+        req.file_id,
+        encrypted_file,
+        file_nonce,
+        encrypted_dek,
+        dek_nonce
+    )
+
+    db.delete_challenge(uid)
+    return {"status": "ok"}
+
+def update_share_handler(req: UpdateShareRequest, db: models.UserDB):
+    # 1) verify owner & challenge
+    uid = db.get_user_id(req.username)
+    if not uid:
+        raise HTTPException(status_code=401, detail="User not found")
+    
+    challenge = db.get_challenge(uid)
+    if not challenge:
+        raise HTTPException(status_code=401, detail="No challenge found")
+    
+    if challenge.operation != "update_share":
+        raise HTTPException(status_code=401, detail="Invalid challenge operation")
+    
+    # 2) verify signature
+    try:
+        provided = base64.b64decode(req.nonce)
+        signature = base64.b64decode(req.signature)
+        user = db.get_user(req.username)
+        Ed25519PublicKey.from_public_bytes(user["public_key"]) \
+            .verify(signature, provided)
+    except InvalidSignature:
+        db.delete_challenge(uid)
+        raise HTTPException(status_code=401, detail="Bad signature")
+
+    # 3) verify user owns the file
+    owner_id = db.get_file_owner(req.file_id)
+    if owner_id != uid:
+        raise HTTPException(status_code=403, detail="Not authorized to access this file")
+
+    # 4) validate the new encrypted DEK
+    try:
+        encrypted_file_key = validate_base64(req.encrypted_file_key, "encrypted_file_key")
+        file_key_nonce = validate_base64(req.file_key_nonce, "file_key_nonce")
+    except ValueError as e:
+        db.delete_challenge(uid)
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # 5) update the share with new encryption
+    db.update_share_encryption(
+        req.share_id,
+        encrypted_file_key,
+        file_key_nonce
+    )
+
+    db.delete_challenge(uid)
+    return {"status": "ok"}
 

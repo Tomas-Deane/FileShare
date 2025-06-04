@@ -45,7 +45,9 @@ from schemas import (
     RevokeAccessResponse,
     UpdateShareEntryRequest,
     ListUsersWithAccessRequest,
-    ListUsersWithAccessResponse
+    ListUsersWithAccessResponse,
+    RotateFileRequest,
+    UpdateShareRequest
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -354,6 +356,20 @@ async def list_users_with_access(req: ListUsersWithAccessRequest, db: models.Use
     logger.debug(f"ListUsersWithAccessRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.list_users_with_access_handler, req, db)
     logger.debug(f"ListUsersWithAccess response: {resp}")
+    return resp
+
+@app.post("/rotate_file")
+async def rotate_file(req: RotateFileRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"RotateFileRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.rotate_file_handler, req, db)
+    logger.debug(f"RotateFile response: {resp}")
+    return resp
+
+@app.post("/update_share")
+async def update_share(req: UpdateShareRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"UpdateShareRequest body: {req.model_dump_json()}")
+    resp = await run_in_threadpool(handlers.update_share_handler, req, db)
+    logger.debug(f"UpdateShare response: {resp}")
     return resp
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────

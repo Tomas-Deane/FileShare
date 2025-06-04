@@ -960,6 +960,7 @@ class UserDB:
                 sf.encrypted_file_key,
                 sf.file_key_nonce,
                 sf.OPK_id,
+                sf.shared_at,
                 um.username as recipient_username
             FROM shared_files sf
             JOIN username_map um ON sf.recipient_id = um.user_id
@@ -1014,4 +1015,22 @@ class UserDB:
         """
         cursor.execute(sql, (share_id,))
         conn.commit()
+
+    def update_file_encryption(self, file_id: int, encrypted_file: bytes, file_nonce: bytes, encrypted_dek: bytes, dek_nonce: bytes) -> None:
+        """Update a file's encryption with new values."""
+        with self.conn:
+            self.conn.execute("""
+                UPDATE files 
+                SET encrypted_file = ?, file_nonce = ?, encrypted_dek = ?, dek_nonce = ?
+                WHERE id = ?
+            """, (encrypted_file, file_nonce, encrypted_dek, dek_nonce, file_id))
+
+    def update_share_encryption(self, share_id: int, encrypted_file_key: bytes, file_key_nonce: bytes) -> None:
+        """Update a share's encryption with new values."""
+        with self.conn:
+            self.conn.execute("""
+                UPDATE shared_files 
+                SET encrypted_file_key = ?, file_key_nonce = ?
+                WHERE share_id = ?
+            """, (encrypted_file_key, file_key_nonce, share_id))
 

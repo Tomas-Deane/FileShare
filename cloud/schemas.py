@@ -325,3 +325,22 @@ class UserAccessInfo(BaseModel):
 class ListUsersWithAccessResponse(BaseModel):
     status: str
     users: List[UserAccessInfo]
+
+class RotateFileRequest(BaseModel):
+    username: str
+    file_id: int
+    encrypted_file: str  # base64
+    file_nonce: str  # base64
+    encrypted_dek: str  # base64
+    dek_nonce: str  # base64
+    nonce: str  # base64
+    signature: str  # base64
+
+class UpdateShareRequest(BaseModel):
+    username: str
+    file_id: int
+    share_id: int
+    encrypted_file_key: str  # base64
+    file_key_nonce: str  # base64
+    nonce: str  # base64
+    signature: str  # base64
