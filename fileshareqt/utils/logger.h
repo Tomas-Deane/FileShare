@@ -11,9 +11,9 @@
 class Logger {
 public:
     // still keep these two static for everyone else to call
-    static void initialize(QPlainTextEdit *console);
+    static void initialise(QPlainTextEdit *console);
     static void log(const QString &msg);
-    static void log(const QByteArray &msg);
+    static void log(QByteArray &msg);
 
     // uses QDebug to stream any type T into a QString and logs it
     template<typename T>

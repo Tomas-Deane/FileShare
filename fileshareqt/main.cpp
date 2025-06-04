@@ -29,7 +29,7 @@ int main(int argc, char *argv[])
     MainWindow w(services.auth.get(), services.file.get(), services.profile.get(), services.verify.get(), services.share.get());
     w.show();
 
-    Logger::initialize(w.findChild<QPlainTextEdit*>("consoleTextEdit"));
+    Logger::initialise(w.findChild<QPlainTextEdit*>("consoleTextEdit"));
 
     return a.exec();
 }

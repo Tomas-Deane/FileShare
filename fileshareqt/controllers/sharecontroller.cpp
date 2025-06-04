@@ -176,7 +176,7 @@ void ShareController::onChallenge(const QByteArray &nonce, const QString &operat
 
     case DoShareFile:
         if (operation == "share_file") {
-            // 1) Generate a fresh ephemeral X25519 keypair (EK_i)
+            // Generate a fresh ephemeral X25519 keypair (EK_i)
             QByteArray ekPub, ekPriv;
             m_cryptoService->generateX25519KeyPair(ekPub, ekPriv);
 
@@ -186,7 +186,7 @@ void ShareController::onChallenge(const QByteArray &nonce, const QString &operat
             QByteArray theirSpkPub   = m_recipientSpkPub;     // stashed in onGetPreKeyBundleResult
             QByteArray theirOpkPub   = m_stashedOpkPreKey;    // stashed in onGetOPKResult
 
-            // 3) Compute the four DH outputs (each 32 bytes):
+            // Compute the four DH outputs (each 32 bytes):
             QByteArray dh1 = m_cryptoService->deriveSharedKey( ourIkPriv,  theirSpkPub );
             QByteArray dh2 = m_cryptoService->deriveSharedKey( ekPriv,     theirIkPub );
             QByteArray dh3 = m_cryptoService->deriveSharedKey( ekPriv,     theirSpkPub );
@@ -198,10 +198,10 @@ void ShareController::onChallenge(const QByteArray &nonce, const QString &operat
                 return;
             }
 
-            // 4) Concatenate the four DH outputs (128 bytes total)
+            // Concatenate the four DH outputs (128 bytes total)
             QByteArray concatenatedDH = dh1 + dh2 + dh3 + dh4;
 
-            // 5) HKDF-SHA256 over concatenatedDH → 32-byte sharedKey
+            // HKDF-SHA256 over concatenatedDH → 32-byte sharedKey
             QByteArray zeroSalt(32, '\0');
             QByteArray sharedKey = m_cryptoService->hkdfSha256(
                 zeroSalt,
@@ -214,7 +214,7 @@ void ShareController::onChallenge(const QByteArray &nonce, const QString &operat
                 return;
             }
 
-            // 6) Decrypt the file’s encrypted DEK under our session KEK
+            // Decrypt the file’s encrypted DEK under our session KEK
             QByteArray serverEncryptedDek = m_stashedEncryptedDek;
             QByteArray serverDekNonce     = m_stashedDekNonce;
             QByteArray fileDek = m_cryptoService->decrypt(
@@ -228,21 +228,21 @@ void ShareController::onChallenge(const QByteArray &nonce, const QString &operat
                 return;
             }
 
-            // 7) Re-encrypt the DEK under the new sharedKey
+            // Re-encrypt the DEK under the new sharedKey
             QByteArray newDekNonce;
             QByteArray encryptedDekForRecipient =
                 m_cryptoService->encrypt(fileDek, sharedKey, newDekNonce);
 
-            // 8) Zero out the plaintext DEK immediately
+            // Zero out the plaintext DEK immediately
             m_cryptoService->secureZeroMemory(fileDek);
 
-            // 9) Sign the encrypted DEK before sending
+            // Sign the encrypted DEK before sending
             QByteArray sig = m_cryptoService->sign(
                 encryptedDekForRecipient,
                 m_authController->getSessionSecretKey()
                 );
 
-            // 10) Build JSON payload for /share_file
+            // Build JSON payload for /share_file
             //     Include: EK_pub, IK_pub, SPK_pub, SPK_signature, OPK_ID, encrypted_file_key, file_key_nonce, nonce, signature
             QByteArray ikPub   = m_authController->getIdentityPublicKey();
             QByteArray spkPub  = m_authController->getSignedPreKeyPublic();
@@ -474,7 +474,7 @@ void ShareController::onGetOPKResult(bool success,
         return;
     }
 
-    // 1) Stash the OPK ID and raw OPK public:
+    // Stash the OPK ID and raw OPK public:
     m_stashedOpkId     = opk_id;
     m_stashedOpkPreKey = QByteArray::fromBase64(pre_key_b64.toUtf8());
     if (m_stashedOpkPreKey.size() != X25519_PUBKEY_LEN) {
@@ -483,7 +483,7 @@ void ShareController::onGetOPKResult(bool success,
         return;
     }
 
-    // 2) Now request a challenge for “share_file” so we can do DoShareFile():
+    // Now request a challenge for “share_file” so we can do DoShareFile():
     m_pendingOp = DoShareFile;
     QString me = m_authController->getSessionUsername();
     m_networkManager->requestChallenge(me, "share_file");
@@ -535,7 +535,7 @@ void ShareController::onDownloadSharedNetwork(bool success,
         return;
     }
 
-    // 1) Base64 → raw buffers
+    // Base64 → raw buffers
     QByteArray encryptedFile    = QByteArray::fromBase64(encryptedFileB64.toUtf8());
     QByteArray fileNonce        = QByteArray::fromBase64(fileNonceB64.toUtf8());
     QByteArray encryptedFileKey = QByteArray::fromBase64(encryptedFileKeyB64.toUtf8());
@@ -544,7 +544,7 @@ void ShareController::onDownloadSharedNetwork(bool success,
     QByteArray ikPubInitiator   = QByteArray::fromBase64(IK_pub_b64.toUtf8());
     QByteArray spkPubInitiator  = QByteArray::fromBase64(SPK_pub_b64.toUtf8());
 
-    // 2) Retrieve our private keys
+    // Retrieve our private keys
     QByteArray ourIkPriv  = m_authController->getIdentityPrivateKey();
     QByteArray ourSpkPriv = m_authController->getSignedPreKeyPrivate();
     QList<QByteArray> allOpkPrivs = m_authController->getOneTimePreKeyPrivs();
@@ -559,7 +559,7 @@ void ShareController::onDownloadSharedNetwork(bool success,
     QByteArray dh3 = m_cryptoService->deriveSharedKey( ourSpkPriv, ekPubInitiator);
     QByteArray dh4 = m_cryptoService->deriveSharedKey( ourOpkPriv, ekPubInitiator);
 
-    // 5) Concatenate ∥ run HKDF exactly as the sender did:
+    // Concatenate ∥ run HKDF exactly as the sender did:
     QByteArray concatenatedDH = dh1 + dh2 + dh3 + dh4;
     QByteArray zeroSalt(32, '\0');
     QByteArray sharedKey = m_cryptoService->hkdfSha256(zeroSalt, concatenatedDH, 32);
@@ -575,7 +575,7 @@ void ShareController::onDownloadSharedNetwork(bool success,
         return;
     }
 
-    // 5) Decrypt the file’s encrypted DEK with sharedKey (NOT the session-KEK!)
+    // Decrypt the file’s encrypted DEK with sharedKey (NOT the session-KEK!)
     QByteArray fileDek = m_cryptoService->decrypt(encryptedFileKey, sharedKey, fileKeyNonce);
     if (fileDek.isEmpty()) {
         emit downloadSharedFileResult(false, QString(), QByteArray(), "Failed to decrypt file DEK");
@@ -583,13 +583,13 @@ void ShareController::onDownloadSharedNetwork(bool success,
         return;
     }
 
-    // 6) Decrypt the file body under that DEK
+    // Decrypt the file body under that DEK
     QByteArray plaintext = m_cryptoService->decrypt(encryptedFile, fileDek, fileNonce);
 
-    // 7) Zero out the raw DEK
+    // Zero out the raw DEK
     m_cryptoService->secureZeroMemory(fileDek);
 
-    // 8) Emit back our filename and plaintext
+    // Emit back our filename and plaintext
     QString outFilename = m_pendingFilename;
     emit downloadSharedFileResult(true, outFilename, plaintext, QString());
     m_pendingOp = None;

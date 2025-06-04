@@ -14,10 +14,10 @@ QTextStream Logger::logStream;
 
 std::shared_ptr<std::vector<QString>> Logger::s_history = nullptr;
 
-// initialize the global formatter to “identity” (no changes)
+// initialise the global formatter to “identity” (no changes)
 Logger::LogFormatter Logger::s_formatter = nullptr;
 
-void Logger::initialize(QPlainTextEdit *console)
+void Logger::initialise(QPlainTextEdit *console)
 {
     Logger::instance().consoleWidget = console;
     // if history isn’t already allocated, give it one
@@ -46,10 +46,10 @@ void Logger::ensureLogOpen() {
     logStream.setDevice(&logFile);
 }
 
-// Convert QByteArray→QString by pointer arithmetic (unchanged)
-void Logger::log(const QByteArray &msg) {
-    const char *ptr    = msg.constData();
-    const char *endPtr = ptr + msg.size();
+// Convert QByteArray QString by pointer arithmetic
+void Logger::log( QByteArray &msg) {
+    char *ptr    = msg.data();
+    char *endPtr = ptr + msg.size();
 
     QString s;
     while (ptr < endPtr) {

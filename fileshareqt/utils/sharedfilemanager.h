@@ -30,7 +30,7 @@ public:
     int size() const;
 
 private:
-    // Use a QHash-based cache for O(1) lookups
+    // use of template class
     Cache<QString, QByteArray, true> m_cache;
 };
 

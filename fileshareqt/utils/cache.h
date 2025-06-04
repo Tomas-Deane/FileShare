@@ -14,7 +14,7 @@ template<
     >
 class Cache;
 
-// Specialization for QHash-based cache
+// TEMPLATE CLASS
 template<typename Key, typename Value>
 class Cache<Key, Value, true> {
 public:

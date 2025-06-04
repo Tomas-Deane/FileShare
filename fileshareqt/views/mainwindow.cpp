@@ -189,7 +189,7 @@ MainWindow::MainWindow(AuthController* authCtrl,
             this, &MainWindow::onDeleteFileResult);
 
     // Console logger
-    Logger::initialize(ui->consoleTextEdit);
+    Logger::initialise(ui->consoleTextEdit);
 
     // Core connections
     connect(authController, &AuthController::loggedIn,
