@@ -286,3 +286,15 @@ class GetOPKCountRequest(BaseModel):
 class GetOPKCountResponse(BaseModel):
     status: str
     count: int
+
+
+class ListFileSharesRequest(BaseModel):
+    username: str  # Owner
+    file_id: int
+    nonce: str
+    signature: str
+
+
+class ListFileSharesResponse(BaseModel):
+    status: str
+    shares: list[UserData]

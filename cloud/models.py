@@ -944,3 +944,18 @@ class UserDB:
         row = cursor.fetchone()
         return row['count'] if row else 0
 
+    def get_file_share_recipients(self, file_id: int):
+        """
+        Return all users (id, username) a file is currently shared to.
+        """
+        conn, cursor = self._get_connection()
+        sql = '''
+            SELECT u.id, m.username
+            FROM shared_files sf
+            JOIN users u ON sf.recipient_id = u.id
+            JOIN username_map m ON u.id = m.user_id
+            WHERE sf.file_id = %s
+        '''
+        cursor.execute(sql, (file_id,))
+        return cursor.fetchall()
+

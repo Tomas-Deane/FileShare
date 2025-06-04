@@ -40,7 +40,10 @@ from schemas import (
     ListMatchingUsersRequest,
     PreviewSharedFileRequest,
     ClearUserOPKsRequest,
-    GetOPKCountRequest
+    GetOPKCountRequest,
+    ListFileSharesRequest,
+    ListFileSharesResponse,
+    UserData
 )
 
 # ─── Logging setup ──────────────────────────────────────────────────────────────
@@ -327,6 +330,25 @@ async def get_opk_count(req: GetOPKCountRequest, db: models.UserDB = Depends(get
     logger.debug(f"GetOPKCountRequest body: {req.model_dump_json()}")
     resp = await run_in_threadpool(handlers.get_opk_count_handler, req, db)
     logger.debug(f"GetOPKCount response: {resp}")
+    return resp
+
+@app.post("/list_file_shares", response_model=ListFileSharesResponse)
+async def list_file_shares(req: ListFileSharesRequest, db: models.UserDB = Depends(get_db)):
+    logger.debug(f"ListFileSharesRequest body: {req.model_dump_json()}")
+    # Get file owner id
+    file = db.get_file_by_id(req.file_id)
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+    owner_id = file["owner_id"]
+    # Only allow the owner to list shares
+    user = db.get_user(req.username)
+    if not user or user["user_id"] != owner_id:
+        raise HTTPException(status_code=403, detail="Not file owner")
+    # Get all recipients for this file
+    recipients = db.get_file_share_recipients(req.file_id)
+    users = [UserData(id=row["id"], username=row["username"]) for row in recipients]
+    resp = ListFileSharesResponse(status="ok", shares=users)
+    logger.debug(f"ListFileShares response: {resp}")
     return resp
 
 # ─── Run with TLS ───────────────────────────────────────────────────────────────
