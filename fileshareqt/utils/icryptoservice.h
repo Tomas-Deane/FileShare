@@ -81,6 +81,14 @@ public:
                                   const QByteArray &ikm,
                                   int outputLength) = 0;
 
+    // Convert an Ed25519 public key (32 bytes) to Curve25519 public key (32 bytes):
+    virtual bool ed25519PubKeyToCurve25519(QByteArray &curvePub,
+                                   const QByteArray &edPub) = 0;
+
+    // Convert an Ed25519 secret key (64 bytes) to Curve25519 private key (32 bytes):
+    virtual bool ed25519PrivKeyToCurve25519(QByteArray &curvePriv,
+                                    const QByteArray &edPriv) = 0;
+
 };
 
 #endif // ICRYPTOSERVICE_H

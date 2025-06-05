@@ -162,15 +162,6 @@ QByteArray CryptoUtils::sign(const QByteArray &message,
     return sig;
 }
 
-// secureZeroMemory
-void CryptoUtils::secureZeroMemory(QByteArray &data)
-{
-    if (!data.isEmpty()) {
-        sodium_memzero(data.data(), data.size());
-        data.clear();
-    }
-}
-
 // deriveSharedKey (Curve25519/ECDH)
 QByteArray CryptoUtils::deriveSharedKey(const QByteArray &ourPriv,
                                         const QByteArray &theirPub)

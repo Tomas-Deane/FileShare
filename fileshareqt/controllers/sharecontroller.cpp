@@ -192,7 +192,7 @@ void ShareController::onChallenge(const QByteArray &nonce, const QString &operat
                 return;
             }
             QByteArray ourIkPriv; // will hold 32‐byte X25519 priv
-            if (!CryptoUtils::ed25519PrivKeyToCurve25519(ourIkPriv, edOurIkPriv)) {
+            if (!m_cryptoService->ed25519PrivKeyToCurve25519(ourIkPriv, edOurIkPriv)) {
                 emit shareFileResult(false, "Failed to convert our IK to Curve25519");
                 m_pendingOp = None;
                 return;
@@ -458,7 +458,7 @@ void ShareController::onGetPreKeyBundleResult(bool success,
 
     // Convert that Ed25519 pub → X25519 for DH
     QByteArray curveTheirIk;
-    if (!CryptoUtils::ed25519PubKeyToCurve25519(curveTheirIk, edTheirIk)) {
+    if (!m_cryptoService->ed25519PubKeyToCurve25519(curveTheirIk, edTheirIk)) {
         emit shareFileResult(false, "Failed to convert recipient IK to Curve25519");
         m_pendingOp = None;
         return;
@@ -650,7 +650,7 @@ void ShareController::onDownloadSharedNetwork(bool success,
 
     // Convert initiator’s Ed25519 IK_pub → X25519 for DH (call it ikPubInitiator)
     QByteArray ikPubInitiator;
-    if (!CryptoUtils::ed25519PubKeyToCurve25519(ikPubInitiator, edIkPubInitiator)) {
+    if (!m_cryptoService->ed25519PubKeyToCurve25519(ikPubInitiator, edIkPubInitiator)) {
         emit downloadSharedFileResult(false, QString(), QByteArray(), "Failed to convert initiator IK to Curve25519");
         m_pendingOp = None;
         return;
@@ -658,7 +658,7 @@ void ShareController::onDownloadSharedNetwork(bool success,
 
     // Convert our Ed25519 IK_priv → X25519 for DH
     QByteArray ourIkPriv;
-    if (!CryptoUtils::ed25519PrivKeyToCurve25519(ourIkPriv, edOurIkPriv)) {
+    if (!m_cryptoService->ed25519PrivKeyToCurve25519(ourIkPriv, edOurIkPriv)) {
         emit downloadSharedFileResult(false, QString(), QByteArray(), "Failed to convert our IK to Curve25519");
         m_pendingOp = None;
         return;
