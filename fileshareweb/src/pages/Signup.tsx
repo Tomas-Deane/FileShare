@@ -133,18 +133,18 @@ const Signup: React.FC = () => {
       const backupData = {
         username: trimmedUsername,
         // Private keys
-        IK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key_private))),
-        SPK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_private))),
-        OPKs_priv: x3dhKeys.one_time_pre_keys_private.map(key =>
-            btoa(String.fromCharCode.apply(null, Array.from(key)))
+        IK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identityEd25519Private))),
+        SPK_priv: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signedPreKeyX25519Private))),
+        OPKs_priv: x3dhKeys.oneTimePreKeysX25519Private.map((key: Uint8Array) =>
+          btoa(String.fromCharCode.apply(null, Array.from(key)))
         ),
         // Public keys
-        IK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
-        SPK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
-        SPK_signature: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
-        OPKs: x3dhKeys.one_time_pre_keys.map(key =>
-            btoa(String.fromCharCode.apply(null, Array.from(key)))
-        )
+        IK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identityEd25519Public))),
+        SPK_pub: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signedPreKeyX25519Public))),
+        SPK_signature: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signedPreKeySignature))),
+        OPKs: x3dhKeys.oneTimePreKeysX25519.map((key: Uint8Array) =>
+          btoa(String.fromCharCode.apply(null, Array.from(key)))
+        ),
       };
 
       // Create session storage data
@@ -178,10 +178,10 @@ const Signup: React.FC = () => {
         privkey_nonce: btoa(String.fromCharCode.apply(null, Array.from(encryptedNonce))),
         encrypted_kek: btoa(String.fromCharCode.apply(null, Array.from(encryptedKek))),
         kek_nonce: btoa(String.fromCharCode.apply(null, Array.from(encryptedKekNonce))),
-        identity_key: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identity_key))),
-        signed_pre_key: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key))),
-        signed_pre_key_sig: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signed_pre_key_sig))),
-        one_time_pre_keys: x3dhKeys.one_time_pre_keys.map(key => 
+        identity_key: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.identityEd25519Public))),
+        signed_pre_key: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signedPreKeyX25519Public))),
+        signed_pre_key_sig: btoa(String.fromCharCode.apply(null, Array.from(x3dhKeys.signedPreKeySignature))),
+        one_time_pre_keys: x3dhKeys.oneTimePreKeysX25519.map((key: Uint8Array) => 
           btoa(String.fromCharCode.apply(null, Array.from(key)))
         ),
         encrypted_backup: btoa(String.fromCharCode.apply(null, Array.from(encryptedBackup))),

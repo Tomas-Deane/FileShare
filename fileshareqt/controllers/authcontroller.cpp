@@ -110,25 +110,30 @@ void AuthController::signup(const QString &username, const QString &password)
 
     // 3) Encrypt the Ed25519 SK under PDK
     QByteArray skNonce, encryptedSK = cryptoService->encrypt(edPrivKey, sessionPdk, skNonce);
-    cryptoService->secureZeroMemory(edPrivKey);
 
-    // 4) Generate a fresh KEK (for file encryption) and encrypt it under PDK
+    //   4) Assign Ed25519 identity to ikPublic/ikPrivate now, before zeroing edPrivKey.
+    //    ikPublic := ed25519 identity public (32 bytes)
+    //    ikPrivate := ed25519 identity private (64 bytes)
+    ikPublic  = edPubKey;
+    ikPrivate = edPrivKey;
+
+    // 5) Generate a fresh KEK (for file encryption) and encrypt it under PDK
     QByteArray kek = cryptoService->generateAeadKey();
     sessionKek = kek;  // keep the KEK in memory for future file ops
     QByteArray kekNonce, encryptedKek = cryptoService->encrypt(kek, sessionPdk, kekNonce);
     cryptoService->secureZeroMemory(kek);
 
-    // 5) Generate X25519 identity key pair
-    cryptoService->generateX25519KeyPair(ikPublic, ikPrivate);
-
     // 6) Generate X25519 signed‐pre‐key pair
     cryptoService->generateX25519KeyPair(spkPublic, spkPrivate);
 
-    // Decrypt the Ed25519 secret we just encrypted:
+    // Decrypt the Ed25519 secret we just encrypted (for sessionSecretKey)
     QByteArray edSecret = cryptoService->decrypt(encryptedSK, sessionPdk, skNonce);
     sessionSecretKey = edSecret;  // keep Ed25519 SK to sign spkPublic
-    QByteArray spkSig = cryptoService->sign(spkPublic, sessionSecretKey);
+    QByteArray spkSig = cryptoService->sign(spkPublic, ikPrivate);
     spkSignature = spkSig;         // store SPK signature
+
+    // Now we can safely zero out the temporary edPrivKey
+    cryptoService->secureZeroMemory(edPrivKey);
 
     // 8) Generate OPKs (private + public) in memory
     const int OPK_COUNT = 10;

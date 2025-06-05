@@ -6,8 +6,8 @@ ProfileController::ProfileController(INetworkManager *netMgr,
                                      ICryptoService  *cryptoService,
                                      QObject         *parent)
     : QObject(parent)
-    , m_networkManager(netMgr)
     , m_authController(authController)
+    , m_networkManager(netMgr)
     , m_cryptoService(cryptoService)
 {
     connect(m_networkManager, &INetworkManager::challengeResult,
