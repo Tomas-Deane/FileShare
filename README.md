@@ -147,3 +147,86 @@ FileShare is a secure, end-to-end encrypted file-sharing platform with both a Qt
    - `views/` - UI components and layouts
    - `utils/` - Utility functions and helpers
    - `styles/` - Application styling and themes
+
+### Cloud Server
+
+1. **Prerequisites**
+   - Python 3.8 or higher
+   - pip (Python package manager)
+   - OpenSSL for certificate generation
+   - PostgreSQL (for database)
+
+2. **Installation**
+   ```bash
+   # Navigate to the cloud server directory
+   cd cloud
+
+   # Create and activate virtual environment (recommended)
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+   # Install dependencies
+   pip install -r requirements.txt
+   ```
+
+3. **Configuration**
+   - SSL certificates should be placed in the `ssl` directory:
+     - `server.crt` - Server certificate
+     - `server.key` - Server private key
+     - `ca.crt` - CA certificate
+   - Database configuration in `server.py`:
+     ```python
+     DATABASE_URL = "postgresql://username:password@localhost:5432/fileshare"
+     ```
+
+4. **Running the Server**
+   ```bash
+   # Start the server
+   python server.py
+   ```
+   The server will be available at `https://localhost:8000`
+
+5. **API Endpoints**
+   - Authentication:
+     - POST `/auth/login` - User login
+     - POST `/auth/register` - User registration
+   - Files:
+     - GET `/files` - List files
+     - POST `/files/upload` - Upload file
+     - GET `/files/download/{file_id}` - Download file
+     - DELETE `/files/{file_id}` - Delete file
+   - Sharing:
+     - POST `/files/share` - Share file
+     - GET `/files/shared` - List shared files
+     - DELETE `/files/share/{share_id}` - Revoke share
+
+6. **Troubleshooting**
+   - SSL certificate issues:
+     - Verify certificate paths and permissions
+     - Check certificate validity and expiration
+   - Database connection errors:
+     - Verify PostgreSQL is running
+     - Check database credentials
+     - Ensure database exists
+   - Port conflicts:
+     - Check if port 8000 is available
+     - Modify port in server configuration if needed
+
+7. **Development**
+   - Enable debug mode in `server.py`:
+     ```python
+     DEBUG = True
+     ```
+   - Logging configuration:
+     ```python
+     LOG_LEVEL = "DEBUG"
+     ```
+
+8. **Security Considerations**
+   - Keep SSL certificates secure
+   - Regularly update dependencies
+   - Monitor server logs for suspicious activity
+   - Implement rate limiting for API endpoints
+   - Use strong password policies
+
+
