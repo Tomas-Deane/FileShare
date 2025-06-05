@@ -12,7 +12,7 @@ class INetworkManager : public QObject {
     Q_OBJECT
 
 public:
-    explicit INetworkManager(QObject *parent = nullptr) : QObject(parent) {}
+     INetworkManager(QObject *parent = nullptr) : QObject(parent) {}
     ~INetworkManager() override = default;
 
     // Core flow

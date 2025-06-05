@@ -20,8 +20,8 @@ import { apiClient } from '../utils/apiClient';
 import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
 import { storage } from '../utils/storage';
 import sodium from 'libsodium-wrappers-sumo';
-import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithAESGCM, deriveX3DHSharedSecretRecipient, encryptWithPublicKey } from '../utils/crypto';
-import { testX3DHKeyExchange } from '../utils/crypto';
+import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithXChaCha20Poly } from '../utils/crypto';
+import { testX3DH } from '../utils/crypto';
 
 // Styled components for cyberpunk look
 const DashboardCard = styled(Paper)(({ theme }) => ({
@@ -284,6 +284,8 @@ const Dashboard: React.FC = () => {
   const [loadingSharedFiles, setLoadingSharedFiles] = useState(false);
   const [openNoOPKConfirm, setOpenNoOPKConfirm] = useState(false);
   const [pendingShare, setPendingShare] = useState<{recipient: string, fileKey: Uint8Array, freshBundle: any} | null>(null);
+  const [openUnverifiedSender, setOpenUnverifiedSender] = useState(false);
+  const [unverifiedSenderFile, setUnverifiedSenderFile] = useState<{id: number, sender: string} | null>(null);
 
   // Get current user and their key bundle
   const currentUsername = storage.getCurrentUser();
@@ -424,6 +426,32 @@ const Dashboard: React.FC = () => {
         ? (file as SharedFileData).filename 
         : (file as FileData).name;
 
+      // For shared files, check if the sender is verified
+      if (isShared) {
+        const sharedFile = file as SharedFileData;
+        const myUsername = storage.getCurrentUser();
+        if (!myUsername) {
+          throw new Error('No current user found');
+        }
+        const myKeyBundle = storage.getKeyBundle(myUsername);
+        if (!myKeyBundle) {
+          throw new Error('Key bundle not found');
+        }
+
+        // Check if the sender is verified
+        const isSenderVerified = myKeyBundle.recipients?.[sharedFile.shared_by]?.verified;
+        if (!isSenderVerified) {
+          // Set the unverified sender file info and show dialog
+          setUnverifiedSenderFile({
+            id: fileId,
+            sender: sharedFile.shared_by
+          });
+          setOpenUnverifiedSender(true);
+          setLoading(false);
+          return;
+        }
+      }
+
       // Step 1: Request challenge
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
         username,
@@ -491,19 +519,19 @@ const Dashboard: React.FC = () => {
         }
 
         // Derive the shared secret using our private keys and sender's public keys
-        const sharedSecret = await deriveX3DHSharedSecretRecipient({
-          senderEKPub: Uint8Array.from(atob(downloadResponse.EK_pub), c => c.charCodeAt(0)),
-          senderIKPub: Uint8Array.from(atob(downloadResponse.IK_pub), c => c.charCodeAt(0)),
-          senderSPKPub: Uint8Array.from(atob(downloadResponse.SPK_pub), c => c.charCodeAt(0)),
-          myIKPriv: Uint8Array.from(atob(myKeyBundle.IK_priv), c => c.charCodeAt(0)),
-          mySPKPriv: Uint8Array.from(atob(myKeyBundle.SPK_priv), c => c.charCodeAt(0)),
-          myOPKPriv: myOPK ? Uint8Array.from(atob(myOPK), c => c.charCodeAt(0)) : undefined
+        const sharedSecretResult = await deriveX3DHSharedSecret({
+          myEd25519Priv: b64ToUint8Array(myKeyBundle.IK_priv).slice(0, 32),  // Take only first 32 bytes
+          myEKPriv: Uint8Array.from(atob(myKeyBundle.SPK_priv), c => c.charCodeAt(0)),
+          theirIKEd25519Pub: Uint8Array.from(atob(downloadResponse.EK_pub), c => c.charCodeAt(0)),
+          theirSPKPub: Uint8Array.from(atob(downloadResponse.SPK_pub), c => c.charCodeAt(0)),
+          theirSPKSignature: b64ToUint8Array(downloadResponse.SPK_signature),
+          theirOPKPub: downloadResponse.opk_id ? Uint8Array.from(atob(downloadResponse.pre_key), c => c.charCodeAt(0)) : undefined
         });
 
         console.log('Shared Secret Debug:', {
-          hasSharedSecret: !!sharedSecret,
-          sharedSecretLength: sharedSecret?.length,
-          sharedSecretHex: sharedSecret ? Array.from(sharedSecret).map(b => b.toString(16).padStart(2, '0')).join('') : null
+          hasSharedSecret: !!sharedSecretResult,
+          sharedSecretLength: sharedSecretResult.sharedSecret.length,
+          sharedSecretHex: Array.from(sharedSecretResult.sharedSecret).map(b => b.toString(16).padStart(2, '0')).join('')
         });
 
         // Decrypt the file key using the shared secret
@@ -520,7 +548,7 @@ const Dashboard: React.FC = () => {
         });
 
         // Use fileKeyNonce for decrypting the file key
-        const fileKey = await decryptFile(encryptedFileKey, sharedSecret, fileKeyNonce);
+        const fileKey = await decryptFile(encryptedFileKey, sharedSecretResult.sharedSecret, fileKeyNonce);
         console.log('Decrypted File Key Debug:', {
           hasFileKey: !!fileKey,
           fileKeyLength: fileKey?.length
@@ -563,8 +591,7 @@ const Dashboard: React.FC = () => {
 const TestButton = () => {
   const runTest = async () => {
     try {
-      const results = await testX3DHKeyExchange();
-      console.log('X3DH Test Results:', results);
+      await testX3DH();
     } catch (error) {
       console.error('X3DH Test Failed:', error);
     }
@@ -937,9 +964,9 @@ const TestButton = () => {
       logDebug('Encrypting file', {
         fileSize: fileData.byteLength
       });
-      const { ciphertext: encryptedFile, nonce: fileNonce } = await encryptWithAESGCM(fileKey, new Uint8Array(fileData));
+      const { encrypted, nonce: fileNonce } = await encryptWithXChaCha20Poly(fileKey, new Uint8Array(fileData));
       logDebug('File encrypted', {
-        encryptedSize: encryptedFile.length,
+        encryptedSize: encrypted.length,
         nonceLength: fileNonce.length
       });
 
@@ -952,7 +979,7 @@ const TestButton = () => {
       if (!kek) {
         throw new Error('KEK is not available. Please log out and log back in to refresh your keys.');
       }
-      const { ciphertext: encryptedDek, nonce: kekNonce } = await encryptWithAESGCM(kek, fileKey);
+      const { encrypted: encryptedDek, nonce: kekNonce } = await encryptWithXChaCha20Poly(kek, fileKey);
       logDebug('File key encrypted', {
         encryptedDekLength: encryptedDek.length,
         kekNonceLength: kekNonce.length
@@ -960,24 +987,27 @@ const TestButton = () => {
 
       // Step 4: Sign the encrypted DEK
       logDebug('Signing encrypted DEK');
-      const nonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
+      const challengeNonce = Uint8Array.from(atob(challengeResponse.nonce), c => c.charCodeAt(0));
       const signature = await signChallenge(encryptedDek, secretKey!);
       logDebug('DEK signed', {
         signatureLength: signature.length
       });
 
       // Step 5: Upload the file
+      logDebug('Uploading file');
+      const formData = new FormData();
+      formData.append('username', username!);
+      formData.append('filename', file.name);
+      formData.append('file', new Blob([encrypted]));
+      formData.append('encrypted_file', uint8ArrayToB64(encrypted));
+      formData.append('file_nonce', uint8ArrayToB64(fileNonce));
+      formData.append('nonce', challengeResponse.nonce); // Use the challenge nonce from the server
+      formData.append('encrypted_dek', uint8ArrayToB64(encryptedDek));
+      formData.append('dek_nonce', uint8ArrayToB64(kekNonce));
+      formData.append('signature', uint8ArrayToB64(signature));
+      formData.append('challenge_nonce', uint8ArrayToB64(challengeNonce));
       logDebug('Sending upload request');
-      const uploadResponse = await apiClient.post<UploadResponse>('/upload_file', {
-        username,
-        filename: file.name,
-        encrypted_file: uint8ArrayToB64(encryptedFile),
-        file_nonce: uint8ArrayToB64(fileNonce),
-        encrypted_dek: uint8ArrayToB64(encryptedDek),
-        dek_nonce: uint8ArrayToB64(kekNonce),
-        nonce: challengeResponse.nonce,
-        signature: uint8ArrayToB64(signature)
-      });
+      const uploadResponse = await apiClient.post<UploadResponse>('/upload_file', formData);
       logDebug('Upload response received', {
         status: uploadResponse.status,
         message: uploadResponse.message,
@@ -1277,26 +1307,27 @@ const TestButton = () => {
         console.log(`Processing recipient: ${recipientUsername}`);
         
         if(test_empty_opk_share){
-        // Clear recipient's OPKs first (for testing)
-        console.log('Clearing recipient OPKs...');
-        const clearOPKsChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
-          username,
-          operation: 'clear_user_opks'
-        });
+          // Clear recipient's OPKs first (for testing)
+          console.log('Clearing recipient OPKs...');
+          const clearOPKsChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+            username,
+            operation: 'clear_user_opks'
+          });
 
-        if (clearOPKsChallengeResponse.status !== 'challenge') {
-          throw new Error('Failed to get challenge for clearing OPKs');
+          if (clearOPKsChallengeResponse.status !== 'challenge') {
+            throw new Error('Failed to get challenge for clearing OPKs');
+          }
+
+          const clearOPKsSignature = await signChallenge(b64ToUint8Array(clearOPKsChallengeResponse.nonce), secretKey!);
+          await apiClient.post('/clear_user_opks', {
+            username,
+            target_username: recipientUsername,
+            nonce: clearOPKsChallengeResponse.nonce,
+            signature: uint8ArrayToB64(clearOPKsSignature)
+          });
+          console.log('Cleared recipient OPKs');
         }
 
-        const clearOPKsSignature = await signChallenge(b64ToUint8Array(clearOPKsChallengeResponse.nonce), secretKey!);
-        await apiClient.post('/clear_user_opks', {
-          username,
-          target_username: recipientUsername,
-          nonce: clearOPKsChallengeResponse.nonce,
-          signature: uint8ArrayToB64(clearOPKsSignature)
-        });
-        console.log('Cleared recipient OPKs');
-      }
         // 2. Get recipient's verified pre-key bundle from local storage
         const myUsername = storage.getCurrentUser();
         if (!myUsername) throw new Error('No current user found');
@@ -1353,7 +1384,7 @@ const TestButton = () => {
         console.log('Got challenge for OPK');
 
         const opkSignature = await signChallenge(b64ToUint8Array(opkChallengeResponse.nonce), secretKey!);
-        let opkResponse = null;
+        let opkData: { opk_id: number; pre_key: string } | undefined;
         try {
           const response = await apiClient.post<{ opk_id: number; pre_key: string }>('/opk', {
             username: myUsername,
@@ -1361,13 +1392,22 @@ const TestButton = () => {
             nonce: opkChallengeResponse.nonce,
             signature: uint8ArrayToB64(opkSignature)
           });
-          opkResponse = response;
-          console.log('Retrieved OPK:', { opk_id: opkResponse.opk_id });
+          opkData = response;
+          console.log('Retrieved OPK:', { opk_id: opkData.opk_id });
         } catch (err: any) {
           // Check for both 404 and "No OPK available" message
           if (err.response?.status === 404 || err.message === 'No OPK available' || err.response?.data?.detail === 'No OPK available') {
-            console.log('No OPK available, proceeding without OPK');
-            // Continue execution with opkResponse as null
+            console.log('No OPK available, showing warning dialog');
+            // Show warning dialog for no OPK
+            setPendingShare({
+              recipient: recipientUsername,
+              fileKey,
+              freshBundle
+            });
+            setOpenNoOPKConfirm(true);
+            setLoading(false);
+            return;
+
           } else {
             console.error('Error getting OPK:', err);
             throw err;
@@ -1383,27 +1423,51 @@ const TestButton = () => {
         console.log('Deriving X3DH shared secret...');
         console.log('Key data:', {
           myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv).length,
-          myEKPriv: ephemeralKeyPair.privateKey.length,
-          recipientIKPub: b64ToUint8Array(freshBundle.IK_pub).length,
-          recipientSPKPub: b64ToUint8Array(freshBundle.SPK_pub).length,
-          hasOPK: !!opkResponse
+          myEKPriv: ephemeralKeyPair.secretKey.length,
+          recipientIKPub: Uint8Array.from(atob(freshBundle.IK_pub), c => c.charCodeAt(0)).length,
+          recipientSPKPub: Uint8Array.from(atob(freshBundle.SPK_pub), c => c.charCodeAt(0)).length,
+          hasOPK: !!opkData
         });
 
-        const sharedSecret = await deriveX3DHSharedSecret({
-          myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
-          myEKPriv: ephemeralKeyPair.privateKey,
-          recipientIKPub: b64ToUint8Array(freshBundle.IK_pub),
-          recipientSPKPub: b64ToUint8Array(freshBundle.SPK_pub),
-          recipientSPKSignature: b64ToUint8Array(freshBundle.SPK_signature),
-          recipientOPKPub: opkResponse ? b64ToUint8Array(opkResponse.pre_key) : undefined
+        // Add detailed debug logging
+        console.log('Detailed key data:', {
+          myIKPriv: {
+            length: b64ToUint8Array(myKeyBundle.IK_priv).length,
+            first10Bytes: Array.from(b64ToUint8Array(myKeyBundle.IK_priv).slice(0, 10))
+              .map(b => b.toString(16).padStart(2, '0')).join('')
+          },
+          myEKPriv: {
+            length: ephemeralKeyPair.secretKey.length,
+            first10Bytes: Array.from(ephemeralKeyPair.secretKey.slice(0, 10))
+              .map(b => b.toString(16).padStart(2, '0')).join('')
+          },
+          recipientIKPub: {
+            length: Uint8Array.from(atob(freshBundle.IK_pub), c => c.charCodeAt(0)).length,
+            first10Bytes: Array.from(Uint8Array.from(atob(freshBundle.IK_pub), c => c.charCodeAt(0)).slice(0, 10))
+              .map(b => b.toString(16).padStart(2, '0')).join('')
+          },
+          recipientSPKPub: {
+            length: Uint8Array.from(atob(freshBundle.SPK_pub), c => c.charCodeAt(0)).length,
+            first10Bytes: Array.from(Uint8Array.from(atob(freshBundle.SPK_pub), c => c.charCodeAt(0)).slice(0, 10))
+              .map(b => b.toString(16).padStart(2, '0')).join('')
+          }
+        });
+
+        const sharedSecretResult = await deriveX3DHSharedSecret({
+          myEd25519Priv: b64ToUint8Array(myKeyBundle.IK_priv),  // Pass the full 64-byte key
+          myEKPriv: ephemeralKeyPair.secretKey,
+          theirIKEd25519Pub: Uint8Array.from(atob(freshBundle.IK_pub), c => c.charCodeAt(0)),
+          theirSPKPub: Uint8Array.from(atob(freshBundle.SPK_pub), c => c.charCodeAt(0)),
+          theirSPKSignature: b64ToUint8Array(freshBundle.SPK_signature),
+          theirOPKPub: opkData ? Uint8Array.from(atob(opkData.pre_key), c => c.charCodeAt(0)) : undefined
         });
         console.log('Derived shared secret');
 
         // 8. Encrypt the file key (DEK) with the shared secret
         console.log('Encrypting file key with shared secret...');
-        const { ciphertext, nonce } = await encryptWithAESGCM(sharedSecret, fileKey);
+        const { encrypted, nonce } = await encryptWithXChaCha20Poly(sharedSecretResult.sharedSecret, fileKey);
         console.log('Encrypted file key:', {
-          ciphertext_length: ciphertext.length,
+          encrypted_length: encrypted.length,
           nonce_length: nonce.length
         });
 
@@ -1419,12 +1483,12 @@ const TestButton = () => {
         }
         console.log('Got challenge for share_file');
 
-        // 10. Sign the encrypted file key
+        // Sign the encrypted file key
         if (!secretKey) throw new Error('Secret key not available');
-        const shareSignature = await signChallenge(ciphertext, secretKey);
+        const shareSignature = await signChallenge(encrypted, secretKey);
         console.log('Signed share request');
 
-        // 11. Send /share_file request
+        // Send /share_file request
         console.log('Sending share_file request...');
         await apiClient.post('/share_file', {
           username,
@@ -1432,13 +1496,13 @@ const TestButton = () => {
           recipient_username: recipientUsername,
           EK_pub: uint8ArrayToB64(ephemeralKeyPair.publicKey),
           IK_pub: myKeyBundle.IK_pub,
-          encrypted_file_key: uint8ArrayToB64(ciphertext),
+          encrypted_file_key: uint8ArrayToB64(encrypted),
           file_key_nonce: uint8ArrayToB64(nonce),
           SPK_pub: myKeyBundle.SPK_pub,
           SPK_signature: myKeyBundle.SPK_signature,
-          ...(opkResponse && {
-            OPK_ID: opkResponse.opk_id,
-            pre_key: opkResponse.pre_key
+          ...(opkData && {
+            OPK_ID: opkData.opk_id,
+            pre_key: opkData.pre_key
           }),
           nonce: shareChallengeResponse.nonce,
           signature: uint8ArrayToB64(shareSignature)
@@ -1607,22 +1671,22 @@ const TestButton = () => {
         <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
           <Container maxWidth="xl">
             {/* Header with Search */}
-            {debugSection}
-
             <Box sx={{ mb: 4 }}>
-              <SearchField
-                fullWidth
-                placeholder="Search files..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon sx={{ color: '#00ff00' }} />
-                    </InputAdornment>
-                  ),
-                }}
-              />
+              {activeTab === 'files' && (
+                <SearchField
+                  fullWidth
+                  placeholder="Search files..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon sx={{ color: '#00ff00' }} />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              )}
             </Box>
 
             {/* Content Area */}
@@ -1687,7 +1751,7 @@ const TestButton = () => {
                           </ListItemIcon>
                           <ListItemText
                             primary={f.name}
-                            secondary={`${f.type.toUpperCase()} • ${f.size} • ${f.date.toLocaleDateString('en-GB')} ${f.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                            secondary={`${f.type.toUpperCase()} • ${f.date.toLocaleDateString('en-GB')} ${f.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
                             primaryTypographyProps={{
                               sx: { color: '#00ffff', fontWeight: 'bold' },
                             }}
@@ -1757,7 +1821,7 @@ const TestButton = () => {
                           </ListItemIcon>
                           <ListItemText
                             primary={file.name}
-                            secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                            secondary={`${file.type.toUpperCase()} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
                             primaryTypographyProps={{
                               sx: { color: '#00ffff', fontWeight: 'bold' },
                             }}
@@ -1870,88 +1934,167 @@ const TestButton = () => {
               </DashboardCard>
               </>
             ) : activeTab === 'users' ? (
-              <DashboardCard>
-                <Box sx={{ mb: 3 }}>
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      color: '#00ffff',
-                      textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
-                      mb: 2,
-                    }}
-                  >
-                    Users
-                  </Typography>
-                  <SearchField
-                    fullWidth
-                    placeholder="Search users..."
-                    value={userSearchQuery}
-                    onChange={(e) => setUserSearchQuery(e.target.value)}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <SearchIcon sx={{ color: '#00ff00' }} />
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                </Box>
-                {loadingUsers ? (
-                  <Box sx={{ textAlign: 'center', py: 4 }}>
-                    <Typography sx={{ color: '#00ff00' }}>Loading users...</Typography>
-                  </Box>
-                ) : userError ? (
-                  <Alert severity="error" sx={{ bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
-                    {userError}
-                  </Alert>
-                ) : users.length === 0 ? (
-                  <Box sx={{ textAlign: 'center', py: 4 }}>
-                    <Typography sx={{ color: '#00ff00' }}>No users found.</Typography>
-                  </Box>
-                ) : (
-                  <List>
-                    {users
-                      .filter(user => user.username.toLowerCase().includes(userSearchQuery.toLowerCase()))
-                      .map((user) => (
-                        <ListItem
-                          key={user.id}
-                          sx={{
-                            border: '1px solid rgba(0, 255, 0, 0.2)',
-                            borderRadius: 1,
-                            mb: 1,
-                            display: 'flex',
-                            alignItems: 'center',
-                            '&:hover': {
-                              border: '1px solid rgba(0, 255, 0, 0.4)',
-                              backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                            },
-                          }}
-                        >
-                          <ListItemIcon>
-                            <PersonIcon sx={{ color: '#00ff00' }} />
-                          </ListItemIcon>
-                          <ListItemText
-                            primary={user.username}
-                            primaryTypographyProps={{
-                              sx: { color: '#00ffff', fontWeight: 'bold' },
+              <Grid container spacing={3}>
+                {/* Search Users Card */}
+                <Grid item xs={12} md={6}>
+                  <DashboardCard>
+                    <Box sx={{ mb: 3 }}>
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          color: '#00ffff',
+                          textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                          mb: 2,
+                        }}
+                      >
+                        Search Users
+                      </Typography>
+                      <SearchField
+                        fullWidth
+                        placeholder="Search users..."
+                        value={userSearchQuery}
+                        onChange={(e) => setUserSearchQuery(e.target.value)}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <SearchIcon sx={{ color: '#00ff00' }} />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </Box>
+                    {loadingUsers ? (
+                      <Box sx={{ textAlign: 'center', py: 4 }}>
+                        <Typography sx={{ color: '#00ff00' }}>Loading users...</Typography>
+                      </Box>
+                    ) : userError ? (
+                      <Alert severity="error" sx={{ bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
+                        {userError}
+                      </Alert>
+                    ) : users.length === 0 ? (
+                      <Box sx={{ textAlign: 'center', py: 4 }}>
+                        <Typography sx={{ color: '#00ff00' }}>
+                          {userSearchQuery ? 'No users found.' : 'Start typing to search users...'}
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <List>
+                        {users.map((user) => (
+                          <ListItem
+                            key={user.id}
+                            sx={{
+                              border: '1px solid rgba(0, 255, 0, 0.2)',
+                              borderRadius: 1,
+                              mb: 1,
+                              display: 'flex',
+                              alignItems: 'center',
+                              '&:hover': {
+                                border: '1px solid rgba(0, 255, 0, 0.4)',
+                                backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                              },
                             }}
-                          />
-                          <Box sx={{ ml: 'auto' }}>
-                            <Button
-                              variant="contained"
-                              color="primary"
-                              onClick={() => handleVerifyClick({ id: user.id, username: user.username })}
-                              size="small"
-                              sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+                          >
+                            <ListItemIcon>
+                              <PersonIcon sx={{ color: '#00ff00' }} />
+                            </ListItemIcon>
+                            <ListItemText
+                              primary={user.username}
+                              primaryTypographyProps={{
+                                sx: { color: '#00ffff', fontWeight: 'bold' },
+                              }}
+                            />
+                            <Box sx={{ ml: 'auto' }}>
+                              <Button
+                                variant="contained"
+                                color="primary"
+                                onClick={() => handleVerifyClick(user)}
+                                size="small"
+                                sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+                              >
+                                Verify
+                              </Button>
+                            </Box>
+                          </ListItem>
+                        ))}
+                      </List>
+                    )}
+                  </DashboardCard>
+                </Grid>
+
+                {/* Verified Users Card */}
+                <Grid item xs={12} md={6}>
+                  <DashboardCard>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          color: '#00ffff',
+                          textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                        }}
+                      >
+                        Verified Users
+                      </Typography>
+                      <IconButton 
+                        onClick={refreshUsers}
+                        sx={{ color: '#00ff00' }}
+                      >
+                        <RefreshIcon />
+                      </IconButton>
+                    </Box>
+                    {(() => {
+                      const myUsername = storage.getCurrentUser();
+                      const myKeyBundle = myUsername ? storage.getKeyBundle(myUsername) : null;
+                      const verifiedUsers = myKeyBundle?.recipients 
+                        ? Object.entries(myKeyBundle.recipients)
+                            .filter(([_, bundle]) => (bundle as RecipientKeyBundle).verified)
+                            .map(([username, bundle]) => ({
+                              username,
+                              verifiedAt: (bundle as RecipientKeyBundle).lastVerified || new Date().toISOString()
+                            }))
+                        : [];
+
+                      return verifiedUsers.length === 0 ? (
+                        <Box sx={{ textAlign: 'center', py: 4 }}>
+                          <Typography sx={{ color: '#00ff00' }}>
+                            No verified users yet. Search and verify users to start sharing files.
+                          </Typography>
+                        </Box>
+                      ) : (
+                        <List>
+                          {verifiedUsers.map((user) => (
+                            <ListItem
+                              key={user.username}
+                              sx={{
+                                border: '1px solid rgba(0, 255, 0, 0.2)',
+                                borderRadius: 1,
+                                mb: 1,
+                                '&:hover': {
+                                  border: '1px solid rgba(0, 255, 0, 0.4)',
+                                  backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                                },
+                              }}
                             >
-                              Verify
-                            </Button>
-                          </Box>
-                        </ListItem>
-                      ))}
-                  </List>
-                )}
-              </DashboardCard>
+                              <ListItemIcon>
+                                <VerifiedUserIcon sx={{ color: '#00ff00' }} />
+                              </ListItemIcon>
+                              <ListItemText
+                                primary={user.username}
+                                secondary={`Verified on ${new Date(user.verifiedAt).toLocaleDateString()}`}
+                                primaryTypographyProps={{
+                                  sx: { color: '#00ffff', fontWeight: 'bold' },
+                                }}
+                                secondaryTypographyProps={{
+                                  sx: { color: 'rgba(0, 255, 0, 0.7)' },
+                                }}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      );
+                    })()}
+                  </DashboardCard>
+                </Grid>
+              </Grid>
             ) : (
               <DashboardCard>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
@@ -1964,91 +2107,112 @@ const TestButton = () => {
                   >
                     Profile
                   </Typography>
-                  <CyberButton
-                    startIcon={<SettingsIcon />}
-                    onClick={() => setOpenProfileSettings(true)}
-                  >
-                    Settings
-                  </CyberButton>
                 </Box>
 
-                <Grid container spacing={3}>
-                  <Grid item xs={12} md={6}>
-                    <Paper
-                      sx={{
-                        p: 2,
-                        background: 'rgba(0, 0, 0, 0.5)',
-                        border: '1px solid rgba(0, 255, 0, 0.2)',
-                        borderRadius: 1,
-                      }}
-                    >
-                      <Typography
-                        sx={{
-                          color: '#00ffff',
-                          mb: 1,
-                          fontFamily: 'monospace',
-                        }}
+                <Box sx={{ mb: 3 }}>
+                  <TextField
+                    fullWidth
+                    label="Username"
+                    value={editMode ? editedProfile.username : profileData.username}
+                    onChange={(e) => setEditedProfile({ ...editedProfile, username: e.target.value })}
+                    disabled={!editMode}
+                    sx={{
+                      mb: 2,
+                      '& .MuiOutlinedInput-root': {
+                        '& fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.3)',
+                        },
+                        '&:hover fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.5)',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#00ff00',
+                        },
+                      },
+                      '& .MuiInputLabel-root': {
+                        color: 'rgba(0, 255, 0, 0.7)',
+                      },
+                      '& .MuiInputBase-input': {
+                        color: '#fff',
+                      },
+                    }}
+                  />
+
+                  <TextField
+                    fullWidth
+                    label="Email"
+                    value={editMode ? editedProfile.email : profileData.email}
+                    onChange={(e) => setEditedProfile({ ...editedProfile, email: e.target.value })}
+                    disabled={!editMode}
+                    sx={{
+                      mb: 2,
+                      '& .MuiOutlinedInput-root': {
+                        '& fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.3)',
+                        },
+                        '&:hover fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.5)',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#00ff00',
+                        },
+                      },
+                      '& .MuiInputLabel-root': {
+                        color: 'rgba(0, 255, 0, 0.7)',
+                      },
+                      '& .MuiInputBase-input': {
+                        color: '#fff',
+                      },
+                    }}
+                  />
+
+                  <TextField
+                    fullWidth
+                    label="New Password"
+                    type="password"
+                    disabled={!editMode}
+                    sx={{
+                      mb: 2,
+                      '& .MuiOutlinedInput-root': {
+                        '& fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.3)',
+                        },
+                        '&:hover fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.5)',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#00ff00',
+                        },
+                      },
+                      '& .MuiInputLabel-root': {
+                        color: 'rgba(0, 255, 0, 0.7)',
+                      },
+                      '& .MuiInputBase-input': {
+                        color: '#fff',
+                      },
+                    }}
+                  />
+                </Box>
+
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+                  {editMode ? (
+                    <>
+                      <Button
+                        onClick={handleProfileCancel}
+                        sx={{ color: 'rgba(255, 0, 0, 0.7)' }}
                       >
-                        Storage Usage
-                      </Typography>
-                      <Box sx={{ mb: 1 }}>
-                        <Typography
-                          sx={{
-                            color: '#00ff00',
-                            fontFamily: 'monospace',
-                          }}
-                        >
-                          {profileData.storageUsed} / {profileData.storageLimit}
-                        </Typography>
-                      </Box>
-                      <Box
-                        sx={{
-                          height: 8,
-                          background: 'rgba(0, 255, 0, 0.1)',
-                          borderRadius: 4,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <Box
-                          sx={{
-                            height: '100%',
-                            width: '25%',
-                            background: 'linear-gradient(90deg, #00ff00, #00ffff)',
-                            borderRadius: 4,
-                          }}
-                        />
-                      </Box>
-                    </Paper>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <Paper
-                      sx={{
-                        p: 2,
-                        background: 'rgba(0, 0, 0, 0.5)',
-                        border: '1px solid rgba(0, 255, 0, 0.2)',
-                        borderRadius: 1,
-                      }}
-                    >
-                      <Typography
-                        sx={{
-                          color: '#00ffff',
-                          mb: 1,
-                          fontFamily: 'monospace',
-                        }}
-                      >
-                        Last Login
-                      </Typography>
-                      <Typography
-                        sx={{
-                          color: '#00ff00',
-                          fontFamily: 'monospace',
-                        }}
-                      >
-                        {profileData.lastLogin}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                </Grid>
+                        Cancel Edit
+                      </Button>
+                      <CyberButton onClick={handleProfileSave}>
+                        Save Changes
+                      </CyberButton>
+                    </>
+                  ) : (
+                    <CyberButton onClick={handleProfileEdit}>
+                      Edit Profile
+                    </CyberButton>
+                  )}
+                </Box>
               </DashboardCard>
             )}
           </Container>
@@ -2167,8 +2331,10 @@ const TestButton = () => {
       <Dialog
         open={openShare}
         onClose={() => {
-          setOpenShare(false);
-          setSelectedRecipients([]);
+          if (!loading) {
+            setOpenShare(false);
+            setSelectedRecipients([]);
+          }
         }}
         PaperProps={{
           sx: {
@@ -2285,6 +2451,30 @@ const TestButton = () => {
                     </ListItem>
                   ))}
                 </List>
+                {loading && (
+                  <Box sx={{ width: '100%', mt: 2 }}>
+                    <LinearProgress 
+                      sx={{
+                        backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                        '& .MuiLinearProgress-bar': {
+                          backgroundColor: '#00ff00',
+                          boxShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                        },
+                      }}
+                    />
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: 'rgba(0, 255, 0, 0.7)', 
+                        mt: 1,
+                        textAlign: 'center',
+                        fontFamily: 'monospace'
+                      }}
+                    >
+                      Encrypting and sharing file...
+                    </Typography>
+                  </Box>
+                )}
               </>
             );
           })()}
@@ -2296,6 +2486,7 @@ const TestButton = () => {
               setSelectedRecipients([]);
             }}
             sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+            disabled={loading}
           >
             Cancel
           </Button>
@@ -2303,7 +2494,7 @@ const TestButton = () => {
             onClick={handleShareConfirm}
             size="small"
             sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
-            disabled={selectedRecipients.length === 0}
+            disabled={selectedRecipients.length === 0 || loading}
           >
             Share
           </CyberButton>
@@ -2676,23 +2867,34 @@ const TestButton = () => {
         }}
       >
         <DialogTitle sx={{ color: '#00ffff', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
-          Share Without One-Time Keys
+          No One-Time Keys Available
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
           <Typography sx={{ color: '#00ff00', mb: 2 }}>
-            {pendingShare?.recipient} has no available one-time keys. While you can still share the file, this is less secure than using one-time keys.
+            {pendingShare?.recipient} has no available one-time keys.
           </Typography>
-          <Typography sx={{ color: 'rgba(0, 255, 0, 0.7)', fontSize: '0.9rem' }}>
+          <Typography sx={{ color: 'rgba(0, 255, 0, 0.7)', fontSize: '0.9rem', mb: 2 }}>
+            While you can still share the file, this is less secure than using one-time keys. One-time keys provide forward secrecy and protect against future key compromises.
+          </Typography>
+          <Typography sx={{ color: 'rgba(255, 0, 0, 0.7)', fontSize: '0.9rem' }}>
             Would you like to proceed with sharing anyway?
           </Typography>
         </DialogContent>
-        <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
+        <DialogActions sx={{ 
+          borderTop: '1px solid rgba(0, 255, 0, 0.2)', 
+          p: 2,
+          display: 'flex',
+          justifyContent: 'space-between'
+        }}>
           <Button 
             onClick={() => {
               setOpenNoOPKConfirm(false);
               setPendingShare(null);
             }}
-            sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+            sx={{ 
+              color: 'rgba(0, 255, 0, 0.7)',
+              mr: 'auto'
+            }}
           >
             Cancel
           </Button>
@@ -2713,18 +2915,19 @@ const TestButton = () => {
 
                 // Derive X3DH shared secret without OPK
                 console.log('Deriving X3DH shared secret without OPK...');
-                const sharedSecret = await deriveX3DHSharedSecret({
-                  myIKPriv: b64ToUint8Array(myKeyBundle.IK_priv),
-                  myEKPriv: ephemeralKeyPair.privateKey,
-                  recipientIKPub: b64ToUint8Array(freshBundle.IK_pub),
-                  recipientSPKPub: b64ToUint8Array(freshBundle.SPK_pub),
-                  recipientSPKSignature: b64ToUint8Array(freshBundle.SPK_signature)
+                const sharedSecretResult = await deriveX3DHSharedSecret({
+                  myEd25519Priv: b64ToUint8Array(myKeyBundle.IK_priv),  // Pass the full 64-byte key
+                  myEKPriv: ephemeralKeyPair.secretKey,
+                  theirIKEd25519Pub: Uint8Array.from(atob(freshBundle.IK_pub), c => c.charCodeAt(0)),
+                  theirSPKPub: Uint8Array.from(atob(freshBundle.SPK_pub), c => c.charCodeAt(0)),
+                  theirSPKSignature: b64ToUint8Array(freshBundle.SPK_signature),
+                  theirOPKPub: undefined
                 });
                 console.log('Derived shared secret without OPK');
 
                 // Encrypt the file key with the shared secret
                 console.log('Encrypting file key with shared secret...');
-                const { ciphertext, nonce } = await encryptWithAESGCM(sharedSecret, fileKey);
+                const { encrypted, nonce } = await encryptWithXChaCha20Poly(sharedSecretResult.sharedSecret, fileKey);
 
                 // Request challenge for share_file
                 const shareChallengeResponse = await apiClient.post<{ status: string; nonce: string; detail?: string }>('/challenge', {
@@ -2738,7 +2941,7 @@ const TestButton = () => {
 
                 // Sign the encrypted file key
                 if (!secretKey) throw new Error('Secret key not available');
-                const shareSignature = await signChallenge(ciphertext, secretKey);
+                const shareSignature = await signChallenge(encrypted, secretKey);
 
                 // Send share_file request without OPK
                 await apiClient.post('/share_file', {
@@ -2747,7 +2950,7 @@ const TestButton = () => {
                   recipient_username: recipient,
                   EK_pub: uint8ArrayToB64(ephemeralKeyPair.publicKey),
                   IK_pub: myKeyBundle.IK_pub,
-                  encrypted_file_key: uint8ArrayToB64(ciphertext),
+                  encrypted_file_key: uint8ArrayToB64(encrypted),
                   file_key_nonce: uint8ArrayToB64(nonce),
                   SPK_pub: myKeyBundle.SPK_pub,
                   SPK_signature: myKeyBundle.SPK_signature,
@@ -2765,8 +2968,90 @@ const TestButton = () => {
                 setError(err.message || 'Failed to share file');
               }
             }}
+            sx={{
+              minWidth: 120,
+              fontSize: '0.9rem',
+              height: 32,
+              px: 2,
+              py: 0.5,
+              backgroundColor: 'rgba(255, 0, 0, 0.2)',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 0, 0, 0.3)'
+              }
+            }}
           >
             Share Anyway
+          </CyberButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* Unverified Sender Dialog */}
+      <Dialog
+        open={openUnverifiedSender}
+        onClose={() => {
+          setOpenUnverifiedSender(false);
+          setUnverifiedSenderFile(null);
+        }}
+        PaperProps={{
+          sx: {
+            background: 'rgba(0, 0, 0, 0.9)',
+            border: '1px solid rgba(0, 255, 0, 0.2)',
+            color: '#00ff00',
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#00ffff', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
+          Unverified Sender
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Typography sx={{ color: '#00ff00', mb: 2 }}>
+            The file you are trying to download was shared by {unverifiedSenderFile?.sender}, who is not a verified user.
+          </Typography>
+          <Typography sx={{ color: 'rgba(0, 255, 0, 0.7)', fontSize: '0.9rem', mb: 2 }}>
+            While you can still download the file, it is recommended to verify the sender first to ensure the file's authenticity and security.
+          </Typography>
+          <Typography sx={{ color: 'rgba(255, 0, 0, 0.7)', fontSize: '0.9rem' }}>
+            Would you like to proceed with downloading anyway?
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ 
+          borderTop: '1px solid rgba(0, 255, 0, 0.2)', 
+          p: 2,
+          display: 'flex',
+          justifyContent: 'space-between'
+        }}>
+          <Button 
+            onClick={() => {
+              setOpenUnverifiedSender(false);
+              setUnverifiedSenderFile(null);
+            }}
+            sx={{ 
+              color: 'rgba(0, 255, 0, 0.7)',
+              mr: 'auto'
+            }}
+          >
+            Cancel
+          </Button>
+          <CyberButton
+            onClick={async () => {
+              if (!unverifiedSenderFile) return;
+              setOpenUnverifiedSender(false);
+              setUnverifiedSenderFile(null);
+              await handleDownload(unverifiedSenderFile.id, true);
+            }}
+            sx={{
+              minWidth: 120,
+              fontSize: '0.9rem',
+              height: 32,
+              px: 2,
+              py: 0.5,
+              backgroundColor: 'rgba(255, 0, 0, 0.2)',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 0, 0, 0.3)'
+              }
+            }}
+          >
+            Download Anyway
           </CyberButton>
         </DialogActions>
       </Dialog>

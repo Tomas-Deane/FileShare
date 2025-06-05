@@ -23,7 +23,7 @@ void TofuManager::clear()
     }
 }
 
-QVector<VerifiedUser> TofuManager::verifiedUsers() const
+QVector<VerifiedUser> TofuManager::verifiedUsers()
 {
     return m_list;
 }
@@ -114,23 +114,17 @@ void TofuManager::loadFromRemote(const QString &encryptedB64,
 }
 
 void TofuManager::getEncryptedBackup(QString &outEncryptedB64,
-                                     QString &outNonceB64) const
+                                     QString &outNonceB64)
 {
-            //         The JSON must contain:
-            //           "IK_pub", "IK_priv",
-            //           "SPK_pub", "SPK_priv", "SPK_signature",
-            //           "OPKs_pub", "OPKs_priv",
-            //           "tofusers": [ …list of { "username", "ik_pub" }… ].
-            //
             QJsonObject backupObj;
 
-            // 1a) Identity keypair
+            // Identity keypair
             QByteArray ikPub   = m_authController->getIdentityPublicKey();
         QByteArray ikPriv  = m_authController->getIdentityPrivateKey();
         backupObj.insert("IK_pub",  QString::fromUtf8(ikPub.toBase64()));
         backupObj.insert("IK_priv", QString::fromUtf8(ikPriv.toBase64()));
 
-            // 1b) Signed pre‐key  signature
+            // Signed pre‐key  signature
             QByteArray spkPub  = m_authController->getSignedPreKeyPublic();
         QByteArray spkPriv = m_authController->getSignedPreKeyPrivate();
         QByteArray spkSig  = m_authController->getSignedPreKeySignature();
@@ -138,7 +132,7 @@ void TofuManager::getEncryptedBackup(QString &outEncryptedB64,
         backupObj.insert("SPK_priv",      QString::fromUtf8(spkPriv.toBase64()));
         backupObj.insert("SPK_signature", QString::fromUtf8(spkSig.toBase64()));
 
-            // 1c) One‐Time Pre‐Keys: public halves
+            // One‐Time Pre‐Keys: public halves
             QJsonArray opkPubArray;
         const auto &opkPubs = m_authController->getOneTimePreKeyPubs();
         for (const QByteArray &pub : opkPubs) {
@@ -154,9 +148,6 @@ void TofuManager::getEncryptedBackup(QString &outEncryptedB64,
             }
         backupObj.insert("OPKs_priv", opkPrivArray);
 
-            //    Each entry is an object { "username": …, "ik_pub": … }.  Note that
-            //    AuthController’s signup put an empty array here; now we repopulate
-            //    based on m_list, which TofuManager maintains whenever users are added/removed.
             QJsonArray tofusersArray;
         for (const auto &vu : m_list) {
                 QJsonObject entry;
@@ -166,7 +157,7 @@ void TofuManager::getEncryptedBackup(QString &outEncryptedB64,
             }
         backupObj.insert("tofusers", tofusersArray);
 
-            // 1f) Serialize the full JSON object to a compact QByteArray
+            // Serialize the full JSON object to a compact QByteArray
             QJsonDocument doc(backupObj);
         QByteArray    plain = doc.toJson(QJsonDocument::Compact);
 

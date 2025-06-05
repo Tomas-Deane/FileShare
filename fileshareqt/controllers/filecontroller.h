@@ -4,11 +4,12 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
-#include <QMap>
 #include <QByteArray>
 #include <QJsonObject>
+
 #include "icryptoservice.h"
 #include "inetworkmanager.h"
+#include "cache.h"
 
 class NetworkManager;
 class AuthController;
@@ -16,18 +17,23 @@ class AuthController;
 class FileController : public QObject
 {
     Q_OBJECT
+
 public:
-    explicit FileController(INetworkManager *networkManager,
+     FileController(INetworkManager *networkManager,
                             AuthController    *authController,
                             ICryptoService    *cryptoService,
                             QObject           *parent = nullptr);
 
-     void uploadFile(const QString &filename, const QByteArray &base64Contents);
-     void listFiles();
-     void downloadFile(qint64 fileId, const QString &filename);
-     void deleteFile(const QString &filename);
+    void uploadFile(const QString &filename, const QByteArray &base64Contents);
+    void listFiles();
+    void downloadFile(qint64 fileId, const QString &filename);
+    void deleteFile(const QString &filename);
 
-    const QMap<QString, QByteArray>& downloadCache() const { return m_downloadCache; }
+    // Return a const reference to our generic cache
+    const Cache<QString, QByteArray, true>& downloadCache() const
+    {
+        return m_downloadCache;
+    }
 
 signals:
     void uploadFileResult(bool success, const QString &message);
@@ -54,7 +60,8 @@ private:
     QString            m_pendingFileName;
     QByteArray         m_pendingFileContents;
     QString            m_selectedDownload;
-    QMap<QString, QByteArray> m_downloadCache;
+
+    Cache<QString, QByteArray, true> m_downloadCache;
 
     qint64       m_selectedDownloadId    = -1;
     QString      m_selectedDownloadName;

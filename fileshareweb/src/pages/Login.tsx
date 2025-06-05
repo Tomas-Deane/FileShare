@@ -103,6 +103,7 @@ const Login: React.FC = () => {
       if (!trimmedUsername) {
         throw new Error('Username cannot be empty or contain only spaces');
       }
+
       if (!isBrowserCompatible) {
         throw new Error('Your browser is not compatible with the required security features');
       }
@@ -529,7 +530,7 @@ const Login: React.FC = () => {
                 }}
                 sx={{
                   mt: 2,
-                  mb: 2,
+                  mb: 1,
                   width: '98%',
                   alignSelf: 'center',
                   '& .MuiOutlinedInput-root': {

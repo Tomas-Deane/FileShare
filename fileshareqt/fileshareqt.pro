@@ -4,17 +4,17 @@ CONFIG  += c++17
 
 # Homebrew on macOS
 macx {
-    INCLUDEPATH += /opt/homebrew/include
-    LIBS        += -L/opt/homebrew/lib -lsodium -lssl -lcrypto
+    INCLUDEPATH += /opt/homebrew/include /opt/homebrew/opt/curl/include
+    LIBS        += -L/opt/homebrew/lib -lcurl -lsodium -lssl -lcrypto
 }
+
 
 # Linux / other Unix
 unix:!macx {
-    INCLUDEPATH += /usr/local/include
-    LIBS        += -L/usr/local/lib -lsodium -lssl -lcrypto
+    INCLUDEPATH += /usr/include
+    LIBS        += -L/usr/lib -lcurl -lsodium -lssl -lcrypto
 }
 
-# --- add our MVC include dirs so #include "Foo.h" works ---
 INCLUDEPATH += \
     $$PWD/controllers \
     $$PWD/models      \
@@ -29,11 +29,11 @@ HEADERS += \
     models/crypto_utils.h \
     models/networkmanager.h \
     models/passwordstrength.h \
+    utils/cache.h \
     utils/fileentry.h \
     utils/services.h \
     utils/sharedfilemanager.h \
     utils/tofumanager.h \
-    utils/cryptoservice.h \
     utils/icryptoservice.h \
     utils/inetworkmanager.h \
     utils/logger.h \
@@ -51,7 +51,6 @@ SOURCES += \
     models/passwordstrength.cpp \
     utils/sharedfilemanager.cpp \
     utils/tofumanager.cpp \
-    utils/cryptoservice.cpp \
     utils/logger.cpp \
     controllers/verifycontroller.cpp \
     views/mainwindow.cpp
