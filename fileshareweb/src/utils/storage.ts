@@ -13,6 +13,7 @@ export interface PreKeyBundle {
 export interface RecipientKeyBundle {
     data: PreKeyBundle;  // Changed from string to PreKeyBundle
     verified: boolean;
+    lastVerified?: string;  // Add lastVerified property
 }
 
 export interface KeyBundle {

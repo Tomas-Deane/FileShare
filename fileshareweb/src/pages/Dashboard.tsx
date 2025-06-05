@@ -1633,8 +1633,6 @@ const TestButton = () => {
         <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
           <Container maxWidth="xl">
             {/* Header with Search */}
-            {debugSection}
-
             <Box sx={{ mb: 4 }}>
               <SearchField
                 fullWidth
@@ -1896,88 +1894,167 @@ const TestButton = () => {
               </DashboardCard>
               </>
             ) : activeTab === 'users' ? (
-              <DashboardCard>
-                <Box sx={{ mb: 3 }}>
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      color: '#00ffff',
-                      textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
-                      mb: 2,
-                    }}
-                  >
-                    Users
-                  </Typography>
-                  <SearchField
-                    fullWidth
-                    placeholder="Search users..."
-                    value={userSearchQuery}
-                    onChange={(e) => setUserSearchQuery(e.target.value)}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <SearchIcon sx={{ color: '#00ff00' }} />
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                </Box>
-                {loadingUsers ? (
-                  <Box sx={{ textAlign: 'center', py: 4 }}>
-                    <Typography sx={{ color: '#00ff00' }}>Loading users...</Typography>
-                  </Box>
-                ) : userError ? (
-                  <Alert severity="error" sx={{ bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
-                    {userError}
-                  </Alert>
-                ) : users.length === 0 ? (
-                  <Box sx={{ textAlign: 'center', py: 4 }}>
-                    <Typography sx={{ color: '#00ff00' }}>No users found.</Typography>
-                  </Box>
-                ) : (
-                  <List>
-                    {users
-                      .filter(user => user.username.toLowerCase().includes(userSearchQuery.toLowerCase()))
-                      .map((user) => (
-                        <ListItem
-                          key={user.id}
-                          sx={{
-                            border: '1px solid rgba(0, 255, 0, 0.2)',
-                            borderRadius: 1,
-                            mb: 1,
-                            display: 'flex',
-                            alignItems: 'center',
-                            '&:hover': {
-                              border: '1px solid rgba(0, 255, 0, 0.4)',
-                              backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                            },
-                          }}
-                        >
-                          <ListItemIcon>
-                            <PersonIcon sx={{ color: '#00ff00' }} />
-                          </ListItemIcon>
-                          <ListItemText
-                            primary={user.username}
-                            primaryTypographyProps={{
-                              sx: { color: '#00ffff', fontWeight: 'bold' },
+              <Grid container spacing={3}>
+                {/* Search Users Card */}
+                <Grid item xs={12} md={6}>
+                  <DashboardCard>
+                    <Box sx={{ mb: 3 }}>
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          color: '#00ffff',
+                          textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                          mb: 2,
+                        }}
+                      >
+                        Search Users
+                      </Typography>
+                      <SearchField
+                        fullWidth
+                        placeholder="Search users..."
+                        value={userSearchQuery}
+                        onChange={(e) => setUserSearchQuery(e.target.value)}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <SearchIcon sx={{ color: '#00ff00' }} />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </Box>
+                    {loadingUsers ? (
+                      <Box sx={{ textAlign: 'center', py: 4 }}>
+                        <Typography sx={{ color: '#00ff00' }}>Loading users...</Typography>
+                      </Box>
+                    ) : userError ? (
+                      <Alert severity="error" sx={{ bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
+                        {userError}
+                      </Alert>
+                    ) : users.length === 0 ? (
+                      <Box sx={{ textAlign: 'center', py: 4 }}>
+                        <Typography sx={{ color: '#00ff00' }}>
+                          {userSearchQuery ? 'No users found.' : 'Start typing to search users...'}
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <List>
+                        {users.map((user) => (
+                          <ListItem
+                            key={user.id}
+                            sx={{
+                              border: '1px solid rgba(0, 255, 0, 0.2)',
+                              borderRadius: 1,
+                              mb: 1,
+                              display: 'flex',
+                              alignItems: 'center',
+                              '&:hover': {
+                                border: '1px solid rgba(0, 255, 0, 0.4)',
+                                backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                              },
                             }}
-                          />
-                          <Box sx={{ ml: 'auto' }}>
-                            <Button
-                              variant="contained"
-                              color="primary"
-                              onClick={() => handleVerifyClick({ id: user.id, username: user.username })}
-                              size="small"
-                              sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+                          >
+                            <ListItemIcon>
+                              <PersonIcon sx={{ color: '#00ff00' }} />
+                            </ListItemIcon>
+                            <ListItemText
+                              primary={user.username}
+                              primaryTypographyProps={{
+                                sx: { color: '#00ffff', fontWeight: 'bold' },
+                              }}
+                            />
+                            <Box sx={{ ml: 'auto' }}>
+                              <Button
+                                variant="contained"
+                                color="primary"
+                                onClick={() => handleVerifyClick(user)}
+                                size="small"
+                                sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+                              >
+                                Verify
+                              </Button>
+                            </Box>
+                          </ListItem>
+                        ))}
+                      </List>
+                    )}
+                  </DashboardCard>
+                </Grid>
+
+                {/* Verified Users Card */}
+                <Grid item xs={12} md={6}>
+                  <DashboardCard>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          color: '#00ffff',
+                          textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                        }}
+                      >
+                        Verified Users
+                      </Typography>
+                      <IconButton 
+                        onClick={refreshUsers}
+                        sx={{ color: '#00ff00' }}
+                      >
+                        <RefreshIcon />
+                      </IconButton>
+                    </Box>
+                    {(() => {
+                      const myUsername = storage.getCurrentUser();
+                      const myKeyBundle = myUsername ? storage.getKeyBundle(myUsername) : null;
+                      const verifiedUsers = myKeyBundle?.recipients 
+                        ? Object.entries(myKeyBundle.recipients)
+                            .filter(([_, bundle]) => (bundle as RecipientKeyBundle).verified)
+                            .map(([username, bundle]) => ({
+                              username,
+                              verifiedAt: (bundle as RecipientKeyBundle).lastVerified || new Date().toISOString()
+                            }))
+                        : [];
+
+                      return verifiedUsers.length === 0 ? (
+                        <Box sx={{ textAlign: 'center', py: 4 }}>
+                          <Typography sx={{ color: '#00ff00' }}>
+                            No verified users yet. Search and verify users to start sharing files.
+                          </Typography>
+                        </Box>
+                      ) : (
+                        <List>
+                          {verifiedUsers.map((user) => (
+                            <ListItem
+                              key={user.username}
+                              sx={{
+                                border: '1px solid rgba(0, 255, 0, 0.2)',
+                                borderRadius: 1,
+                                mb: 1,
+                                '&:hover': {
+                                  border: '1px solid rgba(0, 255, 0, 0.4)',
+                                  backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                                },
+                              }}
                             >
-                              Verify
-                            </Button>
-                          </Box>
-                        </ListItem>
-                      ))}
-                  </List>
-                )}
-              </DashboardCard>
+                              <ListItemIcon>
+                                <VerifiedUserIcon sx={{ color: '#00ff00' }} />
+                              </ListItemIcon>
+                              <ListItemText
+                                primary={user.username}
+                                secondary={`Verified on ${new Date(user.verifiedAt).toLocaleDateString()}`}
+                                primaryTypographyProps={{
+                                  sx: { color: '#00ffff', fontWeight: 'bold' },
+                                }}
+                                secondaryTypographyProps={{
+                                  sx: { color: 'rgba(0, 255, 0, 0.7)' },
+                                }}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      );
+                    })()}
+                  </DashboardCard>
+                </Grid>
+              </Grid>
             ) : (
               <DashboardCard>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
