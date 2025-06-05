@@ -1,6 +1,8 @@
 #include "sharecontroller.h"
 #include "authcontroller.h"
 #include "crypto_utils.h"
+#include "tofumanager.h"     // for direct TOFU lookup
+#include <sodium.h>    // for crypto_sign_verify_detached
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -10,11 +12,13 @@
 ShareController::ShareController(INetworkManager *networkManager,
                                  AuthController  *authController,
                                  ICryptoService  *cryptoService,
+                                 TofuManager *tofuManager,
                                  QObject         *parent)
     : QObject(parent)
     , m_networkManager(networkManager)
     , m_authController(authController)
     , m_cryptoService(cryptoService)
+    , m_tofuManager(tofuManager)
 {
     // Listen for *any* challenge. We'll filter by operation name ourselves.
     connect(m_networkManager, &INetworkManager::challengeResult,
@@ -407,6 +411,53 @@ void ShareController::onGetPreKeyBundleResult(bool success,
         m_pendingOp = None;
         return;
     }
+
+    // TOFU check: see if we have a locally stored IK for this user
+    QVector<VerifiedUser> verified = m_tofuManager->verifiedUsers();
+    bool foundLocally = false;
+    for (const auto &vu : verified) {
+        if (vu.username == m_pendingRecipient) {
+            foundLocally = true;
+            // Compare the raw 32‐byte Ed25519 IK_pub as stored in TOFU (base64‐decoded)…
+            if (vu.ikPub != edTheirIk) {
+                // Mismatch → user might be a MITM; abort share
+                emit shareFileResult(false, "Recipient’s identity key does not match your TOFU record");
+                m_pendingOp = None;
+                return;
+            }
+            break;
+        }
+    }
+    if (!foundLocally) {
+        // No existing TOFU entry → first‐time share. Either prompt user to verify,
+        // or just warn them “You haven’t verified this user yet.”
+        emit shareFileResult(false, "Recipient not verified; please verify their identity first");
+        m_pendingOp = None;
+        return;
+    }
+
+    // Decode and stash the recipient’s SPK_pub and its signature ───
+    m_recipientSpkPub       = QByteArray::fromBase64(spk_pub_b64.toUtf8());
+    m_recipientSpkSignature = QByteArray::fromBase64(spk_sig_b64.toUtf8());
+    if (m_recipientSpkPub.size() != X25519_PUBKEY_LEN) {
+        emit shareFileResult(false, "Invalid recipient SPK_pub");
+        m_pendingOp = None;
+        return;
+    }
+
+    // verify: m_recipientSpkSignature is a signature (Ed25519) over m_recipientSpkPub ───
+    if (crypto_sign_verify_detached(
+            reinterpret_cast<const unsigned char*>(m_recipientSpkSignature.constData()),
+            reinterpret_cast<const unsigned char*>(m_recipientSpkPub.constData()),
+            static_cast<unsigned long long>(m_recipientSpkPub.size()),
+            reinterpret_cast<const unsigned char*>(edTheirIk.constData())
+            ) != 0)
+    {
+        emit shareFileResult(false, "Bad SPK signature (possible MITM!)");
+        m_pendingOp = None;
+        return;
+    }
+
     // Convert that Ed25519 pub → X25519 for DH
     QByteArray curveTheirIk;
     if (!CryptoUtils::ed25519PubKeyToCurve25519(curveTheirIk, edTheirIk)) {

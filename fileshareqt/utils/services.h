@@ -15,6 +15,7 @@ struct Services {
     std::unique_ptr<NetworkManager>   net;
     std::unique_ptr<CryptoService>    cs;
     std::unique_ptr<AuthController>   auth;
+    std::unique_ptr<TofuManager>      tofu;
     std::unique_ptr<ProfileController> profile;
     std::unique_ptr<FileController>   file;
     std::unique_ptr<VerifyController> verify;
@@ -25,10 +26,11 @@ struct Services {
         net     = std::make_unique<NetworkManager>();
         cs      = std::make_unique<CryptoService>();
         auth    = std::make_unique<AuthController>(net.get(), cs.get());
+        tofu    = std::make_unique<TofuManager>(cs.get(), auth.get());
         profile = std::make_unique<ProfileController>(net.get(), auth.get(), cs.get());
         file    = std::make_unique<FileController>(net.get(), auth.get(), cs.get());
-        verify  = std::make_unique<VerifyController>(net.get(), auth.get(), cs.get());
-        share   = std::make_unique<ShareController>(net.get(), auth.get(), cs.get());
+        verify  = std::make_unique<VerifyController>(net.get(), auth.get(), cs.get(), tofu.get());
+        share   = std::make_unique<ShareController>(net.get(), auth.get(), cs.get(), tofu.get());
     }
 };
 
