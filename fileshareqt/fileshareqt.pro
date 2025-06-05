@@ -4,9 +4,10 @@ CONFIG  += c++17
 
 # Homebrew on macOS
 macx {
-    INCLUDEPATH += /opt/homebrew/include
-    LIBS        += -L/opt/homebrew/lib -lsodium -lssl -lcrypto
+    INCLUDEPATH += /opt/homebrew/include /opt/homebrew/opt/curl/include
+    LIBS        += -L/opt/homebrew/lib -lcurl -lsodium -lssl -lcrypto
 }
+
 
 # Linux / other Unix
 unix:!macx {
