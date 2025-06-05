@@ -17,7 +17,6 @@ import { Visibility, VisibilityOff, Security, Lock, Person, Home } from '@mui/ic
 import { MatrixBackground } from '../components';
 import { apiClient } from '../utils/apiClient';
 import { signChallenge, decryptPrivateKey, derivePDK, decryptKEK, CryptoError } from '../utils/crypto';
-import { useAuth } from '../contexts/AuthContext';
 import { sodium } from '../utils/sodium';
 import { base64 } from '../utils/base64';
 import { storage } from '../utils/storage';
@@ -56,7 +55,6 @@ interface GetBackupTOFUResponse {
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
-  const { setAuthData } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
@@ -105,6 +103,7 @@ const Login: React.FC = () => {
       if (!trimmedUsername) {
         throw new Error('Username cannot be empty or contain only spaces');
       }
+
       if (!isBrowserCompatible) {
         throw new Error('Your browser is not compatible with the required security features');
       }
@@ -217,9 +216,10 @@ const Login: React.FC = () => {
                 IK_priv: backupData.IK_priv,
                 SPK_priv: backupData.SPK_priv,
                 OPKs_priv: backupData.OPKs_priv || [],
-                secretKey: backupData.secretKey,
-                pdk: backupData.pdk,
-                kek: backupData.kek,
+                secretKey: '', // Will be set after successful authentication
+                pdk: '', // Will be set after successful authentication
+                kek: '', // Will be set after successful authentication
+                recipients: backupData.recipients || {},
                 verified: true,
                 lastVerified: new Date().toISOString()
             };
@@ -259,29 +259,94 @@ const Login: React.FC = () => {
         return;
       }
 
-      // 6. Complete authentication
-      const loginSignature = await signChallenge(
-        base64.toByteArray(challengeResponse.nonce),
+      // Check OPK count and replenish if needed
+      console.log('Checking OPK count...');
+      const opkCountChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username: trimmedUsername,
+        operation: 'get_opk_count'
+      });
+      const opkCountSignature = sodium.crypto_sign_detached(
+        base64.toByteArray(opkCountChallengeResponse.nonce),
+        privateKey
+      );
+      const opkCountResponse = await apiClient.post<{ status: string; count: number }>(
+        '/get_opk_count',
+        {
+          username: trimmedUsername,
+          target_username: trimmedUsername,
+          nonce: opkCountChallengeResponse.nonce,
+          signature: btoa(String.fromCharCode.apply(null, Array.from(opkCountSignature)))
+        }
+      );
+
+      if (opkCountResponse.count <= 20) {
+        console.log(`Low OPK count (${opkCountResponse.count}), generating new OPKs...`);
+        // Generate 100 new OPKs
+        const newOPKs = [];
+        const newOPKs_priv = [];
+        for (let i = 0; i < 100; i++) {
+          const keypair = sodium.crypto_kx_keypair();
+          newOPKs.push(btoa(String.fromCharCode.apply(null, Array.from(keypair.publicKey))));
+          newOPKs_priv.push(btoa(String.fromCharCode.apply(null, Array.from(keypair.privateKey))));
+        }
+
+        // Add new OPKs to server
+        const addOPKsChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+          username: trimmedUsername,
+          operation: 'add_opks'
+        });
+        const addOPKsSignature = sodium.crypto_sign_detached(
+          base64.toByteArray(addOPKsChallengeResponse.nonce),
+          privateKey
+        );
+        await apiClient.post('/add_opks', {
+          username: trimmedUsername,
+          opks: newOPKs,
+          nonce: addOPKsChallengeResponse.nonce,
+          signature: btoa(String.fromCharCode.apply(null, Array.from(addOPKsSignature)))
+        });
+
+        // Update local key bundle with new OPKs
+        myKeyBundle.OPKs = [...myKeyBundle.OPKs, ...newOPKs];
+        myKeyBundle.OPKs_priv = [...myKeyBundle.OPKs_priv, ...newOPKs_priv];
+        storage.saveKeyBundle(myKeyBundle);
+        console.log('Added 100 new OPKs');
+      }
+
+      // 6. Complete authentication with fresh challenge
+      console.log('Getting fresh challenge for authentication...');
+      const authChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+        username: trimmedUsername,
+        operation: 'login'
+      });
+      const authSignature = await signChallenge(
+        base64.toByteArray(authChallengeResponse.nonce),
         privateKey
       );
       const authResponse = await apiClient.post<LoginResponse>('/authenticate', {
         username: trimmedUsername,
-        nonce: challengeResponse.nonce,
-        signature: btoa(String.fromCharCode.apply(null, Array.from(loginSignature)))
+        nonce: authChallengeResponse.nonce,
+        signature: btoa(String.fromCharCode.apply(null, Array.from(authSignature)))
       });
 
       if (authResponse.status === 'ok') {
-        // Decrypt KEK
+        // Decrypt KEK from login response
         const encryptedKek = Uint8Array.from(atob(challengeResponse.encrypted_kek), c => c.charCodeAt(0));
         const kekNonce = Uint8Array.from(atob(challengeResponse.kek_nonce), c => c.charCodeAt(0));
         const kek = await decryptKEK(encryptedKek, pdk, kekNonce);
 
-        setAuthData({
-          username: trimmedUsername,
-          secretKey: privateKey,
-          pdk: pdk,
-          kek: kek
-        });
+        // Convert keys to base64 for storage
+        const kekBase64 = btoa(String.fromCharCode.apply(null, Array.from(kek)));
+        const pdkBase64 = btoa(String.fromCharCode.apply(null, Array.from(pdk)));
+        const secretKeyBase64 = btoa(String.fromCharCode.apply(null, Array.from(privateKey)));
+        
+        // Update key bundle with derived keys
+        if (myKeyBundle) {
+          myKeyBundle.kek = kekBase64;
+          myKeyBundle.pdk = pdkBase64;
+          myKeyBundle.secretKey = secretKeyBase64;
+          storage.saveKeyBundle(myKeyBundle);
+        }
 
         navigate('/dashboard', { replace: true });
       } else {
@@ -465,7 +530,7 @@ const Login: React.FC = () => {
                 }}
                 sx={{
                   mt: 2,
-                  mb: 2,
+                  mb: 1,
                   width: '98%',
                   alignSelf: 'center',
                   '& .MuiOutlinedInput-root': {

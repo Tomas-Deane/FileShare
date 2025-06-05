@@ -8,13 +8,11 @@ import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 
-import { AuthProvider } from './contexts/AuthContext';
 
 const App: React.FC = () => {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <AuthProvider>
         <Router>
           <Routes>
             <Route path="/" element={<Landing />} />
@@ -23,7 +21,6 @@ const App: React.FC = () => {
             <Route path="/dashboard" element={<Dashboard />} />
           </Routes>
         </Router>
-      </AuthProvider>
     </ThemeProvider>
   );
 };

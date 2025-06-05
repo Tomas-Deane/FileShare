@@ -4,6 +4,8 @@
 #include <QByteArray>
 #include <QString>
 #include <QDebug>
+#include <sodium.h>
+
 
 #include "icryptoservice.h"
 

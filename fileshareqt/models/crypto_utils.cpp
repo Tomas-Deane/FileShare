@@ -212,3 +212,51 @@ QByteArray CryptoUtils::hkdfSha256(const QByteArray &salt,
 
     return QByteArray((char*)okm, outputLength);
 }
+
+bool CryptoUtils::ed25519PubKeyToCurve25519(QByteArray &curvePub,
+                                           const QByteArray &edPub)
+{
+    // edPub must be exactly crypto_sign_PUBLICKEYBYTES (32) bytes
+    if (edPub.size() != crypto_sign_PUBLICKEYBYTES) {
+        Logger::log("ed25519PubKeyToCurve25519: invalid Ed25519 pubkey length");
+        return false;
+    }
+    curvePub.resize(crypto_scalarmult_BYTES); // 32
+    if (crypto_sign_ed25519_pk_to_curve25519(
+            reinterpret_cast<unsigned char*>(curvePub.data()),
+            reinterpret_cast<const unsigned char*>(edPub.constData())
+        ) != 0)
+    {
+        Logger::log("ed25519PubKeyToCurve25519: conversion failed");
+        return false;
+    }
+    return true;
+}
+
+bool CryptoUtils::ed25519PrivKeyToCurve25519(QByteArray &curvePriv,
+                                            const QByteArray &edPriv)
+{
+    // edPriv must be exactly crypto_sign_SECRETKEYBYTES (64) bytes
+    if (edPriv.size() != crypto_sign_SECRETKEYBYTES) {
+        Logger::log("ed25519PrivKeyToCurve25519: invalid Ed25519 secret length");
+        return false;
+    }
+    curvePriv.resize(crypto_scalarmult_SCALARBYTES); // 32
+    if (crypto_sign_ed25519_sk_to_curve25519(
+            reinterpret_cast<unsigned char*>(curvePriv.data()),
+            reinterpret_cast<const unsigned char*>(edPriv.constData())
+        ) != 0)
+    {
+        Logger::log("ed25519PrivKeyToCurve25519: conversion failed");
+        return false;
+    }
+    return true;
+}
+
+void CryptoUtils::secureZeroMemory(QByteArray &data)
+{
+    if (!data.isEmpty()) {
+        sodium_memzero(data.data(), data.size());
+        data.clear();
+    }
+}

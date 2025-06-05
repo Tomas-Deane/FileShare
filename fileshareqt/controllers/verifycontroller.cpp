@@ -10,15 +10,14 @@
 VerifyController::VerifyController(INetworkManager  *networkManager,
                                    AuthController   *authController,
                                    ICryptoService   *cryptoService,
+                                   TofuManager *tofuManager,
                                    QObject          *parent)
     : QObject(parent)
     , m_networkManager(networkManager)
     , m_authController(authController)
     , m_cryptoService(cryptoService)
+    , m_tofuManager(tofuManager)
 {
-    //  use of "new" keyword // instantiates TofuManager
-    m_tofuManager = new TofuManager(m_cryptoService, m_authController, this);
-
     // Listen for challengeResult → onChallengeReceived
     connect(m_networkManager, &INetworkManager::challengeResult,
             this, &VerifyController::onChallengeReceived);

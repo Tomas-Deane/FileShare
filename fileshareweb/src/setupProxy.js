@@ -4,7 +4,7 @@ module.exports = function(app) {
   app.use(
     '/api',
     createProxyMiddleware({
-      target: 'https://gobbler.info:3220',
+      target: 'https://nrmc.gobbler.info:443',
       changeOrigin: true,
       secure: false, // This allows self-signed certificates
       proxyTimeout: 30000, // Increase timeout to 30 seconds
@@ -17,7 +17,7 @@ module.exports = function(app) {
         console.log('Proxy request:', {
           method: req.method,
           url: req.url,
-          target: 'https://gobbler.info:3220',
+          target: 'https://nrmc.gobbler.info:443',
           headers: proxyReq.getHeaders(),
           body: req.body
         });
@@ -60,7 +60,7 @@ module.exports = function(app) {
           method: req.method,
           stack: err.stack,
           host: req.headers.host,
-          target: 'https://gobbler.info:3220'
+          target: 'https://nrmc.gobbler.info:443'
         });
         
         // Send a more detailed error response

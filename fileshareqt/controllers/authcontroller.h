@@ -30,7 +30,8 @@ public:
     QByteArray getSessionSecretKey() const;
     QByteArray getSessionKek() const;
 
-    // After we load the backup, this will be overwritten with the backed‐up copy
+    // Expose *your* X25519 identity public key (IK_pub) to other controllers (for OOB code).
+    // After we load the backup, this will be overwritten with the backed‐up Ed25519 copy.
     QByteArray getIdentityPublicKey() const;
 
     // Expose the private half too

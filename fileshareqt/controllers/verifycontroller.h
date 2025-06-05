@@ -19,10 +19,11 @@ class TofuManager;
 class VerifyController : public QObject {
     Q_OBJECT
 public:
-     VerifyController(INetworkManager *networkManager,
-                              AuthController    *authController,
-                              ICryptoService    *cryptoService,
-                              QObject           *parent = nullptr);
+    explicit VerifyController(INetworkManager* net,
+                              AuthController*    auth,
+                              ICryptoService*    cs,
+                              TofuManager*       tofuMgr,
+                              QObject*           parent = nullptr);
 
     // Call when user switches to the Verify tab or logs in:
     void initializeVerifyPage();
