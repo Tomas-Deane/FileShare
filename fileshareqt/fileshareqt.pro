@@ -11,8 +11,8 @@ macx {
 
 # Linux / other Unix
 unix:!macx {
-    INCLUDEPATH += /usr/local/include
-    LIBS        += -L/usr/local/lib -lsodium -lssl -lcrypto
+    INCLUDEPATH += /usr/include
+    LIBS        += -L/usr/lib -lcurl -lsodium -lssl -lcrypto
 }
 
 # --- add our MVC include dirs so #include "Foo.h" works ---
