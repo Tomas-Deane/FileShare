@@ -1634,19 +1634,21 @@ const TestButton = () => {
           <Container maxWidth="xl">
             {/* Header with Search */}
             <Box sx={{ mb: 4 }}>
-              <SearchField
-                fullWidth
-                placeholder="Search files..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon sx={{ color: '#00ff00' }} />
-                    </InputAdornment>
-                  ),
-                }}
-              />
+              {activeTab === 'files' && (
+                <SearchField
+                  fullWidth
+                  placeholder="Search files..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon sx={{ color: '#00ff00' }} />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              )}
             </Box>
 
             {/* Content Area */}
@@ -1711,7 +1713,7 @@ const TestButton = () => {
                           </ListItemIcon>
                           <ListItemText
                             primary={f.name}
-                            secondary={`${f.type.toUpperCase()} • ${f.size} • ${f.date.toLocaleDateString('en-GB')} ${f.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                            secondary={`${f.type.toUpperCase()} • ${f.date.toLocaleDateString('en-GB')} ${f.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
                             primaryTypographyProps={{
                               sx: { color: '#00ffff', fontWeight: 'bold' },
                             }}
@@ -1781,7 +1783,7 @@ const TestButton = () => {
                           </ListItemIcon>
                           <ListItemText
                             primary={file.name}
-                            secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                            secondary={`${file.type.toUpperCase()} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
                             primaryTypographyProps={{
                               sx: { color: '#00ffff', fontWeight: 'bold' },
                             }}
@@ -2067,91 +2069,112 @@ const TestButton = () => {
                   >
                     Profile
                   </Typography>
-                  <CyberButton
-                    startIcon={<SettingsIcon />}
-                    onClick={() => setOpenProfileSettings(true)}
-                  >
-                    Settings
-                  </CyberButton>
                 </Box>
 
-                <Grid container spacing={3}>
-                  <Grid item xs={12} md={6}>
-                    <Paper
-                      sx={{
-                        p: 2,
-                        background: 'rgba(0, 0, 0, 0.5)',
-                        border: '1px solid rgba(0, 255, 0, 0.2)',
-                        borderRadius: 1,
-                      }}
-                    >
-                      <Typography
-                        sx={{
-                          color: '#00ffff',
-                          mb: 1,
-                          fontFamily: 'monospace',
-                        }}
+                <Box sx={{ mb: 3 }}>
+                  <TextField
+                    fullWidth
+                    label="Username"
+                    value={editMode ? editedProfile.username : profileData.username}
+                    onChange={(e) => setEditedProfile({ ...editedProfile, username: e.target.value })}
+                    disabled={!editMode}
+                    sx={{
+                      mb: 2,
+                      '& .MuiOutlinedInput-root': {
+                        '& fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.3)',
+                        },
+                        '&:hover fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.5)',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#00ff00',
+                        },
+                      },
+                      '& .MuiInputLabel-root': {
+                        color: 'rgba(0, 255, 0, 0.7)',
+                      },
+                      '& .MuiInputBase-input': {
+                        color: '#fff',
+                      },
+                    }}
+                  />
+
+                  <TextField
+                    fullWidth
+                    label="Email"
+                    value={editMode ? editedProfile.email : profileData.email}
+                    onChange={(e) => setEditedProfile({ ...editedProfile, email: e.target.value })}
+                    disabled={!editMode}
+                    sx={{
+                      mb: 2,
+                      '& .MuiOutlinedInput-root': {
+                        '& fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.3)',
+                        },
+                        '&:hover fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.5)',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#00ff00',
+                        },
+                      },
+                      '& .MuiInputLabel-root': {
+                        color: 'rgba(0, 255, 0, 0.7)',
+                      },
+                      '& .MuiInputBase-input': {
+                        color: '#fff',
+                      },
+                    }}
+                  />
+
+                  <TextField
+                    fullWidth
+                    label="New Password"
+                    type="password"
+                    disabled={!editMode}
+                    sx={{
+                      mb: 2,
+                      '& .MuiOutlinedInput-root': {
+                        '& fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.3)',
+                        },
+                        '&:hover fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.5)',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#00ff00',
+                        },
+                      },
+                      '& .MuiInputLabel-root': {
+                        color: 'rgba(0, 255, 0, 0.7)',
+                      },
+                      '& .MuiInputBase-input': {
+                        color: '#fff',
+                      },
+                    }}
+                  />
+                </Box>
+
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+                  {editMode ? (
+                    <>
+                      <Button
+                        onClick={handleProfileCancel}
+                        sx={{ color: 'rgba(255, 0, 0, 0.7)' }}
                       >
-                        Storage Usage
-                      </Typography>
-                      <Box sx={{ mb: 1 }}>
-                        <Typography
-                          sx={{
-                            color: '#00ff00',
-                            fontFamily: 'monospace',
-                          }}
-                        >
-                          {profileData.storageUsed} / {profileData.storageLimit}
-                        </Typography>
-                      </Box>
-                      <Box
-                        sx={{
-                          height: 8,
-                          background: 'rgba(0, 255, 0, 0.1)',
-                          borderRadius: 4,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <Box
-                          sx={{
-                            height: '100%',
-                            width: '25%',
-                            background: 'linear-gradient(90deg, #00ff00, #00ffff)',
-                            borderRadius: 4,
-                          }}
-                        />
-                      </Box>
-                    </Paper>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <Paper
-                      sx={{
-                        p: 2,
-                        background: 'rgba(0, 0, 0, 0.5)',
-                        border: '1px solid rgba(0, 255, 0, 0.2)',
-                        borderRadius: 1,
-                      }}
-                    >
-                      <Typography
-                        sx={{
-                          color: '#00ffff',
-                          mb: 1,
-                          fontFamily: 'monospace',
-                        }}
-                      >
-                        Last Login
-                      </Typography>
-                      <Typography
-                        sx={{
-                          color: '#00ff00',
-                          fontFamily: 'monospace',
-                        }}
-                      >
-                        {profileData.lastLogin}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                </Grid>
+                        Cancel Edit
+                      </Button>
+                      <CyberButton onClick={handleProfileSave}>
+                        Save Changes
+                      </CyberButton>
+                    </>
+                  ) : (
+                    <CyberButton onClick={handleProfileEdit}>
+                      Edit Profile
+                    </CyberButton>
+                  )}
+                </Box>
               </DashboardCard>
             )}
           </Container>
