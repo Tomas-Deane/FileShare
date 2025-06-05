@@ -10,10 +10,7 @@
 #include <curl/curl.h>
 #include <QVariant>
 
-// ------------------------------------------------------------------------------------------------
 // Constructor & Destructor: initialize and cleanup libcurl
-// ------------------------------------------------------------------------------------------------
-
 NetworkManager::NetworkManager(QObject *parent)
     : INetworkManager(parent)
     , curl(nullptr)

@@ -15,7 +15,6 @@ unix:!macx {
     LIBS        += -L/usr/lib -lcurl -lsodium -lssl -lcrypto
 }
 
-# --- add our MVC include dirs so #include "Foo.h" works ---
 INCLUDEPATH += \
     $$PWD/controllers \
     $$PWD/models      \

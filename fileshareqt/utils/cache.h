@@ -5,12 +5,8 @@
 #include <QHash>
 #include <QString>
 
-// A simple, generic cache that maps from Key→Value.
-template<
-    typename Key,
-    typename Value,
-    bool UseHash = true
-    >
+// A simple, generic cache that maps from Key to Value.
+template<typename Key, typename Value, bool UseHash = true>
 class Cache;
 
 // TEMPLATE CLASS
@@ -52,41 +48,6 @@ public:
 private:
     QObject*            m_parent;
     QHash<Key, Value>   m_storage;
-};
-
-// for QMap-based cache
-template<typename Key, typename Value>
-class Cache<Key, Value, false> {
-public:
-    Cache(QObject* parent = nullptr) : m_parent(parent) {}
-
-    bool contains(const Key& key) {
-        return m_storage.contains(key);
-    }
-
-    void insert(const Key& key, const Value& value) {
-        m_storage.insert(key, value);
-    }
-
-    Value value(const Key& key) {
-        return m_storage.value(key);
-    }
-
-    void remove(const Key& key) {
-        m_storage.remove(key);
-    }
-
-    void clear() {
-        m_storage.clear();
-    }
-
-    int size() {
-        return m_storage.size();
-    }
-
-private:
-    QObject*           m_parent;
-    QMap<Key, Value>   m_storage;
 };
 
 #endif // CACHE_H

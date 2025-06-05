@@ -35,8 +35,6 @@ public:
     // register a global formatter (called inside every log call)
     static void registerFormatter(LogFormatter fmt);
 
-
-
     static void demonstratePointers();
 
     static std::shared_ptr<std::vector<QString>> getHistory();
