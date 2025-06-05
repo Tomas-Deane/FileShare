@@ -73,37 +73,11 @@ void Logger::log(const QString &msg) {
     Logger::instance().logInternal(toWrite);
 }
 
-// Log with a one-off formatter (demonstrates passing a function pointer as an argument)
-void Logger::logWithFormatter(const QString &msg, LogFormatter fmt)
-{
-    if (fmt) {
-        QString transformed = fmt(msg);
-        Logger::instance().logInternal(transformed);
-    } else {
-        // If fmt == nullptr, behave like regular log:
-        Logger::instance().logInternal(msg);
-    }
-}
-
 // Register (or replace) a global formatter
 void Logger::registerFormatter(LogFormatter fmt)
 {
+    // setting the registered formatter (prefixFormatter)
     s_formatter = fmt;
-}
-
-// return one of two built-in formatters based on a flag
-Logger::LogFormatter Logger::chooseFormatter(bool uppercase)
-{
-    // Forward‐declare the two static “formatter” helpers below:
-    static auto identityFormatter = [](const QString &in) -> QString {
-        return in;
-    };
-
-    static auto uppercaseFormatter = [](const QString &in) -> QString {
-        return in.toUpper();
-    };
-
-    return uppercase ? uppercaseFormatter : identityFormatter;
 }
 
 // internal implementation that actually writes to file + console
@@ -116,6 +90,7 @@ void Logger::logInternal(const QString &msg)
     logStream << ts << ": " << msg << "\n";
     logStream.flush();
 
+// this pointer
     if (this->consoleWidget) {
         this->consoleWidget->appendPlainText(ts + ": " + msg);
     }
@@ -123,7 +98,7 @@ void Logger::logInternal(const QString &msg)
 
 std::shared_ptr<std::vector<QString>> Logger::getHistory()
 {
-    // If initialize(...) hasn’t run yet, create it on‐demand
+    // If initialise hasn’t run yet, create it on‐demand
     if (!s_history) {
         s_history = std::make_shared<std::vector<QString>>();
     }
@@ -131,24 +106,14 @@ std::shared_ptr<std::vector<QString>> Logger::getHistory()
 }
 
 // demonstration function for pointers and/vs arrays
-void Logger::demonstratePointers() {
+void Logger::demonstratePointers()
+{
     int vals[] = { 10, 20, 30, 40, 50 };
     int *ptr = vals;
 
-    QString s = "Pointer vs. array demo: ";
-    int length = static_cast<int>(sizeof(vals) / sizeof(vals[0]));
-    for (int i = 0; i < length; ++i) {
-        int viaIndex    = vals[i];
-        int viaPointer  = *(ptr + i);
+    // access element 0 in two ways
+    int viaIndex   = vals[0];
+    int viaPointer = *(ptr);
 
-        s += QString("arr[%1]=%2, *(arr+%1)=%3")
-                 .arg(i)
-                 .arg(viaIndex)
-                 .arg(viaPointer);
-
-        if (i < length - 1) {
-            s += "; ";
-        }
-    }
-    Logger::log(s);
+    qDebug() << "vals[0] =" << viaIndex << ", *(ptr+0) =" << viaPointer;
 }

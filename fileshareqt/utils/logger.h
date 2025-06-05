@@ -12,6 +12,9 @@ class Logger {
 public:
     // still keep these two static for everyone else to call
     static void initialise(QPlainTextEdit *console);
+
+
+    // function overlloading
     static void log(const QString &msg);
     static void log(QByteArray &msg);
 
@@ -29,14 +32,10 @@ public:
     // function pointer that takes a raw QString and returns a formatted QString
     using LogFormatter = QString (*)(const QString &raw);
 
-    // log with an  formatter (passed as a function pointer)
-    static void logWithFormatter(const QString &msg, LogFormatter fmt);
-
     // register a global formatter (called inside every log call)
     static void registerFormatter(LogFormatter fmt);
 
-    // choose a formatter at runtime (returns a function pointer)
-    static LogFormatter chooseFormatter(bool uppercase);
+
 
     static void demonstratePointers();
 
@@ -64,11 +63,11 @@ private:
 
     void logInternal(const QString &msg);
 
-    // hold the currently‐registered formatter (default = identity)
+    // hold the currently‐registered formatter
     static LogFormatter s_formatter;
 };
 
-// same “Log::message” shorthands as before:
+// log:message shorthands
 namespace Log {
 inline void message(const QString &s) {
     Logger::log(s);

@@ -20,7 +20,7 @@ public:
     Cache(QObject* parent = nullptr) : m_parent(parent) {}
 
     // Return true if key is present
-    bool contains(const Key& key) {
+    bool contains(const Key& key) const{
         return m_storage.contains(key);
     }
 
@@ -30,7 +30,7 @@ public:
     }
 
     // Retrieve (returns default‐constructed Value if missing)
-    Value value(const Key& key) {
+    Value value(const Key& key) const{
         return m_storage.value(key);
     }
 

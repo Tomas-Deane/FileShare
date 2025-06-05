@@ -201,7 +201,9 @@ void AuthController::signup(const QString &username, const QString &password)
     }
     req.insert("one_time_pre_keys", opkArray);
 
-    // example implementations of our overloaded functions from logger.h
+    // example implementations of our overloaded functions from logger.h // also the call site for our inline message() functions
+    QByteArray array;
+    Log::message(array);
     Log::message("=== EXAMPLE OF OVERLOADED FUNCTION ===");
     Log::message(req);              //  thanks to our template overload, this prints the QJsonObject
     Log::message("As raw JSON:");

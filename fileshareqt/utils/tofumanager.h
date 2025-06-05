@@ -37,9 +37,6 @@ public:
     void getEncryptedBackup(QString &outEncryptedB64,
                             QString &outNonceB64);
 
-    // Add a newly verified user (username + raw 32‐byte ikPub). emits listChanged() and backupNeeded().
-    // PASS BY REFERENCE | we pass by reference here as both values *could* be large.
-    // we want to avoid making large unnecessary copies, even if we do not intend to modify the caller's original
     void addVerifiedUser(const QString     &username,
                          const QByteArray  &ikPub);
 

@@ -31,10 +31,11 @@ struct FileEntry {
         , id(i)
     {}
 
-    //  overload “less than” so you can sort by filename when listing files
-    bool operator<(const FileEntry &other) const {
+    //  operator overload “less than” so you can sort by filename when listing files
+    bool operator<(const FileEntry &other) {
         return filename < other.filename;
     }
+
 };
 
 #endif // FILEENTRY_H
