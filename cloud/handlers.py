@@ -1086,6 +1086,8 @@ def preview_shared_file_handler(req: PreviewSharedFileRequest, db: models.UserDB
     try:
         Ed25519PublicKey.from_public_bytes(user["public_key"]) \
             .verify(signature, str(req.share_id).encode())
+        # Delete the challenge after successful verification to prevent replay attacks
+        db.delete_challenge(user_id)
     except InvalidSignature:
         db.delete_challenge(user_id)
         raise HTTPException(401, "Bad signature")
