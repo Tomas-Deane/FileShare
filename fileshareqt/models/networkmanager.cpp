@@ -5,6 +5,10 @@
 #include <QJsonArray>
 #include <QStringList>
 
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/x509v3.h>    // for hostname verification
+
 // POSIX sockets
 #include <netdb.h>
 #include <sys/socket.h>
@@ -27,10 +31,21 @@ void NetworkManager::initOpenSSL()
 {
     SSL_load_error_strings();
     OpenSSL_add_ssl_algorithms();
+
+    // Create a TLS client‐mode context
     ssl_ctx = SSL_CTX_new(TLS_client_method());
     if (!ssl_ctx) {
         Logger::log("Failed to create SSL_CTX");
+        return;
     }
+
+    //    Load the system default CA bundle so we trust standard CAs on Ubuntu/macOS.
+    if (SSL_CTX_set_default_verify_paths(ssl_ctx) != 1) {
+        Logger::log("Warning: could not load default system trust store");
+    }
+
+    // 2) Tell OpenSSL to verify the server certificate, and fail if it cannot be verified
+    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, nullptr);
 }
 
 void NetworkManager::cleanupOpenSSL()
@@ -78,15 +93,56 @@ SSL *NetworkManager::openSslConnection(const QString &host,
         return nullptr;
     }
 
+    // Create a new SSL object for this connection
     SSL *ssl = SSL_new(ssl_ctx);
-    SSL_set_fd(ssl, sock);
-    if (SSL_connect(ssl) <= 0) {
-        SSL_free(ssl);
+    if (!ssl) {
         ::close(sock);
-        errorMsg = "SSL handshake failed";
+        errorMsg = "SSL_new failed";
         emit connectionStatusChanged(false);
         return nullptr;
     }
+
+    // Attach the socket
+    SSL_set_fd(ssl, sock);
+
+    // 4) Enable SNI (Server Name Indication) so that the server can present the correct
+    //    certificate if it is using name‐based virtual hosting.
+    if (!SSL_set_tlsext_host_name(ssl, host.toUtf8().constData())) {
+        Logger::log("Warning: SSL_set_tlsext_host_name failed");
+        // not necessarily fatal, but most servers expect it
+    }
+
+    // 5) Before doing SSL_connect(), tell OpenSSL to check the hostname after the handshake.
+    X509_VERIFY_PARAM *param = SSL_get0_param(ssl);
+    // Enforce that the certificate Common Name (or SAN) must match 'host'
+    X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+    if (!X509_VERIFY_PARAM_set1_host(param, host.toUtf8().constData(), 0)) {
+        Logger::log("Warning: failed to set hostname for verification");
+    }
+
+    // Perform the TLS handshake
+    if (SSL_connect(ssl) <= 0) {
+        long err = SSL_get_error(ssl, -1);
+        SSL_free(ssl);
+        ::close(sock);
+        errorMsg = QString("SSL handshake failed (error code %1)").arg(err);
+        emit connectionStatusChanged(false);
+        return nullptr;
+    }
+
+    // 6) After handshake, check that the certificate was verified successfully
+    long verify_result = SSL_get_verify_result(ssl);
+    if (verify_result != X509_V_OK) {
+        // The verify_result is a numeric code from X509_V_OK on success
+        const char *msg = X509_verify_cert_error_string(verify_result);
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        ::close(sock);
+        errorMsg = QString("Certificate verification failed: %1").arg(msg);
+        emit connectionStatusChanged(false);
+        return nullptr;
+    }
+    // ---------------------------------------------------------------------------------
 
     sockOut = sock;
     emit connectionStatusChanged(true);
