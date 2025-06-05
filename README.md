@@ -154,7 +154,15 @@ FileShare is a secure, end-to-end encrypted file-sharing platform with both a Qt
    - Python 3.8 or higher
    - pip (Python package manager)
    - OpenSSL for certificate generation
-   - PostgreSQL (for database)
+   - MySQL Server (for database)
+   - Required Python packages (automatically installed via requirements.txt):
+     - Flask and extensions (Web framework)
+     - SQLAlchemy (Database ORM)
+     - PyMySQL (MySQL connector)
+     - cryptography (Cryptographic operations)
+     - JWT (Authentication)
+     - bcrypt (Password hashing)
+     - python-magic (File type detection)
 
 2. **Installation**
    ```bash
@@ -205,7 +213,7 @@ FileShare is a secure, end-to-end encrypted file-sharing platform with both a Qt
      - Verify certificate paths and permissions
      - Check certificate validity and expiration
    - Database connection errors:
-     - Verify PostgreSQL is running
+     - Verify MySQL is running
      - Check database credentials
      - Ensure database exists
    - Port conflicts:
