@@ -284,6 +284,8 @@ const Dashboard: React.FC = () => {
   const [loadingSharedFiles, setLoadingSharedFiles] = useState(false);
   const [openNoOPKConfirm, setOpenNoOPKConfirm] = useState(false);
   const [pendingShare, setPendingShare] = useState<{recipient: string, fileKey: Uint8Array, freshBundle: any} | null>(null);
+  const [openUnverifiedSender, setOpenUnverifiedSender] = useState(false);
+  const [unverifiedSenderFile, setUnverifiedSenderFile] = useState<{id: number, sender: string} | null>(null);
 
   // Get current user and their key bundle
   const currentUsername = storage.getCurrentUser();
@@ -423,6 +425,32 @@ const Dashboard: React.FC = () => {
       const filename = isShared 
         ? (file as SharedFileData).filename 
         : (file as FileData).name;
+
+      // For shared files, check if the sender is verified
+      if (isShared) {
+        const sharedFile = file as SharedFileData;
+        const myUsername = storage.getCurrentUser();
+        if (!myUsername) {
+          throw new Error('No current user found');
+        }
+        const myKeyBundle = storage.getKeyBundle(myUsername);
+        if (!myKeyBundle) {
+          throw new Error('Key bundle not found');
+        }
+
+        // Check if the sender is verified
+        const isSenderVerified = myKeyBundle.recipients?.[sharedFile.shared_by]?.verified;
+        if (!isSenderVerified) {
+          // Set the unverified sender file info and show dialog
+          setUnverifiedSenderFile({
+            id: fileId,
+            sender: sharedFile.shared_by
+          });
+          setOpenUnverifiedSender(true);
+          setLoading(false);
+          return;
+        }
+      }
 
       // Step 1: Request challenge
       const challengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
@@ -1279,26 +1307,27 @@ const TestButton = () => {
         console.log(`Processing recipient: ${recipientUsername}`);
         
         if(test_empty_opk_share){
-        // Clear recipient's OPKs first (for testing)
-        console.log('Clearing recipient OPKs...');
-        const clearOPKsChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
-          username,
-          operation: 'clear_user_opks'
-        });
+          // Clear recipient's OPKs first (for testing)
+          console.log('Clearing recipient OPKs...');
+          const clearOPKsChallengeResponse = await apiClient.post<ChallengeResponse>('/challenge', {
+            username,
+            operation: 'clear_user_opks'
+          });
 
-        if (clearOPKsChallengeResponse.status !== 'challenge') {
-          throw new Error('Failed to get challenge for clearing OPKs');
+          if (clearOPKsChallengeResponse.status !== 'challenge') {
+            throw new Error('Failed to get challenge for clearing OPKs');
+          }
+
+          const clearOPKsSignature = await signChallenge(b64ToUint8Array(clearOPKsChallengeResponse.nonce), secretKey!);
+          await apiClient.post('/clear_user_opks', {
+            username,
+            target_username: recipientUsername,
+            nonce: clearOPKsChallengeResponse.nonce,
+            signature: uint8ArrayToB64(clearOPKsSignature)
+          });
+          console.log('Cleared recipient OPKs');
         }
 
-        const clearOPKsSignature = await signChallenge(b64ToUint8Array(clearOPKsChallengeResponse.nonce), secretKey!);
-        await apiClient.post('/clear_user_opks', {
-          username,
-          target_username: recipientUsername,
-          nonce: clearOPKsChallengeResponse.nonce,
-          signature: uint8ArrayToB64(clearOPKsSignature)
-        });
-        console.log('Cleared recipient OPKs');
-      }
         // 2. Get recipient's verified pre-key bundle from local storage
         const myUsername = storage.getCurrentUser();
         if (!myUsername) throw new Error('No current user found');
@@ -1368,8 +1397,17 @@ const TestButton = () => {
         } catch (err: any) {
           // Check for both 404 and "No OPK available" message
           if (err.response?.status === 404 || err.message === 'No OPK available' || err.response?.data?.detail === 'No OPK available') {
-            console.log('No OPK available, proceeding without OPK');
-            // Continue execution with opkData as undefined
+            console.log('No OPK available, showing warning dialog');
+            // Show warning dialog for no OPK
+            setPendingShare({
+              recipient: recipientUsername,
+              fileKey,
+              freshBundle
+            });
+            setOpenNoOPKConfirm(true);
+            setLoading(false);
+            return;
+
           } else {
             console.error('Error getting OPK:', err);
             throw err;
@@ -1633,22 +1671,22 @@ const TestButton = () => {
         <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
           <Container maxWidth="xl">
             {/* Header with Search */}
-            {debugSection}
-
             <Box sx={{ mb: 4 }}>
-              <SearchField
-                fullWidth
-                placeholder="Search files..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon sx={{ color: '#00ff00' }} />
-                    </InputAdornment>
-                  ),
-                }}
-              />
+              {activeTab === 'files' && (
+                <SearchField
+                  fullWidth
+                  placeholder="Search files..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon sx={{ color: '#00ff00' }} />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              )}
             </Box>
 
             {/* Content Area */}
@@ -1713,7 +1751,7 @@ const TestButton = () => {
                           </ListItemIcon>
                           <ListItemText
                             primary={f.name}
-                            secondary={`${f.type.toUpperCase()} • ${f.size} • ${f.date.toLocaleDateString('en-GB')} ${f.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                            secondary={`${f.type.toUpperCase()} • ${f.date.toLocaleDateString('en-GB')} ${f.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
                             primaryTypographyProps={{
                               sx: { color: '#00ffff', fontWeight: 'bold' },
                             }}
@@ -1783,7 +1821,7 @@ const TestButton = () => {
                           </ListItemIcon>
                           <ListItemText
                             primary={file.name}
-                            secondary={`${file.type.toUpperCase()} • ${file.size} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                            secondary={`${file.type.toUpperCase()} • ${file.date.toLocaleDateString('en-GB')} ${file.date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
                             primaryTypographyProps={{
                               sx: { color: '#00ffff', fontWeight: 'bold' },
                             }}
@@ -1896,88 +1934,167 @@ const TestButton = () => {
               </DashboardCard>
               </>
             ) : activeTab === 'users' ? (
-              <DashboardCard>
-                <Box sx={{ mb: 3 }}>
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      color: '#00ffff',
-                      textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
-                      mb: 2,
-                    }}
-                  >
-                    Users
-                  </Typography>
-                  <SearchField
-                    fullWidth
-                    placeholder="Search users..."
-                    value={userSearchQuery}
-                    onChange={(e) => setUserSearchQuery(e.target.value)}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <SearchIcon sx={{ color: '#00ff00' }} />
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                </Box>
-                {loadingUsers ? (
-                  <Box sx={{ textAlign: 'center', py: 4 }}>
-                    <Typography sx={{ color: '#00ff00' }}>Loading users...</Typography>
-                  </Box>
-                ) : userError ? (
-                  <Alert severity="error" sx={{ bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
-                    {userError}
-                  </Alert>
-                ) : users.length === 0 ? (
-                  <Box sx={{ textAlign: 'center', py: 4 }}>
-                    <Typography sx={{ color: '#00ff00' }}>No users found.</Typography>
-                  </Box>
-                ) : (
-                  <List>
-                    {users
-                      .filter(user => user.username.toLowerCase().includes(userSearchQuery.toLowerCase()))
-                      .map((user) => (
-                        <ListItem
-                          key={user.id}
-                          sx={{
-                            border: '1px solid rgba(0, 255, 0, 0.2)',
-                            borderRadius: 1,
-                            mb: 1,
-                            display: 'flex',
-                            alignItems: 'center',
-                            '&:hover': {
-                              border: '1px solid rgba(0, 255, 0, 0.4)',
-                              backgroundColor: 'rgba(0, 255, 0, 0.05)',
-                            },
-                          }}
-                        >
-                          <ListItemIcon>
-                            <PersonIcon sx={{ color: '#00ff00' }} />
-                          </ListItemIcon>
-                          <ListItemText
-                            primary={user.username}
-                            primaryTypographyProps={{
-                              sx: { color: '#00ffff', fontWeight: 'bold' },
+              <Grid container spacing={3}>
+                {/* Search Users Card */}
+                <Grid item xs={12} md={6}>
+                  <DashboardCard>
+                    <Box sx={{ mb: 3 }}>
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          color: '#00ffff',
+                          textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                          mb: 2,
+                        }}
+                      >
+                        Search Users
+                      </Typography>
+                      <SearchField
+                        fullWidth
+                        placeholder="Search users..."
+                        value={userSearchQuery}
+                        onChange={(e) => setUserSearchQuery(e.target.value)}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <SearchIcon sx={{ color: '#00ff00' }} />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </Box>
+                    {loadingUsers ? (
+                      <Box sx={{ textAlign: 'center', py: 4 }}>
+                        <Typography sx={{ color: '#00ff00' }}>Loading users...</Typography>
+                      </Box>
+                    ) : userError ? (
+                      <Alert severity="error" sx={{ bgcolor: 'rgba(255, 0, 0, 0.1)' }}>
+                        {userError}
+                      </Alert>
+                    ) : users.length === 0 ? (
+                      <Box sx={{ textAlign: 'center', py: 4 }}>
+                        <Typography sx={{ color: '#00ff00' }}>
+                          {userSearchQuery ? 'No users found.' : 'Start typing to search users...'}
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <List>
+                        {users.map((user) => (
+                          <ListItem
+                            key={user.id}
+                            sx={{
+                              border: '1px solid rgba(0, 255, 0, 0.2)',
+                              borderRadius: 1,
+                              mb: 1,
+                              display: 'flex',
+                              alignItems: 'center',
+                              '&:hover': {
+                                border: '1px solid rgba(0, 255, 0, 0.4)',
+                                backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                              },
                             }}
-                          />
-                          <Box sx={{ ml: 'auto' }}>
-                            <Button
-                              variant="contained"
-                              color="primary"
-                              onClick={() => handleVerifyClick({ id: user.id, username: user.username })}
-                              size="small"
-                              sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+                          >
+                            <ListItemIcon>
+                              <PersonIcon sx={{ color: '#00ff00' }} />
+                            </ListItemIcon>
+                            <ListItemText
+                              primary={user.username}
+                              primaryTypographyProps={{
+                                sx: { color: '#00ffff', fontWeight: 'bold' },
+                              }}
+                            />
+                            <Box sx={{ ml: 'auto' }}>
+                              <Button
+                                variant="contained"
+                                color="primary"
+                                onClick={() => handleVerifyClick(user)}
+                                size="small"
+                                sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
+                              >
+                                Verify
+                              </Button>
+                            </Box>
+                          </ListItem>
+                        ))}
+                      </List>
+                    )}
+                  </DashboardCard>
+                </Grid>
+
+                {/* Verified Users Card */}
+                <Grid item xs={12} md={6}>
+                  <DashboardCard>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          color: '#00ffff',
+                          textShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                        }}
+                      >
+                        Verified Users
+                      </Typography>
+                      <IconButton 
+                        onClick={refreshUsers}
+                        sx={{ color: '#00ff00' }}
+                      >
+                        <RefreshIcon />
+                      </IconButton>
+                    </Box>
+                    {(() => {
+                      const myUsername = storage.getCurrentUser();
+                      const myKeyBundle = myUsername ? storage.getKeyBundle(myUsername) : null;
+                      const verifiedUsers = myKeyBundle?.recipients 
+                        ? Object.entries(myKeyBundle.recipients)
+                            .filter(([_, bundle]) => (bundle as RecipientKeyBundle).verified)
+                            .map(([username, bundle]) => ({
+                              username,
+                              verifiedAt: (bundle as RecipientKeyBundle).lastVerified || new Date().toISOString()
+                            }))
+                        : [];
+
+                      return verifiedUsers.length === 0 ? (
+                        <Box sx={{ textAlign: 'center', py: 4 }}>
+                          <Typography sx={{ color: '#00ff00' }}>
+                            No verified users yet. Search and verify users to start sharing files.
+                          </Typography>
+                        </Box>
+                      ) : (
+                        <List>
+                          {verifiedUsers.map((user) => (
+                            <ListItem
+                              key={user.username}
+                              sx={{
+                                border: '1px solid rgba(0, 255, 0, 0.2)',
+                                borderRadius: 1,
+                                mb: 1,
+                                '&:hover': {
+                                  border: '1px solid rgba(0, 255, 0, 0.4)',
+                                  backgroundColor: 'rgba(0, 255, 0, 0.05)',
+                                },
+                              }}
                             >
-                              Verify
-                            </Button>
-                          </Box>
-                        </ListItem>
-                      ))}
-                  </List>
-                )}
-              </DashboardCard>
+                              <ListItemIcon>
+                                <VerifiedUserIcon sx={{ color: '#00ff00' }} />
+                              </ListItemIcon>
+                              <ListItemText
+                                primary={user.username}
+                                secondary={`Verified on ${new Date(user.verifiedAt).toLocaleDateString()}`}
+                                primaryTypographyProps={{
+                                  sx: { color: '#00ffff', fontWeight: 'bold' },
+                                }}
+                                secondaryTypographyProps={{
+                                  sx: { color: 'rgba(0, 255, 0, 0.7)' },
+                                }}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      );
+                    })()}
+                  </DashboardCard>
+                </Grid>
+              </Grid>
             ) : (
               <DashboardCard>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
@@ -1990,91 +2107,112 @@ const TestButton = () => {
                   >
                     Profile
                   </Typography>
-                  <CyberButton
-                    startIcon={<SettingsIcon />}
-                    onClick={() => setOpenProfileSettings(true)}
-                  >
-                    Settings
-                  </CyberButton>
                 </Box>
 
-                <Grid container spacing={3}>
-                  <Grid item xs={12} md={6}>
-                    <Paper
-                      sx={{
-                        p: 2,
-                        background: 'rgba(0, 0, 0, 0.5)',
-                        border: '1px solid rgba(0, 255, 0, 0.2)',
-                        borderRadius: 1,
-                      }}
-                    >
-                      <Typography
-                        sx={{
-                          color: '#00ffff',
-                          mb: 1,
-                          fontFamily: 'monospace',
-                        }}
+                <Box sx={{ mb: 3 }}>
+                  <TextField
+                    fullWidth
+                    label="Username"
+                    value={editMode ? editedProfile.username : profileData.username}
+                    onChange={(e) => setEditedProfile({ ...editedProfile, username: e.target.value })}
+                    disabled={!editMode}
+                    sx={{
+                      mb: 2,
+                      '& .MuiOutlinedInput-root': {
+                        '& fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.3)',
+                        },
+                        '&:hover fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.5)',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#00ff00',
+                        },
+                      },
+                      '& .MuiInputLabel-root': {
+                        color: 'rgba(0, 255, 0, 0.7)',
+                      },
+                      '& .MuiInputBase-input': {
+                        color: '#fff',
+                      },
+                    }}
+                  />
+
+                  <TextField
+                    fullWidth
+                    label="Email"
+                    value={editMode ? editedProfile.email : profileData.email}
+                    onChange={(e) => setEditedProfile({ ...editedProfile, email: e.target.value })}
+                    disabled={!editMode}
+                    sx={{
+                      mb: 2,
+                      '& .MuiOutlinedInput-root': {
+                        '& fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.3)',
+                        },
+                        '&:hover fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.5)',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#00ff00',
+                        },
+                      },
+                      '& .MuiInputLabel-root': {
+                        color: 'rgba(0, 255, 0, 0.7)',
+                      },
+                      '& .MuiInputBase-input': {
+                        color: '#fff',
+                      },
+                    }}
+                  />
+
+                  <TextField
+                    fullWidth
+                    label="New Password"
+                    type="password"
+                    disabled={!editMode}
+                    sx={{
+                      mb: 2,
+                      '& .MuiOutlinedInput-root': {
+                        '& fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.3)',
+                        },
+                        '&:hover fieldset': {
+                          borderColor: 'rgba(0, 255, 0, 0.5)',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#00ff00',
+                        },
+                      },
+                      '& .MuiInputLabel-root': {
+                        color: 'rgba(0, 255, 0, 0.7)',
+                      },
+                      '& .MuiInputBase-input': {
+                        color: '#fff',
+                      },
+                    }}
+                  />
+                </Box>
+
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+                  {editMode ? (
+                    <>
+                      <Button
+                        onClick={handleProfileCancel}
+                        sx={{ color: 'rgba(255, 0, 0, 0.7)' }}
                       >
-                        Storage Usage
-                      </Typography>
-                      <Box sx={{ mb: 1 }}>
-                        <Typography
-                          sx={{
-                            color: '#00ff00',
-                            fontFamily: 'monospace',
-                          }}
-                        >
-                          {profileData.storageUsed} / {profileData.storageLimit}
-                        </Typography>
-                      </Box>
-                      <Box
-                        sx={{
-                          height: 8,
-                          background: 'rgba(0, 255, 0, 0.1)',
-                          borderRadius: 4,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <Box
-                          sx={{
-                            height: '100%',
-                            width: '25%',
-                            background: 'linear-gradient(90deg, #00ff00, #00ffff)',
-                            borderRadius: 4,
-                          }}
-                        />
-                      </Box>
-                    </Paper>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <Paper
-                      sx={{
-                        p: 2,
-                        background: 'rgba(0, 0, 0, 0.5)',
-                        border: '1px solid rgba(0, 255, 0, 0.2)',
-                        borderRadius: 1,
-                      }}
-                    >
-                      <Typography
-                        sx={{
-                          color: '#00ffff',
-                          mb: 1,
-                          fontFamily: 'monospace',
-                        }}
-                      >
-                        Last Login
-                      </Typography>
-                      <Typography
-                        sx={{
-                          color: '#00ff00',
-                          fontFamily: 'monospace',
-                        }}
-                      >
-                        {profileData.lastLogin}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                </Grid>
+                        Cancel Edit
+                      </Button>
+                      <CyberButton onClick={handleProfileSave}>
+                        Save Changes
+                      </CyberButton>
+                    </>
+                  ) : (
+                    <CyberButton onClick={handleProfileEdit}>
+                      Edit Profile
+                    </CyberButton>
+                  )}
+                </Box>
               </DashboardCard>
             )}
           </Container>
@@ -2193,8 +2331,10 @@ const TestButton = () => {
       <Dialog
         open={openShare}
         onClose={() => {
-          setOpenShare(false);
-          setSelectedRecipients([]);
+          if (!loading) {
+            setOpenShare(false);
+            setSelectedRecipients([]);
+          }
         }}
         PaperProps={{
           sx: {
@@ -2311,6 +2451,30 @@ const TestButton = () => {
                     </ListItem>
                   ))}
                 </List>
+                {loading && (
+                  <Box sx={{ width: '100%', mt: 2 }}>
+                    <LinearProgress 
+                      sx={{
+                        backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                        '& .MuiLinearProgress-bar': {
+                          backgroundColor: '#00ff00',
+                          boxShadow: '0 0 10px rgba(0, 255, 0, 0.5)',
+                        },
+                      }}
+                    />
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: 'rgba(0, 255, 0, 0.7)', 
+                        mt: 1,
+                        textAlign: 'center',
+                        fontFamily: 'monospace'
+                      }}
+                    >
+                      Encrypting and sharing file...
+                    </Typography>
+                  </Box>
+                )}
               </>
             );
           })()}
@@ -2322,6 +2486,7 @@ const TestButton = () => {
               setSelectedRecipients([]);
             }}
             sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+            disabled={loading}
           >
             Cancel
           </Button>
@@ -2329,7 +2494,7 @@ const TestButton = () => {
             onClick={handleShareConfirm}
             size="small"
             sx={{ minWidth: 100, fontSize: '0.95rem', height: 36, px: 2.5, py: 1 }}
-            disabled={selectedRecipients.length === 0}
+            disabled={selectedRecipients.length === 0 || loading}
           >
             Share
           </CyberButton>
@@ -2702,23 +2867,34 @@ const TestButton = () => {
         }}
       >
         <DialogTitle sx={{ color: '#00ffff', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
-          Share Without One-Time Keys
+          No One-Time Keys Available
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
           <Typography sx={{ color: '#00ff00', mb: 2 }}>
-            {pendingShare?.recipient} has no available one-time keys. While you can still share the file, this is less secure than using one-time keys.
+            {pendingShare?.recipient} has no available one-time keys.
           </Typography>
-          <Typography sx={{ color: 'rgba(0, 255, 0, 0.7)', fontSize: '0.9rem' }}>
+          <Typography sx={{ color: 'rgba(0, 255, 0, 0.7)', fontSize: '0.9rem', mb: 2 }}>
+            While you can still share the file, this is less secure than using one-time keys. One-time keys provide forward secrecy and protect against future key compromises.
+          </Typography>
+          <Typography sx={{ color: 'rgba(255, 0, 0, 0.7)', fontSize: '0.9rem' }}>
             Would you like to proceed with sharing anyway?
           </Typography>
         </DialogContent>
-        <DialogActions sx={{ borderTop: '1px solid rgba(0, 255, 0, 0.2)', p: 2 }}>
+        <DialogActions sx={{ 
+          borderTop: '1px solid rgba(0, 255, 0, 0.2)', 
+          p: 2,
+          display: 'flex',
+          justifyContent: 'space-between'
+        }}>
           <Button 
             onClick={() => {
               setOpenNoOPKConfirm(false);
               setPendingShare(null);
             }}
-            sx={{ color: 'rgba(0, 255, 0, 0.7)' }}
+            sx={{ 
+              color: 'rgba(0, 255, 0, 0.7)',
+              mr: 'auto'
+            }}
           >
             Cancel
           </Button>
@@ -2792,8 +2968,90 @@ const TestButton = () => {
                 setError(err.message || 'Failed to share file');
               }
             }}
+            sx={{
+              minWidth: 120,
+              fontSize: '0.9rem',
+              height: 32,
+              px: 2,
+              py: 0.5,
+              backgroundColor: 'rgba(255, 0, 0, 0.2)',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 0, 0, 0.3)'
+              }
+            }}
           >
             Share Anyway
+          </CyberButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* Unverified Sender Dialog */}
+      <Dialog
+        open={openUnverifiedSender}
+        onClose={() => {
+          setOpenUnverifiedSender(false);
+          setUnverifiedSenderFile(null);
+        }}
+        PaperProps={{
+          sx: {
+            background: 'rgba(0, 0, 0, 0.9)',
+            border: '1px solid rgba(0, 255, 0, 0.2)',
+            color: '#00ff00',
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#00ffff', borderBottom: '1px solid rgba(0, 255, 0, 0.2)' }}>
+          Unverified Sender
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Typography sx={{ color: '#00ff00', mb: 2 }}>
+            The file you are trying to download was shared by {unverifiedSenderFile?.sender}, who is not a verified user.
+          </Typography>
+          <Typography sx={{ color: 'rgba(0, 255, 0, 0.7)', fontSize: '0.9rem', mb: 2 }}>
+            While you can still download the file, it is recommended to verify the sender first to ensure the file's authenticity and security.
+          </Typography>
+          <Typography sx={{ color: 'rgba(255, 0, 0, 0.7)', fontSize: '0.9rem' }}>
+            Would you like to proceed with downloading anyway?
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ 
+          borderTop: '1px solid rgba(0, 255, 0, 0.2)', 
+          p: 2,
+          display: 'flex',
+          justifyContent: 'space-between'
+        }}>
+          <Button 
+            onClick={() => {
+              setOpenUnverifiedSender(false);
+              setUnverifiedSenderFile(null);
+            }}
+            sx={{ 
+              color: 'rgba(0, 255, 0, 0.7)',
+              mr: 'auto'
+            }}
+          >
+            Cancel
+          </Button>
+          <CyberButton
+            onClick={async () => {
+              if (!unverifiedSenderFile) return;
+              setOpenUnverifiedSender(false);
+              setUnverifiedSenderFile(null);
+              await handleDownload(unverifiedSenderFile.id, true);
+            }}
+            sx={{
+              minWidth: 120,
+              fontSize: '0.9rem',
+              height: 32,
+              px: 2,
+              py: 0.5,
+              backgroundColor: 'rgba(255, 0, 0, 0.2)',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 0, 0, 0.3)'
+              }
+            }}
+          >
+            Download Anyway
           </CyberButton>
         </DialogActions>
       </Dialog>

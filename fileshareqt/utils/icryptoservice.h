@@ -3,12 +3,26 @@
 
 #include <QString>
 #include <QByteArray>
+#include <QDebug>
 
-// pure-virtual interface for all crypto operations
+// pure virtual interface for all crypto operations
 class ICryptoService
 {
+
+protected:
+    // protected member in an inheritance hierarchy (caps the length of random byte generation)
+    static const int MAX_RANDOM_LENGTH = 4096;
+
 public:
-    virtual ~ICryptoService() = default;
+    // Ctor and Dtor behaviour in an inheritance hierarchy (see derived class in cryptoservice)
+    ICryptoService()
+    {
+        qDebug() << "ICryptoService ctor";
+    }
+    virtual ~ICryptoService()
+    {
+        qDebug() << "ICryptoService dtor";
+    }
 
     // default Argon2id parameters (matches libsodiums moderate settings)
     const static quint64 OPSLIMIT_MODERATE = 3;
@@ -66,6 +80,14 @@ public:
     virtual QByteArray hkdfSha256(const QByteArray &salt,
                                   const QByteArray &ikm,
                                   int outputLength) = 0;
+
+    // Convert an Ed25519 public key (32 bytes) to Curve25519 public key (32 bytes):
+    virtual bool ed25519PubKeyToCurve25519(QByteArray &curvePub,
+                                   const QByteArray &edPub) = 0;
+
+    // Convert an Ed25519 secret key (64 bytes) to Curve25519 private key (32 bytes):
+    virtual bool ed25519PrivKeyToCurve25519(QByteArray &curvePriv,
+                                    const QByteArray &edPriv) = 0;
 
 };
 

@@ -23,7 +23,7 @@ void TofuManager::clear()
     }
 }
 
-QVector<VerifiedUser> TofuManager::verifiedUsers() const
+QVector<VerifiedUser> TofuManager::verifiedUsers()
 {
     return m_list;
 }
@@ -114,14 +114,8 @@ void TofuManager::loadFromRemote(const QString &encryptedB64,
 }
 
 void TofuManager::getEncryptedBackup(QString &outEncryptedB64,
-                                     QString &outNonceB64) const
+                                     QString &outNonceB64)
 {
-            //         The JSON must contain:
-            //           "IK_pub", "IK_priv",
-            //           "SPK_pub", "SPK_priv", "SPK_signature",
-            //           "OPKs_pub", "OPKs_priv",
-            //           "tofusers": [ …list of { "username", "ik_pub" }… ].
-            //
             QJsonObject backupObj;
 
             // 1a) Identity keypair

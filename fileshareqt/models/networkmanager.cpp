@@ -318,9 +318,13 @@ void NetworkManager::listFiles(const QJsonObject &payload)
         for (const QJsonValue &v : arr) {
             if (!v.isObject()) continue;
             QJsonObject fileObj = v.toObject();
+            // constructs a fresh FileEntry (this calls the “normal” construtor)
             FileEntry fe;
             fe.filename = fileObj.value("filename").toString();
             fe.id = static_cast<qint64>(fileObj.value("id").toInt());
+            // “id” comes from the server’s JSON; it should always exist
+            fe.id = static_cast<qint64>( fileObj.value("id").toInt() );
+             // copy constructor is called here
             fileList.append(fe);
         }
         emit listFilesResult(true, fileList, QString());
@@ -561,6 +565,42 @@ void NetworkManager::listSharers(const QJsonObject &payload)
         emit listSharersResult(true, users, QString());
     } else {
         emit listSharersResult(false, QStringList(), obj["detail"].toString());
+    }
+}
+
+void NetworkManager::getOPK(const QJsonObject &payload)
+{
+    Logger::log("Sending getOPK request: " +
+                QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+
+    bool ok = false;
+    QString message;
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/opk", payload, ok, message);
+    Logger::log("Received getOPK response: " + QString::fromUtf8(resp));
+    if (!ok) {
+        emit getOPKResult(false, 0, QString(), message);
+        return;
+    }
+
+    auto obj = QJsonDocument::fromJson(resp).object();
+
+    // Changed: if “opk_id” is present, treat as success
+    if (obj.contains("opk_id"))
+    {
+        int opk_id            = obj["opk_id"].toInt();
+        QString pre_key_b64   = obj["pre_key"].toString();
+        emit getOPKResult(true, opk_id, pre_key_b64, QString());
+    }
+    else if (obj["status"].toString() == "ok")
+    {
+        // for backward-compat, if server ever wraps it in { "status":"ok", … }
+        int opk_id          = obj["opk_id"].toInt();
+        QString pre_key_b64 = obj["pre_key"].toString();
+        emit getOPKResult(true, opk_id, pre_key_b64, QString());
+    }
+    else
+    {
+        emit getOPKResult(false, 0, QString(), obj.value("detail").toString());
     }
 }
 

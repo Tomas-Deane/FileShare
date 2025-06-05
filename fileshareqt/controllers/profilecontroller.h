@@ -13,7 +13,7 @@ class NetworkManager;
 class ProfileController : public QObject {
     Q_OBJECT
 public:
-    explicit ProfileController(INetworkManager    *networkManager,
+     ProfileController(INetworkManager    *networkManager,
                                AuthController     *authController,
                                ICryptoService     *cryptoService,
                                QObject            *parent = nullptr);
