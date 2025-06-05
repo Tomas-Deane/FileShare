@@ -6,6 +6,7 @@
 #include <QString>
 #include <QJsonArray>
 #include <QMap>
+#include "tofumanager.h"
 #include "icryptoservice.h"
 #include "inetworkmanager.h"
 
@@ -27,6 +28,7 @@ public:
     explicit ShareController(INetworkManager  *networkManager,
                              AuthController   *authController,
                              ICryptoService   *cryptoService,
+                             TofuManager *tofuManager,
                              QObject          *parent = nullptr);
 
     // ⓵ Share a file with a particular recipientUsername.
@@ -127,6 +129,7 @@ private:
     INetworkManager *m_networkManager;
     AuthController  *m_authController;
     ICryptoService  *m_cryptoService;
+    TofuManager *m_tofuManager;
 
     // We stash state so that when a challenge arrives, we know what to do:
     enum PendingOp {

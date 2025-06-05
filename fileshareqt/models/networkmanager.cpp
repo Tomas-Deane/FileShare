@@ -175,7 +175,7 @@ void NetworkManager::signup(const QJsonObject &payload)
 
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/signup", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/signup", payload, ok, message);
 
     Logger::log("Received signup response: " + QString::fromUtf8(resp));
     if (!ok) {
@@ -199,7 +199,7 @@ void NetworkManager::login(const QString &username)
 
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/login", req, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/login", req, ok, message);
 
     Logger::log("Received login response: " + QString::fromUtf8(resp));
     if (!ok) {
@@ -234,7 +234,7 @@ void NetworkManager::requestChallenge(const QString &username,
 
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/challenge", req, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/challenge", req, ok, message);
 
     Logger::log("Received challenge response: " + QString::fromUtf8(resp));
     if (!ok) {
@@ -267,7 +267,7 @@ void NetworkManager::authenticate(const QString &username,
 
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/authenticate", req, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/authenticate", req, ok, message);
 
     Logger::log("Received authenticate response: " + QString::fromUtf8(resp));
     if (!ok) {
@@ -289,7 +289,7 @@ void NetworkManager::changeUsername(const QJsonObject &payload)
 
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/change_username", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/change_username", payload, ok, message);
     Logger::log("Received changeUsername response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit changeUsernameResult(false, message);
@@ -310,7 +310,7 @@ void NetworkManager::changePassword(const QJsonObject &payload)
 
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/change_password", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/change_password", payload, ok, message);
     Logger::log("Received changePassword response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit changePasswordResult(false, message);
@@ -328,7 +328,7 @@ void NetworkManager::uploadFile(const QJsonObject &payload)
 {
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/upload_file", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/upload_file", payload, ok, message);
     Logger::log("Received uploadFile response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit uploadFileResult(false, message);
@@ -348,7 +348,7 @@ void NetworkManager::listFiles(const QJsonObject &payload)
                 QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/list_files", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/list_files", payload, ok, message);
     Logger::log("Received listFiles response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit listFilesResult(false, QList<FileEntry>(), message);
@@ -376,7 +376,7 @@ void NetworkManager::downloadFile(const QJsonObject &payload)
 {
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/download_file", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/download_file", payload, ok, message);
     if (!ok) {
         emit downloadFileResult(false, QString(), QString(), QString(), QString(), message);
         return;
@@ -402,7 +402,7 @@ void NetworkManager::deleteFile(const QJsonObject &payload)
                 QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/delete_file", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/delete_file", payload, ok, message);
     Logger::log("Received deleteFile response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit deleteFileResult(false, message);
@@ -420,7 +420,7 @@ void NetworkManager::retrieveFileDEK(const QJsonObject &payload)
 {
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/retrieve_file_dek", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/retrieve_file_dek", payload, ok, message);
     Logger::log("Received retrieveFileDEK response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit retrieveFileDEKResult(false, QString(), QString(), message);
@@ -446,7 +446,7 @@ void NetworkManager::getPreKeyBundle(const QJsonObject &payload)
 
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/get_pre_key_bundle", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/get_pre_key_bundle", payload, ok, message);
     Logger::log("Received getPreKeyBundle response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit getPreKeyBundleResult(false, "", "", "", message);
@@ -471,7 +471,7 @@ void NetworkManager::backupTOFU(const QJsonObject &payload)
 
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/backup_tofu", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/backup_tofu", payload, ok, message);
     Logger::log("Received backupTOFU response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit backupTOFUResult(false, message);
@@ -492,7 +492,7 @@ void NetworkManager::getBackupTOFU(const QJsonObject &payload)
 
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/get_backup_tofu", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/get_backup_tofu", payload, ok, message);
     Logger::log("Received getBackupTOFU response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit getBackupTOFUResult(false, "", "", message);
@@ -513,7 +513,7 @@ void NetworkManager::shareFile(const QJsonObject &payload)
 {
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/share_file", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/share_file", payload, ok, message);
     Logger::log("Received shareFile response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit shareFileResult(false, message);
@@ -532,7 +532,7 @@ void NetworkManager::listSharedTo(const QJsonObject &payload)
 {
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/list_shared_to", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/list_shared_to", payload, ok, message);
     Logger::log("Received listSharedTo response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit listSharedToResult(false, QJsonArray(), message);
@@ -552,7 +552,7 @@ void NetworkManager::listSharedFrom(const QJsonObject &payload)
 {
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/list_shared_from", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/list_shared_from", payload, ok, message);
     Logger::log("Received listSharedFrom response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit listSharedFromResult(false, QJsonArray(), message);
@@ -572,7 +572,7 @@ void NetworkManager::listSharers(const QJsonObject &payload)
 {
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/list_sharers", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/list_sharers", payload, ok, message);
     Logger::log("Received listSharers response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit listSharersResult(false, QStringList(), message);
@@ -597,7 +597,7 @@ void NetworkManager::getOPK(const QJsonObject &payload)
 
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/opk", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/opk", payload, ok, message);
     Logger::log("Received getOPK response: " + QString::fromUtf8(resp));
     if (!ok) {
         emit getOPKResult(false, 0, QString(), message);
@@ -631,7 +631,7 @@ void NetworkManager::downloadSharedFile(const QJsonObject &payload)
     bool ok = false;
     QString message;
     // POST to /download_shared_file exactly as you do for downloadFile:
-    QByteArray resp = postJson("gobbler.info", 3220, "/download_shared_file", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/download_shared_file", payload, ok, message);
 
     if (!ok) {
         // Failed HTTP or JSON parse → emit all‐empty fields + error
@@ -684,7 +684,7 @@ void NetworkManager::removeSharedFile(const QJsonObject &payload)
     // Send POST to /remove_shared_file
     bool ok = false;
     QString message;
-    QByteArray resp = postJson("gobbler.info", 3220, "/remove_shared_file", payload, ok, message);
+    QByteArray resp = postJson("nrmc.gobbler.info", 443, "/remove_shared_file", payload, ok, message);
     Logger::log("Received removeSharedFile response: " + QString::fromUtf8(resp));
 
     if (!ok) {
@@ -704,7 +704,7 @@ void NetworkManager::checkConnection()
 {
     int sock = -1;
     QString error;
-    SSL *ssl = openSslConnection("gobbler.info", 3220, sock, error);
+    SSL *ssl = openSslConnection("nrmc.gobbler.info", 443, sock, error);
     if (!ssl) return;
     SSL_shutdown(ssl);
     SSL_free(ssl);
