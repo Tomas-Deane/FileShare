@@ -418,10 +418,12 @@ void NetworkManager::listFiles(const QJsonObject &payload)
         for (const QJsonValue &v : arr) {
             if (!v.isObject()) continue;
             QJsonObject fileObj = v.toObject();
+            // constructs a fresh FileEntry (this calls the “normal” construtor)
             FileEntry fe;
             fe.filename = fileObj.value("filename").toString();
             // “id” comes from the server’s JSON; it should always exist
             fe.id = static_cast<qint64>( fileObj.value("id").toInt() );
+             // copy constructor is called here
             fileList.append(fe);
         }
         emit listFilesResult(true, fileList, QString());
@@ -564,7 +566,7 @@ void NetworkManager::getBackupTOFU(const QJsonObject &payload)
     }
 }
 
-// ─── /share_file ─────────────────────────────────────────────────────────────
+// /share_file
 void NetworkManager::shareFile(const QJsonObject &payload)
 {
     bool ok = false;
@@ -583,7 +585,7 @@ void NetworkManager::shareFile(const QJsonObject &payload)
     }
 }
 
-// ─── /list_shared_to ─────────────────────────────────────────────────────────
+// /list_shared_to
 void NetworkManager::listSharedTo(const QJsonObject &payload)
 {
     bool ok = false;
@@ -603,7 +605,7 @@ void NetworkManager::listSharedTo(const QJsonObject &payload)
     }
 }
 
-// ─── /list_shared_from ───────────────────────────────────────────────────────
+//  /list_shared_from
 void NetworkManager::listSharedFrom(const QJsonObject &payload)
 {
     bool ok = false;
@@ -623,7 +625,7 @@ void NetworkManager::listSharedFrom(const QJsonObject &payload)
     }
 }
 
-// ─── /list_sharers ─────────────────────────────────────────────────────────
+// /list_sharers
 void NetworkManager::listSharers(const QJsonObject &payload)
 {
     bool ok = false;
@@ -636,7 +638,6 @@ void NetworkManager::listSharers(const QJsonObject &payload)
     }
     auto obj = QJsonDocument::fromJson(resp).object();
     if (obj["status"].toString() == "ok") {
-        // Expect: { "status":"ok", "usernames":[ "alice", "bob", … ] }
         QStringList users;
         for (const QJsonValue &v : obj["usernames"].toArray())
             users.append(v.toString());
@@ -662,7 +663,7 @@ void NetworkManager::getOPK(const QJsonObject &payload)
 
     auto obj = QJsonDocument::fromJson(resp).object();
 
-    // <—– Changed: if “opk_id” is present, treat as success
+    // Changed: if “opk_id” is present, treat as success
     if (obj.contains("opk_id"))
     {
         int opk_id            = obj["opk_id"].toInt();
@@ -690,7 +691,7 @@ void NetworkManager::downloadSharedFile(const QJsonObject &payload)
     QByteArray resp = postJson("nrmc.gobbler.info", 443, "/download_shared_file", payload, ok, message);
 
     if (!ok) {
-        // Failed HTTP or JSON parse → emit all‐empty fields + error
+        // Failed HTTP or JSON parse , emit all‐empty fields + error
         emit downloadSharedFileResult(false,
                                       QString(),
                                       QString(),

@@ -73,6 +73,7 @@ private:
                         const QJsonObject &obj,
                         bool &ok,
                         QString &message);
+
 };
 
 #endif // NETWORKMANAGER_H

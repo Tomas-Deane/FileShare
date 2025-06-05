@@ -68,10 +68,10 @@ void VerifyController::initializeVerifyPage()
         return;
     }
 
-    // Step 1: clear any existing in-memory list
+    // clear any existing in-memory list
     m_tofuManager->clear();
 
-    // Step 2: fetch existing TOFU backup from server
+    // fetch existing TOFU backup from server
     m_pendingOperation = "get_backup_tofu";
     m_networkManager->requestChallenge(username, "get_backup_tofu");
 }
@@ -85,7 +85,7 @@ void VerifyController::onLoggedOut()
 void VerifyController::onChallengeReceived(const QByteArray &nonce,
                                            const QString   &operation)
 {
-    // CASE 1: get_backup_tofu → fetch remote encrypted backup
+    // get_backup_tofu fetch remote encrypted backup
     if (operation == "get_backup_tofu") {
         QString me = m_authController->getSessionUsername();
         if (me.isEmpty()) {
@@ -101,7 +101,7 @@ void VerifyController::onChallengeReceived(const QByteArray &nonce,
         m_networkManager->getBackupTOFU(req);
     }
 
-    // CASE 2: backup_tofu → push local in-memory list to server
+    // backup_tofu, push local in-memory list to server
     else if (operation == "backup_tofu") {
         QString me = m_authController->getSessionUsername();
         if (me.isEmpty()) {
@@ -121,7 +121,7 @@ void VerifyController::onChallengeReceived(const QByteArray &nonce,
         m_networkManager->backupTOFU(req);
     }
 
-    // CASE 3: get_pre_key_bundle → fetch *target’s* IK_pub
+    // get_pre_key_bundle
     else if (operation == "get_pre_key_bundle") {
         if (m_pendingTargetUsername.isEmpty()) {
             Logger::log("No target username set for get_pre_key_bundle");
@@ -158,7 +158,7 @@ void VerifyController::onGetPreKeyBundleResult(bool success,
     // Decode the target’s IK_pub
     QByteArray theirIkPub = QByteArray::fromBase64(ik_pub_b64.toUtf8());
 
-    // KEY ELEMENT: our IK comes from AuthController (loaded from backup). We cannot rely on the server to provide a correct pub IK for us.
+    // our IK comes from AuthController (loaded from backup)
     QByteArray ourIkPub   = m_authController->getIdentityPublicKey();
 
     Logger::log("OOB: ourIkPub   = " + QString::fromUtf8(ourIkPub.toHex()));
@@ -169,15 +169,15 @@ void VerifyController::onGetPreKeyBundleResult(bool success,
         return;
     }
 
-    // Compute the OOB code: sort the two byte arrays, concat, SHA-256, hex, take first 60 chars
+    // Compute the OOB code, AKA sort the two byte arrays, concat, SHA-256, hex, take first 60 chars
     QString code = m_cryptoService->computeOOBVerificationCode(ourIkPub, theirIkPub);
     emit oobCodeReady(code, "");
 
-    // instead of verifying the user here, we should stash their username and IK in a map in verify controller. Then the verifyNewUser method won't have to call the compromised servers getprekeybundle again, we can refer to our own map from the initial request.
+    // instead of verifying the user here, we should stash their username and IK in a map in verify controller
     if (m_pendingOperation == "get_pre_key_bundle" &&
         !m_pendingTargetUsername.isEmpty())
     {
-        // stash targetUsername → theirIkPub in our map
+        // stash targetUsername, theirIkPub in our map
         m_stashedUsers.insert(m_pendingTargetUsername, theirIkPub);
 
         // clear these so we don’t reuse them by accident
@@ -192,14 +192,14 @@ void VerifyController::onGetBackupTOFUResult(bool success,
                                              const QString &message)
 {
     if (!success) {
-        // No existing backup or error; simply emit the local (empty) list
+        // No existing backup or error, simply emit the local (empty) list
         QVector<VerifiedUser> emptyVec = m_tofuManager->verifiedUsers();
         QList<VerifiedUser>   emptyList = toQList(emptyVec);
         emit tofuLoadCompleted(emptyList, message);
         return;
     }
 
-    // We got an encrypted backup: decrypt and populate TofuManager
+    // We got an encrypted backup, decrypt and populate TofuManager
     m_tofuManager->loadFromRemote(encrypted_backup_b64, backup_nonce_b64);
     QVector<VerifiedUser> loadedVec = m_tofuManager->verifiedUsers();
     QList<VerifiedUser>   loadedList = toQList(loadedVec);
@@ -233,12 +233,10 @@ void VerifyController::generateOOBCode(const QString &targetUsername)
 void VerifyController::verifyNewUser(const QString &targetUsername)
 {
     if (targetUsername.isEmpty()) {
-        // nothing to do
         emit oobCodeReady("", "Enter a username to verify");
         return;
     }
 
-    // Look up in our stash
     if (!m_stashedUsers.contains(targetUsername)) {
         // either they never clicked “Generate Code” or the stash was cleared
         emit oobCodeReady("", "No pre-generated OOB code for '" + targetUsername + "'");
