@@ -2,14 +2,13 @@
 #define NETWORKMANAGER_H
 
 #include "inetworkmanager.h"
-#include <openssl/ssl.h>
-#include <openssl/err.h>
+#include <curl/curl.h>
+#include <QObject>
+#include <QByteArray>
+#include <QJsonObject>
+#include <QString>
 
-// POSIX sockets
-#include <netdb.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
+// We no longer need <openssl/ssl.h> or <openssl/err.h> etc.
 
 class NetworkManager : public INetworkManager
 {
@@ -57,22 +56,19 @@ public:
     void checkConnection() override;
 
 private:
-    SSL_CTX *ssl_ctx = nullptr;
+    // Single libcurl handle. You can also create/destroy per‐request, but reusing is fine.
+    CURL *curl;
 
-    void initOpenSSL();
-    void cleanupOpenSSL();
-
-    SSL *openSslConnection(const QString &host,
-                           quint16 port,
-                           int &sockOut,
-                           QString &errorMsg);
-
+    // Helper to do HTTPS POST/receive response as QByteArray
     QByteArray postJson(const QString &host,
                         quint16 port,
                         const QString &path,
                         const QJsonObject &obj,
                         bool &ok,
                         QString &message);
+
+    // Write callback for libcurl to accumulate response bytes
+    static size_t writeToByteArray(void *ptr, size_t size, size_t nmemb, void *userdata);
 };
 
 #endif // NETWORKMANAGER_H
