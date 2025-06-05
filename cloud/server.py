@@ -337,23 +337,12 @@ async def list_sharers(req: ListSharersRequest, db: models.UserDB = Depends(get_
     logger.debug(f"ListSharers response: {resp}")
     return resp
 
-# ─── Run with TLS ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    host     = os.environ.get('FS_HOST', '0.0.0.0')
-    port     = int(os.environ.get('FS_HTTPS_PORT', '3230'))
-    certfile = os.environ.get('SSL_CERTFILE', 'cert.pem')
-    keyfile  = os.environ.get('SSL_KEYFILE', 'key.pem')
-
-    if not (os.path.exists(certfile) and os.path.exists(keyfile)):
-        logger.error(f"Missing cert or key: '{certfile}' / '{keyfile}'")
-        raise SystemExit("TLS cert/key not found; please generate them via OpenSSL")
-
-    logger.info(f"Starting HTTPS server on {host}:{port}")
+    # When behind Apache, we only serve HTTP on 127.0.0.1:3210.
+    # Apache will handle SSL on port 443 and reverse‐proxy into us.
     uvicorn.run(
         app,
-        host=host,
-        port=port,
-        ssl_certfile=certfile,
-        ssl_keyfile=keyfile,
+        host="127.0.0.1",
+        port=3210,
         log_config=None,
     )
