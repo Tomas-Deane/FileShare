@@ -20,7 +20,7 @@ import { apiClient } from '../utils/apiClient';
 import { encryptFile, generateFileKey, signChallenge, decryptFile, decryptKEK, generateOOBVerificationCode } from '../utils/crypto';
 import { storage } from '../utils/storage';
 import sodium from 'libsodium-wrappers-sumo';
-import { generateEphemeralKeyPair, deriveX3DHSharedSecret,encryptWithXChaCha20Poly, deriveX3DHSharedSecretRecipient, encryptWithPublicKey } from '../utils/crypto';
+import { generateEphemeralKeyPair, deriveX3DHSharedSecret, encryptWithXChaCha20Poly } from '../utils/crypto';
 import { testX3DH } from '../utils/crypto';
 
 // Styled components for cyberpunk look
