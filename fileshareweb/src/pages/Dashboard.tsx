@@ -1531,6 +1531,11 @@ const TestButton = () => {
     setChangePasswordError(null);
     setChangePasswordSuccess(null);
     try {
+      if (newPassword !== confirmPassword) {
+        setChangePasswordError('Passwords do not match');
+        setChangePasswordLoading(false);
+        return;
+      }
       if (!username || !keyBundle) throw new Error('No user or key bundle loaded');
       await sodium.ready;
       // 1. Generate new salt and Argon2 params
